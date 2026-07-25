@@ -7,3 +7,8 @@ test/verified.png
 # Secrets — never commit real tokens. Nothing in this repo may contain one.
 .env
 .env.*
+
+# Runtime state — the 72-hour change log and any pasted AI key. Note this is
+# NOT data/, which holds the hand-maintained dependency map and phrasebook.
+.mapper-state/
+.tmp-loop-data/

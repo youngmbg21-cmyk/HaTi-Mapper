@@ -174,6 +174,72 @@ tbody tr:hover{background:#fcfcfb;}
 .warns ul{margin:0;padding-left:17px;}
 .warns li{font-size:11px;color:var(--n600);line-height:1.5;}
 
+/* ---------- 72-hour change log ---------- */
+.round{padding:11px 0;border-bottom:1px solid var(--divider);}
+.round:last-child{border-bottom:0;}
+.round .when{font-family:var(--mono);font-size:9.5px;color:var(--n500);margin-bottom:5px;}
+.ev{display:flex;gap:9px;align-items:flex-start;padding:3px 0;}
+.ev .k{flex:none;font-family:var(--mono);font-size:8.5px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--n500);background:var(--n100);padding:2px 6px;border-radius:3px;margin-top:2px;min-width:58px;text-align:center;}
+.ev.w3 .k{background:#fdf1f0;color:#8f322b;} .ev.w2 .k{background:#fdf6e7;color:#8a6a2e;}
+.ev .x{font-size:12px;color:var(--n800);line-height:1.5;}
+.ev.w3 .x{font-weight:500;}
+
+/* ---------- assistant ---------- */
+.ask-launch{position:fixed;right:20px;bottom:20px;z-index:40;display:inline-flex;align-items:center;gap:8px;background:var(--a800);color:#fff;border:0;border-radius:999px;padding:11px 18px;cursor:pointer;font-family:var(--font);font-weight:600;font-size:12.5px;box-shadow:0 3px 16px rgba(43,43,45,.28);transition:background .15s,transform .15s;}
+.ask-launch:hover{background:var(--a700);transform:translateY(-1px);}
+.ask-launch[hidden]{display:none;}
+
+.ask{position:fixed;right:20px;bottom:20px;z-index:41;width:min(440px,calc(100vw - 40px));height:min(620px,calc(100vh - 40px));display:flex;flex-direction:column;background:var(--surface);border:1px solid var(--divider);border-radius:var(--r-md);box-shadow:0 8px 40px -8px rgba(43,43,45,.34);overflow:hidden;}
+.ask[hidden]{display:none;}
+.ask-head{flex:none;display:flex;align-items:flex-start;gap:10px;padding:13px 15px;border-bottom:1px solid var(--divider);}
+.ask-head h3{margin:0;font-size:13.5px;font-weight:600;}
+.ask-head .brain{display:flex;align-items:center;gap:5px;font-size:10.5px;color:var(--n600);margin-top:2px;}
+.ask-head .brain i{width:6px;height:6px;border-radius:50%;background:var(--n400);display:block;}
+.ask-head .brain.live i{background:var(--emerald);}
+.ask-x{margin-left:auto;flex:none;background:none;border:0;color:var(--n500);cursor:pointer;font-size:17px;line-height:1;padding:2px 5px;border-radius:4px;}
+.ask-x:hover{background:var(--n100);color:var(--text);}
+
+.ask-feed{flex:1;overflow-y:auto;padding:14px 15px;display:flex;flex-direction:column;gap:12px;}
+.msg{max-width:92%;font-size:12.5px;line-height:1.6;}
+.msg.me{align-self:flex-end;background:var(--a800);color:#fff;border-radius:10px 10px 2px 10px;padding:9px 12px;}
+.msg.bot{align-self:flex-start;color:var(--text);}
+.msg.bot .body{background:var(--n100);border-radius:10px 10px 10px 2px;padding:10px 13px;}
+.msg.bot p{margin:0 0 8px;} .msg.bot p:last-child{margin:0;}
+.msg.bot ul,.msg.bot ol{margin:6px 0;padding-left:19px;} .msg.bot li{margin:3px 0;}
+.msg.bot code{font-family:var(--mono);font-size:11px;background:rgba(0,0,0,.06);padding:1px 4px;border-radius:3px;}
+.msg.bot strong{font-weight:600;}
+.msg.err .body{background:#fdf1f0;color:#8f322b;}
+.watch{margin-top:8px;background:#fdf6e7;border-left:2px solid var(--amber);border-radius:3px;padding:8px 11px;font-size:11.5px;color:#8a6a2e;line-height:1.5;}
+.srcs{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px;}
+.srcs button{font-family:var(--font);font-size:10.5px;font-weight:500;color:var(--a800);background:var(--a100);border:1px solid var(--a300);border-radius:999px;padding:3px 10px;cursor:pointer;}
+.srcs button:hover{background:#e2effd;}
+.typing{display:flex;gap:4px;padding:11px 13px;background:var(--n100);border-radius:10px;align-self:flex-start;}
+.typing i{width:6px;height:6px;border-radius:50%;background:var(--n400);animation:bo 1.2s infinite;}
+.typing i:nth-child(2){animation-delay:.15s} .typing i:nth-child(3){animation-delay:.3s}
+@keyframes bo{0%,60%,100%{opacity:.3;transform:translateY(0)}30%{opacity:1;transform:translateY(-3px)}}
+@media(prefers-reduced-motion:reduce){.typing i{animation:none;opacity:.6;}}
+
+.sugg{display:flex;flex-wrap:wrap;gap:6px;padding:0 15px 12px;}
+.sugg button{font-family:var(--font);font-size:11px;color:var(--n700);background:var(--surface);border:1px solid var(--divider);border-radius:999px;padding:6px 11px;cursor:pointer;text-align:left;}
+.sugg button:hover{border-color:var(--n300);background:var(--n100);}
+
+.ask-foot{flex:none;border-top:1px solid var(--divider);padding:11px 13px;}
+.ask-form{display:flex;gap:8px;align-items:flex-end;}
+.ask-form textarea{flex:1;font-family:var(--font);font-size:12.5px;color:var(--text);background:var(--bg);border:1px solid var(--divider);border-radius:var(--r-sm);padding:9px 11px;resize:none;max-height:110px;line-height:1.5;}
+.ask-form textarea:focus{outline:2px solid var(--accent);outline-offset:1px;}
+.ask-note{font-size:10px;color:var(--n500);margin-top:7px;line-height:1.45;}
+
+/* key entry */
+.keybox{padding:14px 15px;overflow-y:auto;}
+.keybox h4{margin:0 0 5px;font-size:12.5px;font-weight:600;}
+.keybox p{margin:0 0 11px;font-size:11.5px;color:var(--n600);line-height:1.55;}
+.keybox input{width:100%;font-family:var(--mono);font-size:11.5px;color:var(--text);background:var(--bg);border:1px solid var(--divider);border-radius:var(--r-sm);padding:9px 11px;}
+.keybox input:focus{outline:2px solid var(--accent);outline-offset:1px;}
+.keybox .row{display:flex;gap:8px;align-items:center;margin-top:10px;}
+.keybox .err{margin:10px 0 0;font-size:11.5px;color:#8f322b;line-height:1.5;}
+.keybox a{color:var(--a800);}
+.keybox ol{margin:0 0 11px;padding-left:18px;font-size:11.5px;color:var(--n600);line-height:1.6;}
+
 </style>
 </head>
 <body>
@@ -275,7 +341,12 @@ tbody tr:hover{background:#fcfcfb;}
   <!-- CHANGES -->
   <section class="panel" data-panel="changes" hidden>
     <div class="card">
-      <h2>What changed</h2>
+      <h2>What the Mapper has watched change</h2>
+      <p class="lede" id="watchLede">Every time this page scans HaTi it compares what it finds with last time. Anything that moved is written down here and kept for 72 hours.</p>
+      <div id="watchBody"></div>
+    </div>
+    <div class="card">
+      <h2>What changed in the code</h2>
       <p class="lede">Read from the git history and grouped by what it means, not by which files moved.</p>
       <div id="changesBody"></div>
     </div>
@@ -295,6 +366,51 @@ tbody tr:hover{background:#fcfcfb;}
     </div>
   </section>
 
+</div>
+
+<!-- The assistant. Reads only what this dashboard already shows — never HaTi's
+     contracts — and is told to answer in plain English rather than jargon. -->
+<button class="ask-launch" id="askLaunch" hidden>
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9.94 14.06 8 20l-1.94-5.94L0 12l6.06-2.06L8 4l1.94 5.94L16 12z"/><path d="M18 4v4M22 6h-4M18 16v4M22 18h-4"/></svg>
+  Ask about this
+</button>
+
+<div class="ask" id="ask" hidden role="dialog" aria-label="Ask about this platform">
+  <div class="ask-head">
+    <div>
+      <h3>Ask about this</h3>
+      <div class="brain" id="askBrain"><i></i><span>checking…</span></div>
+    </div>
+    <button class="ask-x" id="askClose" title="Close" aria-label="Close">&times;</button>
+  </div>
+
+  <!-- shown when no AI key is set -->
+  <div class="keybox" id="askKey" hidden>
+    <h4>The assistant needs a brain</h4>
+    <p>It answers using Claude, the same AI engine HaTi itself uses. To switch it on, paste an Anthropic key below. It is stored on this service and never sent to your browser.</p>
+    <ol>
+      <li>Go to <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">console.anthropic.com</a> and sign in</li>
+      <li>Click <b>Create key</b>, give it a name like “HaTi Mapper”</li>
+      <li>Copy the key — it starts with <code style="font-family:var(--mono);font-size:11px">sk-ant-</code></li>
+    </ol>
+    <input id="askKeyInput" type="password" placeholder="sk-ant-…" autocomplete="off" spellcheck="false">
+    <div class="row">
+      <button class="btn btn-primary" id="askKeySave">Save key</button>
+      <span class="path" id="askKeyState"></span>
+    </div>
+    <p class="err" id="askKeyErr" hidden></p>
+  </div>
+
+  <div class="ask-feed" id="askFeed"></div>
+  <div class="sugg" id="askSugg"></div>
+
+  <div class="ask-foot" id="askFoot">
+    <form class="ask-form" id="askForm">
+      <textarea id="askInput" rows="1" placeholder="Ask anything about your platform…" autocomplete="off"></textarea>
+      <button class="btn btn-primary" type="submit" id="askSend">Ask</button>
+    </form>
+    <div class="ask-note" id="askNote">It can see how HaTi is built — never what is inside it. No contracts, clients or figures reach it.</div>
+  </div>
 </div>
 
 <script src="app.js"></script>

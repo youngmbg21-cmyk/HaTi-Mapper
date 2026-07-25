@@ -12,8 +12,11 @@ the product, written for someone who does not read code:
 | **What breaks what** | Pick a piece of data, see everything that depends on it — and what changing it can break that is already signed |
 | **Not finished** | Known gaps, gathered from the code and the written documents |
 | **Open to the public** | Everything that works without logging in |
-| **What changed** | Recent commits in plain language, grouped by area |
+| **What changed** | What the Mapper itself has watched move over the last 72 hours, plus recent commits |
 | **Getting bulky** | File sizes, and the names published on `window` that nothing references |
+
+There is also an **assistant** — a chat panel that can explain any of it in plain
+English. It reads the same data the tabs show and nothing else.
 
 Seven of the eight panels are read from HaTi's **source code**. Only "Where the
 money goes" needs anything from a running HaTi, and all it asks for is caps and
@@ -64,9 +67,66 @@ Set all three in the Render dashboard. None belongs in git.
 | `GITHUB_TOKEN` | A **fine-grained** personal access token with **read-only Contents** permission on `youngmbg21-cmyk/mkataba-clm` **and nothing else**. Without it GitHub allows 60 requests an hour, which a handful of scans exhausts; with it, 5,000. |
 | `HATI_URL` | Base URL of the running HaTi, e.g. `https://hati-clm.onrender.com`. Unset → the spend panel shows code defaults and says so; the other seven panels are unaffected. |
 | `MAPPER_TOKEN` | Must match the `MAPPER_TOKEN` set on **HaTi**. This is the bearer credential the Mapper presents to HaTi's `/api/pulse`. |
+| `ANTHROPIC_API_KEY` | **Optional.** Powers the assistant. You can instead paste a key into the page, but a key set here is the durable one — see "The assistant" below. |
 
 Optional: `HATI_REPO` (default `youngmbg21-cmyk/mkataba-clm`), `HATI_REF`
-(default `main`), `COMMIT_COUNT` (default `20`), `PORT` (default `3000`).
+(default `main`), `COMMIT_COUNT` (default `20`), `PORT` (default `3000`),
+`ANTHROPIC_MODEL` (default `claude-sonnet-5`), `CHAT_DAILY_LIMIT`
+(default `200`), `MAPPER_DATA` (default `./.mapper-state`).
+
+---
+
+## The assistant
+
+A chat panel that answers questions about the platform — "what should I be
+worried about", "what changed yesterday", "what is this costing me" — in plain
+English rather than developer language. It is built the same way as HaTi's own
+Copilot: the model is given tools, fetches real data before answering, and
+finishes by delivering a grounded answer with links to the tab that shows it.
+
+**What it can and cannot see.** It reads the scan payload, the 72-hour change
+log and the live caps — exactly what the dashboard already displays. It has no
+tool that can reach HaTi's database, so no contract, counterparty, name, email
+or monetary value can reach it even if asked directly.
+
+**Giving it a brain.** It needs an Anthropic key, the same kind HaTi uses.
+Two ways:
+
+1. **Paste it into the page** — open the assistant and follow the prompt. It is
+   stored on the server, never sent back to the browser, and only a last-four
+   hint is ever shown. **Caveat:** without a persistent disk this is lost
+   whenever the service redeploys, which happens every time the repository
+   changes.
+2. **Set `ANTHROPIC_API_KEY` in Render** — permanent, and it cannot be replaced
+   from the browser. When this is set the page shows the key as locked and the
+   paste box is refused with a 409. **This is the recommended option**, because
+   this service has no login.
+
+**Cost control.** Because the page has no login, an open URL plus a working key
+means anyone who finds the address could spend your Anthropic credit. Three
+things bound that: the assistant is rate limited (40 questions per 15 minutes
+per address), it has a daily ceiling (`CHAT_DAILY_LIMIT`, default 200
+questions, resetting at midnight UTC), and answering never triggers a
+repository download. Keep the URL private regardless.
+
+---
+
+## The 72-hour change log
+
+Every scan is compared with the one before it. Anything that moved becomes a
+plain-English entry — a new screen, an AI feature that changed model, an
+address that started working without a login, a file that crossed 60 KB, a gap
+that was closed. Entries are kept for 72 hours and then dropped.
+
+A scan that finds nothing changed adds nothing, so the log stays a list of real
+events rather than a list of look-ups. It holds names, paths, counts and byte
+sizes only — the same class of information the dashboard already shows.
+
+It is written to `MAPPER_DATA` (default `./.mapper-state`), so it survives restarts.
+**It does not survive a redeploy unless a persistent disk is attached** — the
+panel says so on screen when that is the case. To make it durable, add a disk
+to the service in Render (Settings → Disks, mount at `/var/data`) and set
+`MAPPER_DATA=/var/data`.
 
 ---
 

@@ -36,3 +36,8 @@ services:
       # HaTi's /api/pulse off entirely.
       - key: MAPPER_TOKEN
         sync: false
+      # OPTIONAL — powers the chat assistant. Leave blank to paste a key into
+      # the page instead; set it here to make the key permanent and stop it
+      # being replaceable from the browser (this service has no login).
+      - key: ANTHROPIC_API_KEY
+        sync: false

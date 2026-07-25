@@ -101,7 +101,7 @@
 
   function setLoading() {
     $('glance').innerHTML = '';
-    ['screensBody', 'costBody', 'dataBody', 'blastBody', 'gapsBody', 'publicBody', 'changesBody', 'weightBody', 'orphanBody']
+    ['screensBody', 'costBody', 'dataBody', 'blastBody', 'gapsBody', 'publicBody', 'changesBody', 'weightBody', 'orphanBody', 'watchBody']
       .forEach(function (id) { $(id).innerHTML = skeleton(5); });
     $('capsBody').innerHTML = skeleton(4);
     $('screensBody').innerHTML = skeleton(6) +
@@ -423,7 +423,59 @@
     $('publicBody').innerHTML = html;
   }
 
-  /* ---- 7. what changed ---- */
+  /* ---- 7a. what the Mapper has watched change (72 hours) ---- */
+  var KIND_LABEL = {
+    screens: 'screens', ai: 'AI cost', data: 'storage',
+    public: 'open door', gaps: 'gaps', weight: 'file size', map: 'the map',
+  };
+
+  function renderWatch(watch) {
+    var lede = $('watchLede');
+    var body = $('watchBody');
+    if (!watch) { body.innerHTML = skeleton(4); return; }
+
+    if (!watch.watching) {
+      lede.textContent = 'Every scan is compared with the one before, and anything that moved is kept here for 72 hours.';
+      body.innerHTML = '<div class="notice" style="background:var(--a100);border-color:var(--a300);color:var(--a800)"><div>' +
+        '<b>Just started watching.</b> This is the first scan, so there is nothing to compare it against yet. ' +
+        'Come back after the next one and anything that has moved will be listed here.</div></div>';
+      return;
+    }
+
+    var total = watch.rounds.reduce(function (n, r) { return n + r.events.length; }, 0);
+    lede.textContent = total === 0
+      ? 'Nothing has changed in HaTi in the last 72 hours. Watching since ' + fmtDate(watch.since, true) + '.'
+      : total + (total === 1 ? ' change' : ' changes') + ' in the last 72 hours, newest first. Watching since ' + fmtDate(watch.since, true) + '.';
+
+    var html = '';
+    if (total === 0) {
+      html += '<div class="notice" style="background:var(--a100);border-color:var(--a300);color:var(--a800)"><div>' +
+        '<b>Nothing has moved.</b> The Mapper has looked ' + watch.snapshots + ' time' + (watch.snapshots === 1 ? '' : 's') +
+        ' and found HaTi unchanged each time. That is a good sign, not a broken page.</div></div>';
+    } else {
+      html += watch.rounds.map(function (r) {
+        return '<div class="round"><div class="when">' + esc(fmtDate(r.at, true)) +
+          (r.commit ? ' · code version ' + esc(r.commit) : '') + '</div>' +
+          r.events.map(function (e) {
+            return '<div class="ev w' + (e.weight || 1) + '"><span class="k">' + esc(KIND_LABEL[e.kind] || e.kind) + '</span>' +
+              '<span class="x">' + esc(e.text) + '</span></div>';
+          }).join('') + '</div>';
+      }).join('');
+    }
+
+    html += '<div class="blast-note" style="color:var(--n500)">Kept for 72 hours, then dropped. A scan that finds nothing changed adds nothing here, so this stays a list of real events rather than a list of look-ups.' +
+      (watch.durable ? '' : ' <b>This log is being held in memory only</b> — it will be lost if the service restarts.') + '</div>';
+
+    body.innerHTML = html;
+  }
+
+  function loadWatch() {
+    return apiGet('/api/changes?hours=72').then(renderWatch, function () {
+      $('watchBody').innerHTML = '<div class="notice"><div>The change log could not be read just now.</div></div>';
+    });
+  }
+
+  /* ---- 7b. what changed in the code ---- */
   function renderChanges() {
     if (!scan.changes.length) {
       $('changesBody').innerHTML = '<div class="notice"><div><b>No commit history.</b> The scan could not read the repository’s commits, so this panel has nothing to show. Everything else on this page comes from the source itself and is unaffected.</div></div>';
@@ -529,6 +581,8 @@
       .then(function (r) {
         scan = r[0];
         renderAll();
+        // A rescan may have noticed something new, so refresh the watch log.
+        loadWatch();
         $('rescan').disabled = false;
         $('rescan').textContent = 'Rescan';
       })
@@ -555,5 +609,228 @@
 
   $('rescan').addEventListener('click', function () { load(true); });
 
+  /* ==================================================================== */
+  /*  The assistant                                                        */
+  /*                                                                       */
+  /*  Same shape as HaTi's own Copilot, with one difference that matters:  */
+  /*  it is told to answer in plain English. It reads only what this page  */
+  /*  already shows, so it has no route to HaTi's contract data.           */
+  /* ==================================================================== */
+
+  var chat = { history: [], busy: false, brain: null };
+
+  var SUGGESTIONS = [
+    'What should I be worried about?',
+    'What changed in the last day?',
+    'What is this costing me to run?',
+    'What works without logging in?',
+    'What would be risky to change?',
+  ];
+
+  /* A small, safe markdown renderer — bold, code, lists, paragraphs. Enough
+     for the assistant's answers, and it escapes everything first so nothing
+     the model writes can inject markup. */
+  function md(src) {
+    var text = esc(String(src || '').trim());
+    text = text.replace(/`([^`]+)`/g, '<code>$1</code>');
+    text = text.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    var lines = text.split('\n'), out = [], list = null;
+    function closeList() { if (list) { out.push('</' + list + '>'); list = null; } }
+    lines.forEach(function (line) {
+      var t = line.trim();
+      var ul = t.match(/^[-*]\s+(.*)$/);
+      var ol = t.match(/^\d+[.)]\s+(.*)$/);
+      if (ul) {
+        if (list !== 'ul') { closeList(); out.push('<ul>'); list = 'ul'; }
+        out.push('<li>' + ul[1] + '</li>');
+      } else if (ol) {
+        if (list !== 'ol') { closeList(); out.push('<ol>'); list = 'ol'; }
+        out.push('<li>' + ol[1] + '</li>');
+      } else if (!t) {
+        closeList();
+      } else {
+        closeList();
+        out.push('<p>' + t + '</p>');
+      }
+    });
+    closeList();
+    return out.join('');
+  }
+
+  function askOpen(open) {
+    $('ask').hidden = !open;
+    $('askLaunch').hidden = open;
+    if (open) {
+      refreshBrain();
+      if (!chat.history.length) renderFeed();
+      setTimeout(function () { var i = $('askInput'); if (i && !$('askKey').hidden === false) i.focus(); }, 60);
+    }
+  }
+
+  function refreshBrain() {
+    return apiGet('/api/ai/config').then(function (cfg) {
+      chat.brain = cfg;
+      var el = $('askBrain');
+      el.className = 'brain' + (cfg.configured ? ' live' : '');
+      el.querySelector('span').textContent = cfg.configured
+        ? 'Claude is answering · ' + cfg.model
+        : 'No AI key yet — add one to switch it on';
+      el.title = cfg.configured
+        ? 'Answers come from Claude, called by this service. The key stays on the server.'
+        : 'Add an Anthropic key to switch the assistant on.';
+
+      var needsKey = !cfg.configured;
+      $('askKey').hidden = !needsKey;
+      $('askFeed').hidden = needsKey;
+      $('askSugg').hidden = needsKey;
+      $('askFoot').hidden = needsKey;
+
+      if (cfg.lockedToEnvironment) {
+        $('askKeyState').textContent = 'Set by the service environment.';
+      } else if (cfg.configured) {
+        $('askKeyState').textContent = 'Saved: ' + cfg.hint;
+      }
+      if (cfg.budget && cfg.budget.limit) {
+        $('askNote').innerHTML = 'It can see how HaTi is built — never what is inside it. No contracts, clients or figures reach it.<br>' +
+          'Questions today: ' + cfg.budget.used + ' of ' + cfg.budget.limit + '.' +
+          (cfg.storageIsDurable ? '' : ' The key is held in memory only and will be lost if this service restarts — set ANTHROPIC_API_KEY in the dashboard to make it permanent.');
+      }
+      return cfg;
+    }, function () { /* the config route is optional to the rest of the page */ });
+  }
+
+  function renderFeed(typing) {
+    var feed = $('askFeed');
+    var html = '';
+
+    if (!chat.history.length) {
+      html += '<div class="msg bot"><div class="body">' +
+        md('Hello. I can explain anything on this page — what your platform contains, what it costs to run, what has changed lately, and what is worth keeping an eye on.\n\nI read the same information the tabs above show. I never see the contracts inside HaTi.') +
+        '</div></div>';
+    }
+
+    chat.history.forEach(function (m) {
+      if (m.role === 'user') {
+        html += '<div class="msg me">' + esc(m.content) + '</div>';
+        return;
+      }
+      html += '<div class="msg bot' + (m.error ? ' err' : '') + '"><div class="body">' + md(m.content);
+      if (m.watchOut) html += '<div class="watch">' + esc(m.watchOut) + '</div>';
+      html += '</div>';
+      if (m.sources && m.sources.length) {
+        html += '<div class="srcs">' + m.sources.map(function (s) {
+          return '<button data-tab="' + esc(s.tab) + '" title="' + esc(s.note || '') + '">See “' + esc(s.label) + '”</button>';
+        }).join('') + '</div>';
+      }
+      html += '</div>';
+    });
+
+    if (typing) html += '<div class="typing"><i></i><i></i><i></i></div>';
+    feed.innerHTML = html;
+    feed.scrollTop = feed.scrollHeight;
+
+    $('askSugg').innerHTML = chat.history.length
+      ? ''
+      : SUGGESTIONS.map(function (s) { return '<button data-q="' + esc(s) + '">' + esc(s) + '</button>'; }).join('');
+  }
+
+  function sendQuestion(q) {
+    if (chat.busy || !q.trim()) return;
+    chat.busy = true;
+    chat.history.push({ role: 'user', content: q.trim() });
+    renderFeed(true);
+    $('askSend').disabled = true;
+    $('askInput').value = '';
+
+    var payload = chat.history
+      .filter(function (m) { return !m.error; })
+      .map(function (m) { return { role: m.role, content: m.content }; });
+
+    fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messages: payload }),
+    })
+      .then(function (res) {
+        return res.text().then(function (raw) {
+          var b = null;
+          try { b = JSON.parse(raw); } catch (e) {}
+          if (!b) throw new Error('The assistant is not reachable — this page may be running without its server.');
+          if (!res.ok) { var e2 = new Error(b.error || 'That did not work.'); e2.needsKey = b.needsKey; throw e2; }
+          return b;
+        });
+      })
+      .then(function (b) {
+        chat.history.push({ role: 'assistant', content: b.answer, sources: b.sources, watchOut: b.watchOut });
+        if (b.budget) refreshBrain();
+      })
+      .catch(function (e) {
+        chat.history.push({ role: 'assistant', content: e.message, error: true });
+        if (e.needsKey) refreshBrain();
+      })
+      .then(function () {
+        chat.busy = false;
+        $('askSend').disabled = false;
+        renderFeed(false);
+      });
+  }
+
+  /* --- wiring --- */
+  $('askLaunch').addEventListener('click', function () { askOpen(true); });
+  $('askClose').addEventListener('click', function () { askOpen(false); });
+
+  $('askForm').addEventListener('submit', function (e) {
+    e.preventDefault();
+    sendQuestion($('askInput').value);
+  });
+
+  $('askInput').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendQuestion(this.value); }
+  });
+  $('askInput').addEventListener('input', function () {
+    this.style.height = 'auto';
+    this.style.height = Math.min(this.scrollHeight, 110) + 'px';
+  });
+
+  $('askSugg').addEventListener('click', function (e) {
+    var b = e.target.closest('button[data-q]');
+    if (b) sendQuestion(b.getAttribute('data-q'));
+  });
+
+  /* "See <panel>" jumps to that tab, so an answer always has somewhere to
+     land rather than being the end of the conversation. */
+  $('askFeed').addEventListener('click', function (e) {
+    var b = e.target.closest('button[data-tab]');
+    if (!b) return;
+    var tab = document.querySelector('.nav button[data-p="' + b.getAttribute('data-tab') + '"]');
+    if (tab) { tab.click(); askOpen(false); }
+  });
+
+  $('askKeySave').addEventListener('click', function () {
+    var key = $('askKeyInput').value.trim();
+    var err = $('askKeyErr');
+    err.hidden = true;
+    if (!key) { err.textContent = 'Paste the key first.'; err.hidden = false; return; }
+    this.disabled = true;
+    this.textContent = 'Saving…';
+    var btn = this;
+    fetch('/api/ai/config', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key: key }),
+    })
+      .then(function (res) { return res.json().then(function (b) { if (!res.ok) throw new Error(b.error || 'That key was not accepted.'); return b; }); })
+      .then(function () {
+        $('askKeyInput').value = '';
+        return refreshBrain();
+      })
+      .catch(function (e) { err.textContent = e.message; err.hidden = false; })
+      .then(function () { btn.disabled = false; btn.textContent = 'Save key'; });
+  });
+
+  /* --------------------------------------------------------------- boot */
+
   load(false);
+  loadWatch();
+  refreshBrain().then(function () { $('askLaunch').hidden = false; }, function () { $('askLaunch').hidden = false; });
 })();

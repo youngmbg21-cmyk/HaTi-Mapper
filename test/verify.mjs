@@ -135,7 +135,11 @@ try {
   /* Only index.html and app.js may be fetched, and neither may carry a secret. */
   for (const p of ['/', '/app.js']) {
     const body = await (await fetch(BASE + p)).text();
-    const leaked = /ghp_[A-Za-z0-9]{20,}|github_pat_|sk-ant-/.test(body) || body.includes(HATI_SECRET);
+    /* Each pattern requires a plausible key BODY, not just the prefix — the
+       key-entry form legitimately shows "sk-ant-…" as placeholder text, and a
+       test that flags its own instructions is a test that gets switched off. */
+    const leaked = /ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-ant-[A-Za-z0-9_-]{20,}/.test(body)
+      || body.includes(HATI_SECRET);
     check(`${p} contains no secret`, !leaked);
   }
 

@@ -26,6 +26,35 @@ the rate limiter, because it is what stops an open URL from triggering
 unbounded repository downloads; and the two-file serving allow-list, so no
 secret reaches the browser. `MAPPER_ACCESS_TOKEN` no longer exists.
 
+**An assistant and a 72-hour change log were added in a later round**, both
+requested after the dashboard shipped.
+
+The assistant is HaTi's Copilot pattern applied to the Mapper's own data: a
+tool loop (`lib/chat.mjs`) where the model calls `get_overview`, `get_panel`,
+`get_changes`, `search_map` or `get_live_usage`, gets real values back, and
+finishes with `deliver_answer` — grounded, with links to the tab that shows it.
+Five turns maximum, so a model that never delivers is cut off rather than
+looping.
+
+Two things are deliberately different from HaTi's Copilot. Its system prompt is
+built around explaining things to someone who does not read code, because that
+is the whole point of this tool and an assistant answering in jargon would undo
+it. And its tools reach only the scan, the change log and the caps — there is
+no tool that can touch HaTi's database, so contract data cannot reach it even
+if asked directly.
+
+The key can be pasted into the page (as asked) or set as `ANTHROPIC_API_KEY`.
+The environment wins, and when it is set the paste box is refused with a 409 —
+this service has no login, so a key set in Render should not be replaceable by
+anyone who reaches the URL. A daily ceiling and a rate limit bound what an open
+page can spend.
+
+The change log (`lib/history.mjs`) fingerprints each scan and diffs it against
+the last, turning differences into sentences: a new screen, a feature that
+changed model, an address that started answering without a login, a file that
+crossed 60 KB. Kept 72 hours. A scan that finds nothing changed adds nothing,
+so the log is a list of events rather than a list of look-ups.
+
 **The front end** is `index.html` plus `app.js`. The single-file version passed
 60 KB once the rendering was in it, so the JavaScript was split out as the
 brief allows — no bundler, no framework. It renders; it does not analyse. It
