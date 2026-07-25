@@ -55,13 +55,36 @@
   /* ---------------------------------------------------------- requests */
 
   function apiGet(path) {
-    return fetch(path, { cache: 'no-store' })
-      .then(function (res) {
-        return res.json().then(function (body) {
-          if (!res.ok) { var e = new Error(body && body.detail ? body.detail : 'Request failed'); e.body = body; throw e; }
-          return body;
-        });
+    return fetch(path, { cache: 'no-store' }).then(function (res) {
+      return res.text().then(function (raw) {
+        var body = null;
+        try { body = JSON.parse(raw); } catch (e) { /* handled below */ }
+
+        /* The Mapper's own server always answers these routes with JSON, so a
+           non-JSON body means something other than the Node process replied —
+           almost always a static host or proxy sitting where the backend
+           should be. It serves index.html and app.js perfectly well, which is
+           why the page renders at all, but it has no /api/* to answer. Say
+           that, rather than surfacing "Unexpected token 'N'". */
+        if (body === null) {
+          var snippet = raw.trim().slice(0, 60).replace(/\s+/g, ' ');
+          var e2 = new Error(
+            'The page is being served, but its API is not. ' + path + ' returned ' +
+            res.status + (snippet ? ' “' + snippet + '”' : '') + ' instead of JSON. ' +
+            'That is what a static host or proxy replies when there is no Node server behind it — ' +
+            'this needs to run as a web service (npm start), not as a static site.');
+          e2.noBackend = true;
+          throw e2;
+        }
+
+        if (!res.ok) {
+          var e3 = new Error(body.detail || body.error || ('Request failed (' + res.status + ')'));
+          e3.body = body;
+          throw e3;
+        }
+        return body;
       });
+    });
   }
 
   /* -------------------------------------------------------------- panels */
@@ -512,10 +535,17 @@
       .catch(function (e) {
         $('rescan').disabled = false;
         $('rescan').textContent = 'Rescan';
-        $('stamp').textContent = 'scan failed';
+        $('stamp').textContent = e.noBackend ? 'no backend' : 'scan failed';
         $('stamp').className = 'stamp old';
-        var msg = '<div class="notice bad"><div><b>The scan failed.</b> ' + esc(e.message || 'Unknown error') +
-          '<br>Nothing on this page is current. Press Rescan to try again.</div></div>';
+        /* Rescan retries the same request, so it only helps when the backend
+           is there and the scan itself failed. Offering it for a missing
+           backend just invites the same error again. */
+        var headline = e.noBackend ? 'This page has no backend.' : 'The scan failed.';
+        var footer = e.noBackend
+          ? 'Rescan will not help until the service is running as a web service.'
+          : 'Nothing on this page is current. Press Rescan to try again.';
+        var msg = '<div class="notice bad"><div><b>' + headline + '</b> ' + esc(e.message || 'Unknown error') +
+          '<br>' + footer + '</div></div>';
         ['screensBody', 'costBody', 'dataBody', 'blastBody', 'gapsBody', 'publicBody', 'changesBody', 'weightBody', 'orphanBody']
           .forEach(function (id) { $(id).innerHTML = msg; });
         $('capsBody').innerHTML = msg;
