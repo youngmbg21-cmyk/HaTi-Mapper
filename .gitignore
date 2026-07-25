@@ -1,0 +1,9 @@
+node_modules/
+package-lock.json
+scratchpad/
+*.log
+test/verified.png
+
+# Secrets — never commit real tokens. Nothing in this repo may contain one.
+.env
+.env.*

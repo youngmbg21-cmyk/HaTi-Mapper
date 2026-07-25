@@ -1,0 +1,21 @@
+{
+  "name": "hati-mapper",
+  "version": "1.0.0",
+  "description": "HaTi-Mapper — an internal diagnostic dashboard for the HaTi contract lifecycle platform",
+  "private": true,
+  "type": "module",
+  "main": "server.mjs",
+  "scripts": {
+    "start": "node server.mjs",
+    "verify": "node test/verify.mjs"
+  },
+  "engines": {
+    "node": ">=22.5"
+  },
+  "dependencies": {
+    "express": "^4.19.0"
+  },
+  "devDependencies": {
+    "playwright": "^1.47.0"
+  }
+}

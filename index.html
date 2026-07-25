@@ -3,7 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
 <title>HaTi — Platform map (internal)</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%232c455d'/%3E%3Cpath d='M4 4v8M12 4v8M4 8h8' stroke='%23fff' stroke-width='1.6' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -40,7 +42,9 @@ body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font);fon
 .btn:hover{border-color:var(--n300);}
 .btn-primary{background:var(--a800);border-color:var(--a800);color:#fff;}
 .btn-primary:hover{background:var(--a700);border-color:var(--a700);}
+.btn[disabled]{opacity:.55;cursor:default;}
 .stamp{font-family:var(--mono);font-size:10.5px;color:var(--n500);}
+.stamp.old{color:var(--amber);font-weight:500;}
 
 /* ---------- segmented nav ---------- */
 .nav{position:sticky;top:0;z-index:20;display:flex;gap:2px;overflow-x:auto;background:var(--bg);padding:8px 0 10px;margin-bottom:2px;scrollbar-width:none;}
@@ -75,7 +79,7 @@ tbody tr:hover{background:#fcfcfb;}
 .num{font-family:var(--mono);text-align:right;white-space:nowrap;}
 
 /* ---------- stream chips ---------- */
-.streams{display:flex;flex-wrap:wrap;gap:6px 12px;margin-top:10px;}
+.streams{display:flex;flex-wrap:wrap;gap:6px 12px;margin-top:10px;align-items:center;}
 .stream{display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--n700);}
 .stream i{width:4px;height:12px;border-radius:2px;display:block;}
 
@@ -106,6 +110,7 @@ tbody tr:hover{background:#fcfcfb;}
 .gap:last-child{border-bottom:0;}
 .dot{flex:none;width:7px;height:7px;border-radius:50%;margin-top:6px;}
 .dot.hi{background:var(--danger);} .dot.md{background:var(--amber);} .dot.lo{background:var(--n400);}
+.dot.unset{background:transparent;border:1.5px solid var(--n300);}
 .gap .t{font-size:12.5px;font-weight:600;}
 .gap .d{font-size:11.5px;color:var(--n600);margin-top:2px;line-height:1.5;}
 .gap .src{font-family:var(--mono);font-size:9.5px;color:var(--n500);margin-top:3px;}
@@ -114,10 +119,13 @@ tbody tr:hover{background:#fcfcfb;}
 .bars{display:flex;flex-direction:column;gap:8px;}
 .bar{display:grid;grid-template-columns:150px 1fr 52px;gap:11px;align-items:center;}
 .bar .f{font-family:var(--mono);font-size:10.5px;color:var(--n700);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.bar .track{height:7px;background:var(--n100);border-radius:999px;overflow:hidden;}
+.bar .track{height:7px;background:var(--n100);border-radius:999px;overflow:hidden;position:relative;}
 .bar .fill{height:100%;border-radius:999px;background:var(--accent);}
 .bar.big .fill{background:var(--amber);}
 .bar .s{font-family:var(--mono);font-size:10.5px;color:var(--n600);text-align:right;}
+.bars .mark{position:relative;height:14px;margin-top:2px;}
+.bars .mark i{position:absolute;top:0;bottom:0;width:1px;background:var(--n300);}
+.bars .mark span{position:absolute;top:0;font-family:var(--mono);font-size:9px;color:var(--n500);transform:translateX(4px);white-space:nowrap;}
 
 /* ---------- public surface ---------- */
 .pub{display:flex;gap:11px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--divider);}
@@ -132,19 +140,72 @@ tbody tr:hover{background:#fcfcfb;}
 .chg .t{font-size:12.5px;font-weight:600;}
 .chg .d{font-size:11.5px;color:var(--n600);margin-top:2px;line-height:1.5;}
 
+/* ---------- states added when the mockup became an app ---------- */
 .panel[hidden]{display:none;}
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:3px;}
 @media(prefers-reduced-motion:reduce){*{transition:none!important;}}
+
+/* loading */
+.skel{display:flex;flex-direction:column;gap:9px;padding:4px 0 2px;}
+.skel i{display:block;height:10px;border-radius:3px;background:linear-gradient(90deg,var(--n100) 25%,#ececf0 37%,var(--n100) 63%);background-size:400% 100%;animation:sh 1.4s ease infinite;}
+.skel i:nth-child(2){width:88%} .skel i:nth-child(3){width:72%} .skel i:nth-child(4){width:80%} .skel i:nth-child(5){width:60%}
+@keyframes sh{0%{background-position:100% 50%}100%{background-position:0 50%}}
+@media(prefers-reduced-motion:reduce){.skel i{animation:none;}}
+.loading-note{font-size:11.5px;color:var(--n600);margin-top:10px;line-height:1.5;}
+.loading-note b{color:var(--text);font-weight:600;}
+
+/* muted / missing values */
+.none{font-style:italic;color:var(--n500);}
+.flag{display:inline-block;font-family:var(--mono);font-size:9px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;padding:2px 6px;border-radius:3px;background:#fdf6e7;color:#8a6a2e;margin-left:6px;vertical-align:1px;}
+.flag.info{background:var(--a100);color:var(--a800);}
+
+/* degraded panel notice */
+.notice{display:flex;gap:9px;align-items:flex-start;background:#fdf6e7;border:1px solid #ecd9a8;border-radius:var(--r-sm);padding:10px 12px;margin-bottom:14px;font-size:11.5px;color:#8a6a2e;line-height:1.5;}
+.notice.bad{background:#fdf1f0;border-color:#eec7c3;color:#8f322b;}
+.notice b{font-weight:600;}
+.notice code{font-family:var(--mono);font-size:10.5px;background:rgba(0,0,0,.05);padding:1px 5px;border-radius:3px;}
+
+/* stale-map warnings under "what breaks what" */
+.warns{margin-top:12px;border-top:1px solid var(--divider);padding-top:11px;}
+.warns h5{margin:0 0 5px;font-size:11.5px;font-weight:600;color:#8f322b;}
+.warns ul{margin:0;padding-left:17px;}
+.warns li{font-size:11px;color:var(--n600);line-height:1.5;}
+
+/* access gate */
+.gate{max-width:380px;margin:14vh auto;background:var(--surface);border:1px solid var(--divider);border-radius:var(--r-md);box-shadow:var(--shadow);padding:24px 24px 20px;}
+.gate h1{margin:6px 0 4px;font-size:17px;font-weight:600;letter-spacing:-0.01em;}
+.gate p{margin:0 0 16px;font-size:11.5px;color:var(--n600);line-height:1.5;}
+.gate label{display:block;font-family:var(--mono);font-size:9px;font-weight:600;letter-spacing:.13em;text-transform:uppercase;color:var(--n500);margin-bottom:5px;}
+.gate input{width:100%;font-family:var(--mono);font-size:12px;color:var(--text);background:var(--bg);border:1px solid var(--divider);border-radius:var(--r-sm);padding:9px 11px;}
+.gate input:focus{outline:2px solid var(--accent);outline-offset:1px;}
+.gate .row{display:flex;gap:8px;align-items:center;margin-top:14px;}
+.gate .err{margin:12px 0 0;font-size:11.5px;color:#8f322b;line-height:1.5;}
 </style>
 </head>
 <body>
-<div class="wrap">
+
+<!-- The access gate. The Mapper shows HaTi's file paths, its unauthenticated
+     routes and its known weaknesses, so it asks for a token before it will
+     fetch anything at all. -->
+<div id="gate" class="gate" hidden>
+  <div class="eyebrow">HaTi · internal</div>
+  <h1>Platform map</h1>
+  <p>This tool describes how HaTi is built, including its open endpoints and its known gaps. It needs an access token before it will load anything.</p>
+  <form id="gateForm">
+    <label for="gateToken">Access token</label>
+    <input id="gateToken" type="password" autocomplete="off" spellcheck="false" autofocus>
+    <div class="row"><button class="btn btn-primary" type="submit">Unlock</button></div>
+  </form>
+  <p class="err" id="gateErr" hidden></p>
+</div>
+
+<div class="wrap" id="app" hidden>
 
   <div class="devbar">
     <svg class="devbar-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 9v4M12 17h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
     <div>
-      <h4>Internal tool — not for release</h4>
-      <p>Only visible when <code>HATI_DEV=1</code>. To remove before launch: delete <code>js/views/devmap.js</code> and the one nav entry in <code>js/app.js</code>. Nothing else references it.</p>
+      <h4>Internal tool — keep this URL private</h4>
+      <p>This page lists HaTi's file paths, its endpoints that work without logging in, and its known weaknesses. It is a separate service on a private URL and requires an access token. It reads HaTi's source from GitHub, and asks the running HaTi for nothing but caps and counts through one read-only endpoint — switch that off any time by clearing <code>MAPPER_TOKEN</code> in HaTi's environment.</p>
     </div>
   </div>
 
@@ -155,19 +216,12 @@ tbody tr:hover{background:#fcfcfb;}
       <p class="sub">What's in HaTi, what it costs to run, and what depends on what.</p>
     </div>
     <div class="head-actions">
-      <span class="stamp">scanned 25 Jul 2026, 14:02</span>
-      <button class="btn btn-primary">Rescan</button>
+      <span class="stamp" id="stamp">scanning…</span>
+      <button class="btn btn-primary" id="rescan" disabled>Rescan</button>
     </div>
   </div>
 
-  <div class="glance">
-    <div class="g"><div class="n">13</div><div class="l">Screens</div></div>
-    <div class="g"><div class="n">6</div><div class="l">AI features</div></div>
-    <div class="g"><div class="n">2</div><div class="l">Models in use</div></div>
-    <div class="g"><div class="n">7</div><div class="l">Data tables</div></div>
-    <div class="g warn"><div class="n">4</div><div class="l">Open to the public</div></div>
-    <div class="g warn"><div class="n">6</div><div class="l">Known gaps</div></div>
-  </div>
+  <div class="glance" id="glance"></div>
 
   <nav class="nav" role="tablist">
     <button role="tab" aria-selected="true" data-p="screens">Screens</button>
@@ -184,35 +238,8 @@ tbody tr:hover{background:#fcfcfb;}
   <section class="panel" data-panel="screens">
     <div class="card">
       <h2>Every screen in HaTi</h2>
-      <p class="lede">Thirteen screens, six value streams. Hover a row for the file it lives in.</p>
-      <table>
-        <thead><tr><th style="width:150px">Screen</th><th>What a person does here</th><th style="width:150px">Lives in</th></tr></thead>
-        <tbody>
-          <tr><td><b>Home</b></td><td>Portfolio dashboard — KPIs, stage breakdown, what needs attention</td><td class="path">views/home.js</td></tr>
-          <tr><td><b>Register</b></td><td>Every contract in one table; search, filter, sort, export to CSV</td><td class="path">views/register.js</td></tr>
-          <tr><td><b>Queue</b></td><td>Kanban board — drag contracts between lifecycle stages</td><td class="path">views/queue.js</td></tr>
-          <tr><td><b>Intelligence</b></td><td>AI contract graph; ask a question, the map filters and re-clusters</td><td class="path">views/intelligence.js</td></tr>
-          <tr><td><b>Contract workspace</b></td><td>Read, edit, review, comment, share and sign a single contract</td><td class="path">views/contract.js</td></tr>
-          <tr><td><b>Templates</b></td><td>Built-in Kenyan templates, your own uploads, sample contracts</td><td class="path">views/library.js</td></tr>
-          <tr><td><b>Playbook</b></td><td>Clause library and per-type standards; portfolio deviations</td><td class="path">views/library.js</td></tr>
-          <tr><td><b>Migration</b></td><td>Bulk import of an existing portfolio, with the review queue</td><td class="path">views/migration.js</td></tr>
-          <tr><td><b>Advice Desk</b></td><td>Legal services pipeline — intake, scoping, delivery, rate card</td><td class="path">views/advice.js</td></tr>
-          <tr><td><b>Calendar</b></td><td>Renewals, expiries and notice deadlines by date</td><td class="path">views/calendar.js</td></tr>
-          <tr><td><b>Reports</b></td><td>Portfolio reporting across streams, stages and value</td><td class="path">views/reports.js</td></tr>
-          <tr><td><b>Share portal</b></td><td>Counterparty reviews and signs — no login required</td><td class="path">views/portal.js</td></tr>
-          <tr><td><b>Team &amp; Settings</b></td><td>Members, roles, approval gate, reminders, AI keys and caps</td><td class="path">views/settings.js</td></tr>
-        </tbody>
-      </table>
-      <div class="streams">
-        <span class="eyebrow" style="margin-right:2px">Value streams</span>
-        <span class="stream"><i style="background:var(--proc)"></i>Procurement</span>
-        <span class="stream"><i style="background:var(--mfg)"></i>Manufacturing</span>
-        <span class="stream"><i style="background:var(--dist)"></i>Distribution</span>
-        <span class="stream"><i style="background:var(--sales)"></i>Sales</span>
-        <span class="stream"><i style="background:var(--mktg)"></i>Marketing</span>
-        <span class="stream"><i style="background:var(--corp)"></i>Corporate</span>
-        <span class="stream"><i style="background:#c2410c"></i>Logistics <span style="color:var(--n500)">· custom</span></span>
-      </div>
+      <p class="lede" id="screensLede">Reading the nav and the view modules…</p>
+      <div id="screensBody"></div>
     </div>
   </section>
 
@@ -221,31 +248,12 @@ tbody tr:hover{background:#fcfcfb;}
     <div class="card">
       <h2>Where the money goes</h2>
       <p class="lede">Every feature that calls Anthropic, which model it uses, and the caps that apply.</p>
-      <table>
-        <thead><tr><th style="width:170px">Feature</th><th style="width:64px">Tier</th><th>Model</th><th class="num" style="width:96px">Cap / 15 min</th></tr></thead>
-        <tbody>
-          <tr><td><b>Search</b><div class="path">Ask the register a question</div></td><td><span class="tier fast">fast</span></td><td class="path">claude-haiku-4-5</td><td class="num">40</td></tr>
-          <tr><td><b>Contract graph</b><div class="path">Filter and re-cluster the map</div></td><td><span class="tier fast">fast</span></td><td class="path">claude-haiku-4-5</td><td class="num">40</td></tr>
-          <tr><td><b>Read a contract</b><div class="path">Pull out dates, value, parties</div></td><td><span class="tier fast">fast</span></td><td class="path">claude-haiku-4-5</td><td class="num">40</td></tr>
-          <tr><td><b>Suggest a template</b><div class="path">Match paper to a contract type</div></td><td><span class="tier fast">fast</span></td><td class="path">claude-haiku-4-5</td><td class="num">40</td></tr>
-          <tr><td><b>Playbook review</b><div class="path">Check clauses against standards</div></td><td><span class="tier deep">deep</span></td><td class="path">claude-sonnet-5</td><td class="num">15</td></tr>
-          <tr><td><b>Find obligations</b><div class="path">Payment dates, notice deadlines</div></td><td><span class="tier deep">deep</span></td><td class="path">claude-sonnet-5</td><td class="num">15</td></tr>
-        </tbody>
-      </table>
+      <div id="costBody"></div>
     </div>
     <div class="card">
       <h2>Caps in force right now</h2>
-      <p class="lede">Set in Team &amp; Settings. These are the values live on this workspace, not the defaults.</p>
-      <table>
-        <tbody>
-          <tr><td style="width:230px"><b>Whole workspace, per day</b></td><td class="path">Resets midnight UTC</td><td class="num" style="width:110px">500 requests</td></tr>
-          <tr><td><b>Per person, cheap features</b></td><td class="path">Rolling 15 minutes</td><td class="num">40</td></tr>
-          <tr><td><b>Per person, expensive features</b></td><td class="path">Rolling 15 minutes</td><td class="num">15</td></tr>
-          <tr><td><b>Document text per request</b></td><td class="path">Longer input is trimmed</td><td class="num">50,000 chars</td></tr>
-          <tr><td><b>Contracts per portfolio question</b></td><td class="path">Applies to graph and search</td><td class="num">400</td></tr>
-          <tr><td><b>Used so far today</b></td><td class="path">Counter lives in memory — a restart resets it</td><td class="num" style="color:var(--amber)">142 / 500</td></tr>
-        </tbody>
-      </table>
+      <p class="lede" id="capsLede">Set in Team &amp; Settings. Asking the running HaTi…</p>
+      <div id="capsBody"></div>
     </div>
   </section>
 
@@ -254,21 +262,7 @@ tbody tr:hover{background:#fcfcfb;}
     <div class="card">
       <h2>Where things are kept</h2>
       <p class="lede">Server mode stores everything in one SQLite file. Static mode keeps it in the browser.</p>
-      <table>
-        <thead><tr><th style="width:130px">Holds</th><th>What's inside</th><th style="width:120px">Note</th></tr></thead>
-        <tbody>
-          <tr><td><b>contracts</b></td><td>One row per contract — body text, parties, value, dates, comments, audit trail, signatures</td><td class="path">versioned rows</td></tr>
-          <tr><td><b>files</b></td><td>Uploaded documents, stored as text-encoded bytes</td><td class="path" style="color:var(--amber)">~33% larger than the file</td></tr>
-          <tr><td><b>users</b></td><td>Names, emails, roles, password hashes</td><td class="path">scrypt</td></tr>
-          <tr><td><b>sessions</b></td><td>Who's logged in, from which browser</td><td class="path">httpOnly cookie</td></tr>
-          <tr><td><b>shares</b></td><td>Counterparty links, one response each</td><td class="path">14-day expiry</td></tr>
-          <tr><td><b>advice</b></td><td>Legal service requests and their pipeline stage</td><td class="path">public intake</td></tr>
-          <tr><td><b>settings</b></td><td>Approval gate, reminders, AI keys and caps, role permissions — <b>and every custom template, in full</b></td><td class="path" style="color:var(--danger)">see below</td></tr>
-        </tbody>
-      </table>
-      <div class="blast-note">
-        <b>Worth knowing.</b> Your custom templates are stored inside the settings record rather than as their own rows. Every time anyone changes a setting, all template text is rewritten with it. Fine at two templates. Not fine at thirty with version history.
-      </div>
+      <div id="dataBody"></div>
     </div>
   </section>
 
@@ -277,34 +271,7 @@ tbody tr:hover{background:#fcfcfb;}
     <div class="card">
       <h2>What breaks what</h2>
       <p class="lede">Pick something on the left to see everything that depends on it. Red means changing it can break something that's already signed.</p>
-      <div class="blast">
-        <div class="picks" id="picks">
-          <button class="pick" aria-pressed="true" data-k="doc">Contract body text<small>redlineText · versions[]</small></button>
-          <button class="pick" aria-pressed="false" data-k="seal">The signature seal<small>SHA-256 of frozen text</small></button>
-          <button class="pick" aria-pressed="false" data-k="meta">Contract details<small>counterparty · value · expiry</small></button>
-          <button class="pick" aria-pressed="false" data-k="tpl">Template record<small>settings.customTemplates</small></button>
-          <button class="pick" aria-pressed="false" data-k="upload">Uploaded file<small>upload.dataUrl · fileHash</small></button>
-        </div>
-        <div class="deps" id="deps">
-          <div class="dep" data-d="render"><div class="t">Document viewer</div><div class="d">Draws the contract on screen</div></div>
-          <div class="dep" data-d="edit"><div class="t">Editor</div><div class="d">Changing the wording</div></div>
-          <div class="dep" data-d="version"><div class="t">Version history</div><div class="d">Every saved draft</div></div>
-          <div class="dep" data-d="compare"><div class="t">Compare</div><div class="d">Diff between two versions</div></div>
-          <div class="dep" data-d="seal"><div class="t">Signature seal</div><div class="d">Proof of what was signed</div></div>
-          <div class="dep" data-d="ai"><div class="t">AI clause review</div><div class="d">Quotes the text back to you</div></div>
-          <div class="dep" data-d="extract"><div class="t">Detail extraction</div><div class="d">Dates, value, parties</div></div>
-          <div class="dep" data-d="portal"><div class="t">Share portal</div><div class="d">What the counterparty sees</div></div>
-          <div class="dep" data-d="pdf"><div class="t">PDF export</div><div class="d">And the evidence pack</div></div>
-          <div class="dep" data-d="register"><div class="t">Register &amp; filters</div><div class="d">The main contract table</div></div>
-          <div class="dep" data-d="kpi"><div class="t">Home KPIs</div><div class="d">Counts and the attention list</div></div>
-          <div class="dep" data-d="remind"><div class="t">Renewal reminders</div><div class="d">90 / 60 / 30 day emails</div></div>
-          <div class="dep" data-d="cal"><div class="t">Calendar</div><div class="d">Expiries and deadlines</div></div>
-          <div class="dep" data-d="wizard"><div class="t">New contract wizard</div><div class="d">Starting from a template</div></div>
-          <div class="dep" data-d="blanks"><div class="t">Add blanks</div><div class="d">Fill-in fields on templates</div></div>
-          <div class="dep" data-d="dedupe"><div class="t">Duplicate check</div><div class="d">Skips files already imported</div></div>
-        </div>
-      </div>
-      <div class="blast-note" id="blastNote"></div>
+      <div id="blastBody"></div>
     </div>
   </section>
 
@@ -313,14 +280,7 @@ tbody tr:hover{background:#fcfcfb;}
     <div class="card">
       <h2>Not finished yet</h2>
       <p class="lede">Gathered from your README, SECURITY.md and the notes left in the code.</p>
-      <div class="gaps">
-        <div class="gap"><span class="dot hi"></span><div><div class="t">No real identity checks on signing</div><div class="d">IPRS lookups and CAK-accredited signatures aren't connected. The product says so on screen, which is the right thing to do — but it caps what you can charge for.</div><div class="src">README · honest limitations</div></div></div>
-        <div class="gap"><span class="dot hi"></span><div><div class="t">Scanned documents can't be read</div><div class="d">A scan or a photo produces no text, so the details have to be typed by hand.</div><div class="src">views/contract.js · extractDocText</div></div></div>
-        <div class="gap"><span class="dot hi"></span><div><div class="t">Word files fail silently</div><div class="d">The picker accepts them; nothing can read them. They land as empty records.</div><div class="src">views/contract.js · extractDocText</div></div></div>
-        <div class="gap"><span class="dot md"></span><div><div class="t">Usage counters live in memory</div><div class="d">A restart resets the daily AI allowance to zero. Running on more than one server would multiply every limit.</div><div class="src">server/server.js · rate limiters</div></div></div>
-        <div class="gap"><span class="dot md"></span><div><div class="t">One workspace only</div><div class="d">No multi-tenancy and no billing, so this can't yet be sold as a hosted service.</div><div class="src">MULTITENANCY-NOTES.md</div></div></div>
-        <div class="gap"><span class="dot lo"></span><div><div class="t">Data protection paperwork</div><div class="d">ODPC registration not done. Needed before holding other companies' contracts in Kenya.</div><div class="src">SECURITY.md</div></div></div>
-      </div>
+      <div id="gapsBody"></div>
     </div>
   </section>
 
@@ -328,11 +288,8 @@ tbody tr:hover{background:#fcfcfb;}
   <section class="panel" data-panel="public" hidden>
     <div class="card">
       <h2>Open to the public</h2>
-      <p class="lede">Four things work without logging in. Worth knowing exactly what they are.</p>
-      <div class="pub"><span class="u">#share=t:…</span><div><div class="t"><b>Counterparty review portal</b></div><div class="d">Opens one contract for one recipient. Accepts a single response, then closes. Expires after 14 days.</div></div></div>
-      <div class="pub"><span class="u">#advice=new</span><div><div class="t"><b>Advice request intake</b></div><div class="d">Anyone can submit a legal services request and see the rate card and queue load. Quotes are worked out on the server so the browser can't be trusted with pricing.</div></div></div>
-      <div class="pub"><span class="u">#advice=t:…</span><div><div class="t"><b>Request tracking link</b></div><div class="d">Shows one requester their own pipeline stage and fee estimate.</div></div></div>
-      <div class="pub"><span class="u">signing code</span><div><div class="t"><b>Email one-time code</b></div><div class="d">Verifies a counterparty's identity before they sign.</div></div></div>
+      <p class="lede" id="publicLede">Everything that works without logging in. Worth knowing exactly what they are.</p>
+      <div id="publicBody"></div>
     </div>
   </section>
 
@@ -341,10 +298,7 @@ tbody tr:hover{background:#fcfcfb;}
     <div class="card">
       <h2>What changed</h2>
       <p class="lede">Read from the git history and grouped by what it means, not by which files moved.</p>
-      <div class="chg"><span class="when">25 Jul</span><div><div class="t">Fixed garbled PDF text and blocked document previews</div><div class="d">Also made key terms fillable again. Touched the document reader, the preview panel and the workspace.</div></div></div>
-      <div class="chg"><span class="when">25 Jul</span><div><div class="t">Added blanks to custom templates</div><div class="d">Templates can now carry fill-in fields, not just text.</div></div></div>
-      <div class="chg"><span class="when">24 Jul</span><div><div class="t">Added a Logistics value stream</div><div class="d">First custom stream alongside the six built-in ones.</div></div></div>
-      <div class="chg"><span class="when">23 Jul</span><div><div class="t">Advice Desk went live</div><div class="d">Public intake page, tracking links, internal kanban and an editable rate card.</div></div></div>
+      <div id="changesBody"></div>
     </div>
   </section>
 
@@ -353,87 +307,17 @@ tbody tr:hover{background:#fcfcfb;}
     <div class="card">
       <h2>Getting bulky</h2>
       <p class="lede">Files past roughly 60&nbsp;KB get hard to work on and hard for an AI session to hold in mind.</p>
-      <div class="bars">
-        <div class="bar big"><span class="f">views/contract.js</span><span class="track"><span class="fill" style="width:100%"></span></span><span class="s">128 KB</span></div>
-        <div class="bar big"><span class="f">server/server.js</span><span class="track"><span class="fill" style="width:94%"></span></span><span class="s">120 KB</span></div>
-        <div class="bar big"><span class="f">core.js</span><span class="track"><span class="fill" style="width:59%"></span></span><span class="s">76 KB</span></div>
-        <div class="bar big"><span class="f">views/settings.js</span><span class="track"><span class="fill" style="width:53%"></span></span><span class="s">68 KB</span></div>
-        <div class="bar big"><span class="f">views/intelligence.js</span><span class="track"><span class="fill" style="width:53%"></span></span><span class="s">68 KB</span></div>
-        <div class="bar big"><span class="f">ai.js</span><span class="track"><span class="fill" style="width:53%"></span></span><span class="s">68 KB</span></div>
-        <div class="bar"><span class="f">views/register.js</span><span class="track"><span class="fill" style="width:41%"></span></span><span class="s">52 KB</span></div>
-        <div class="bar"><span class="f">views/migration.js</span><span class="track"><span class="fill" style="width:34%"></span></span><span class="s">44 KB</span></div>
-      </div>
-      <div class="blast-note"><b>Six files are past the comfortable line.</b> <span class="path">views/contract.js</span> holds the workspace, the uploads, the PDF reader and the signing flow — four jobs in one file. Splitting it would make every future session on documents faster and safer.</div>
+      <div id="weightBody"></div>
+    </div>
+    <div class="card">
+      <h2>Attached to <code style="font-family:var(--mono);font-size:12px">window</code> but never used</h2>
+      <p class="lede">HaTi shares everything through <code style="font-family:var(--mono);font-size:11px">window</code>, which makes "is this reachable from anywhere?" a cheap question to ask. These names are exported and then referenced nowhere else in the repository.</p>
+      <div id="orphanBody"></div>
     </div>
   </section>
 
 </div>
 
-<script>
-(function(){
-  // ---- panel switching ----
-  var tabs = document.querySelectorAll('.nav button');
-  var panels = document.querySelectorAll('.panel');
-  tabs.forEach(function(t){
-    t.addEventListener('click', function(){
-      tabs.forEach(function(x){ x.setAttribute('aria-selected', String(x === t)); });
-      panels.forEach(function(p){ p.hidden = p.getAttribute('data-panel') !== t.getAttribute('data-p'); });
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    });
-  });
-
-  // ---- blast radius ----
-  var MAP = {
-    doc: {
-      on:   ['render','edit','version','compare','ai','extract','portal','pdf'],
-      risk: ['seal'],
-      note: '<b>Eight parts of HaTi read the contract body, and the seal is taken over it.</b> Change how the text is stored and you change what a signed contract hashes to — so anything already signed has to keep verifying. This is why the rich-text change needs its own task before anything is built on top of it.'
-    },
-    seal: {
-      on:   ['pdf','portal','version'],
-      risk: ['seal','render'],
-      note: '<b>The seal is the promise.</b> It fixes the exact wording at the moment of signing, so the signed document must always render from the frozen copy, never from live text. Anything that changes rendering has to be checked against it.'
-    },
-    meta: {
-      on:   ['register','kpi','remind','cal','extract','pdf'],
-      risk: [],
-      note: '<b>Six places read the extracted details.</b> This is why a wrong expiry date matters more than it looks — it flows into the reminders, the calendar and the attention list, not just the one contract.'
-    },
-    tpl: {
-      on:   ['wizard','blanks','edit','render'],
-      risk: [],
-      note: '<b>Templates feed the wizard and the blanks.</b> Editing a template never changes contracts already made from it — those copied the wording at creation. Worth stating on screen, because people assume the opposite.'
-    },
-    upload: {
-      on:   ['render','ai','extract','dedupe','pdf'],
-      risk: ['seal'],
-      note: '<b>For an uploaded contract, the file itself is the evidence.</b> Its fingerprint is the seal, and the text pulled out of it feeds the AI review and the duplicate check. Bad text extraction quietly poisons all three.'
-    }
-  };
-  var picks = document.querySelectorAll('.pick');
-  var deps  = document.querySelectorAll('.dep');
-  var note  = document.getElementById('blastNote');
-
-  function apply(key){
-    var m = MAP[key];
-    deps.forEach(function(d){
-      var id = d.getAttribute('data-d');
-      var isRisk = m.risk.indexOf(id) > -1;
-      var isOn   = isRisk || m.on.indexOf(id) > -1;
-      d.classList.toggle('on', isOn);
-      d.classList.toggle('risk', isRisk);
-      d.classList.toggle('off', !isOn);
-    });
-    note.innerHTML = m.note;
-  }
-  picks.forEach(function(p){
-    p.addEventListener('click', function(){
-      picks.forEach(function(x){ x.setAttribute('aria-pressed', String(x === p)); });
-      apply(p.getAttribute('data-k'));
-    });
-  });
-  apply('doc');
-})();
-</script>
+<script src="app.js"></script>
 </body>
 </html>

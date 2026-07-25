@@ -1,0 +1,41 @@
+# Render Blueprint for HaTi-Mapper.
+# Deploy: on render.com choose "New +" → "Blueprint", connect this repo, and
+# Render reads this file to create the web service. Then set the four secrets
+# in the dashboard — they are intentionally not stored here.
+#
+# This service sits alongside HaTi's own. It needs no disk: it holds no data
+# of its own, only a ten-minute in-memory cache of the last scan, which is
+# rebuilt from GitHub whenever it is lost.
+#
+# PRIVACY: this dashboard describes how HaTi is built, including its endpoints
+# that work without logging in. Keep the URL private. MAPPER_ACCESS_TOKEN is
+# what actually enforces that — with it unset the service refuses every data
+# request rather than serving them openly.
+services:
+  - type: web
+    name: hati-mapper
+    runtime: node
+    plan: starter
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: HATI_REPO
+        value: youngmbg21-cmyk/mkataba-clm
+      - key: HATI_REF
+        value: main
+      # Fine-grained PAT, read-only Contents on the HaTi repo and nothing else.
+      - key: GITHUB_TOKEN
+        sync: false   # set this in the Render dashboard; never committed to git
+      # Base URL of the running HaTi, e.g. https://hati-clm.onrender.com
+      - key: HATI_URL
+        sync: false
+      # Must match MAPPER_TOKEN on the HaTi service. Clearing it there turns
+      # HaTi's /api/pulse off entirely.
+      - key: MAPPER_TOKEN
+        sync: false
+      # What the browser must present. Unset = every data request is refused.
+      - key: MAPPER_ACCESS_TOKEN
+        sync: false
