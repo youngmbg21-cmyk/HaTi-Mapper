@@ -38,30 +38,32 @@ credential, is `GET` only, is rate limited, and sends no CORS headers — the
 Mapper calls it server-to-server, and their absence stops any browser reaching
 it directly. The Mapper never writes to HaTi.
 
-**3. The Mapper itself is not public.** It displays HaTi's file paths, its
-unauthenticated routes and its known weaknesses. Keep the URL private, and both
-data routes require `MAPPER_ACCESS_TOKEN`: the browser asks for it once, holds
-it in `sessionStorage`, and sends it on every call. Without it there is no
-data, and the failure is worded identically whether the token was wrong or the
-backend was down.
+**3. The Mapper has no login — the URL is the only thing keeping it private.**
+It displays HaTi's file paths, its unauthenticated routes and its known
+weaknesses, and it loads straight into that data for anyone who reaches the
+address. Keep the URL unlisted, don't share the link, and if it ever needs real
+protection put it behind a network-level control (an IP allow-list, a VPN, or
+your host's own access control) rather than in the app.
 
-Every secret lives in an environment variable read by the server. **No token,
-key or repository credential appears in `index.html`, in `app.js`, or in any
-other file served to the browser** — the server serves exactly two files and
-refuses everything else.
+The rate limiter stays: it is what stops an open URL from triggering unbounded
+repository downloads.
+
+Every secret still lives in an environment variable read by the server. **No
+token, key or repository credential appears in `index.html`, in `app.js`, or in
+any other file served to the browser** — the server serves exactly two files
+and refuses everything else, and `npm run verify` asserts both.
 
 ---
 
 ## Environment variables
 
-Set all four in the Render dashboard. None belongs in git.
+Set all three in the Render dashboard. None belongs in git.
 
 | Variable | Purpose |
 |---|---|
 | `GITHUB_TOKEN` | A **fine-grained** personal access token with **read-only Contents** permission on `youngmbg21-cmyk/mkataba-clm` **and nothing else**. Without it GitHub allows 60 requests an hour, which a handful of scans exhausts; with it, 5,000. |
 | `HATI_URL` | Base URL of the running HaTi, e.g. `https://hati-clm.onrender.com`. Unset → the spend panel shows code defaults and says so; the other seven panels are unaffected. |
 | `MAPPER_TOKEN` | Must match the `MAPPER_TOKEN` set on **HaTi**. This is the bearer credential the Mapper presents to HaTi's `/api/pulse`. |
-| `MAPPER_ACCESS_TOKEN` | What the browser must present to load anything. Use a long random value. **If this is unset the Mapper refuses every data request** — an unset variable never means "open". |
 
 Optional: `HATI_REPO` (default `youngmbg21-cmyk/mkataba-clm`), `HATI_REF`
 (default `main`), `COMMIT_COUNT` (default `20`), `PORT` (default `3000`).
@@ -73,7 +75,7 @@ Optional: `HATI_REPO` (default `youngmbg21-cmyk/mkataba-clm`), `HATI_REF`
 `render.yaml` at the repository root defines one Node web service — no build
 command, `npm start`, health check on `/api/health`, mirroring HaTi's own
 blueprint. On render.com choose **New + → Blueprint**, connect this repo, then
-set the four variables above in the dashboard.
+set the three variables above in the dashboard.
 
 Then, on **HaTi's** service, set `MAPPER_TOKEN` to the same value and redeploy.
 Until you do, the spend panel degrades gracefully and everything else works.
@@ -88,7 +90,7 @@ appearing to hang.
 
 ```
 npm install
-MAPPER_ACCESS_TOKEN=anything GITHUB_TOKEN=ghp_... npm start
+GITHUB_TOKEN=ghp_... npm start
 ```
 
 Then open http://localhost:3000. `npm run verify` drives the whole thing

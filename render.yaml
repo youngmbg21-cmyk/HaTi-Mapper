@@ -8,9 +8,9 @@
 # rebuilt from GitHub whenever it is lost.
 #
 # PRIVACY: this dashboard describes how HaTi is built, including its endpoints
-# that work without logging in. Keep the URL private. MAPPER_ACCESS_TOKEN is
-# what actually enforces that — with it unset the service refuses every data
-# request rather than serving them openly.
+# that work without logging in. It has NO login of its own, so the URL is the
+# only thing keeping it private — keep it unlisted, and add a network-level
+# control (IP allow-list or your host's access control) if it needs one.
 services:
   - type: web
     name: hati-mapper
@@ -35,7 +35,4 @@ services:
       # Must match MAPPER_TOKEN on the HaTi service. Clearing it there turns
       # HaTi's /api/pulse off entirely.
       - key: MAPPER_TOKEN
-        sync: false
-      # What the browser must present. Unset = every data request is refused.
-      - key: MAPPER_ACCESS_TOKEN
         sync: false

@@ -5,14 +5,14 @@
  * derived, the page says "not detected" rather than filling the space with
  * something plausible.
  *
- * The access token is asked for once, held in sessionStorage, and sent on
- * every call as X-Mapper-Token. It is never written into the page, never put
- * in a URL, and never logged.
+ * The page loads straight into the data — there is no access prompt. The
+ * secrets the server needs (the GitHub token and HaTi's MAPPER_TOKEN) stay in
+ * the server's environment and are never sent to the browser, but the page
+ * itself is reachable by anyone who reaches the URL, so keep the URL private.
  */
 (function () {
   'use strict';
 
-  var TOKEN_KEY = 'hati-mapper.token';
   var scan = null;
   var pulse = null;
 
@@ -52,37 +52,13 @@
     return d.toLocaleString('en-GB', opts);
   }
 
-  /* ------------------------------------------------------------ the gate */
+  /* ---------------------------------------------------------- requests */
 
-  function token() { try { return sessionStorage.getItem(TOKEN_KEY) || ''; } catch (e) { return ''; } }
-  function setToken(v) { try { sessionStorage.setItem(TOKEN_KEY, v); } catch (e) {} }
-  function clearToken() { try { sessionStorage.removeItem(TOKEN_KEY); } catch (e) {} }
-
-  function showGate(message) {
-    $('app').hidden = true;
-    $('gate').hidden = false;
-    var err = $('gateErr');
-    if (message) { err.textContent = message; err.hidden = false; } else { err.hidden = true; }
-    $('gateToken').value = '';
-    $('gateToken').focus();
-  }
-
-  function showApp() {
-    $('gate').hidden = true;
-    $('app').hidden = false;
-  }
-
-  /* One request helper. A 401 always drops back to the gate with the same
-     wording, whatever the underlying cause — the message must not say whether
-     the token was wrong or the backend was down. */
   function apiGet(path) {
-    return fetch(path, { headers: { 'X-Mapper-Token': token() }, cache: 'no-store' })
+    return fetch(path, { cache: 'no-store' })
       .then(function (res) {
-        if (res.status === 401) {
-          var e = new Error('unauthorized'); e.unauthorized = true; throw e;
-        }
         return res.json().then(function (body) {
-          if (!res.ok) { var e2 = new Error(body && body.detail ? body.detail : 'Request failed'); e2.body = body; throw e2; }
+          if (!res.ok) { var e = new Error(body && body.detail ? body.detail : 'Request failed'); e.body = body; throw e; }
           return body;
         });
       });
@@ -522,25 +498,18 @@
     /* The two routes are independent on purpose: the seven code-derived panels
        must render whether or not a HaTi is running, so a pulse failure never
        blocks or rejects the scan. */
-    var pulsed = apiGet('/api/pulse').then(function (p) { pulse = p; }, function (e) {
-      if (e.unauthorized) throw e;
+    var pulsed = apiGet('/api/pulse').then(function (p) { pulse = p; }, function () {
       pulse = { available: false, reason: 'The Mapper could not reach the running HaTi.' };
     });
 
     return Promise.all([apiGet('/api/scan' + (refresh ? '?refresh=1' : '')), pulsed])
       .then(function (r) {
         scan = r[0];
-        showApp();
         renderAll();
         $('rescan').disabled = false;
         $('rescan').textContent = 'Rescan';
       })
       .catch(function (e) {
-        if (e.unauthorized) {
-          clearToken();
-          showGate('That did not work. Check the token, or the Mapper may not be able to reach what it needs.');
-          return;
-        }
         $('rescan').disabled = false;
         $('rescan').textContent = 'Rescan';
         $('stamp').textContent = 'scan failed';
@@ -556,15 +525,5 @@
 
   $('rescan').addEventListener('click', function () { load(true); });
 
-  $('gateForm').addEventListener('submit', function (e) {
-    e.preventDefault();
-    var v = $('gateToken').value.trim();
-    if (!v) return;
-    setToken(v);
-    $('gateErr').hidden = true;
-    showApp();
-    load(false);
-  });
-
-  if (token()) { showApp(); load(false); } else { showGate(); }
+  load(false);
 })();

@@ -20,7 +20,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, '..');
 
 const PORT = Number(process.env.VERIFY_PORT || 4310);
-const ACCESS = 'verify-access-token';
+
 const BASE = `http://127.0.0.1:${PORT}`;
 
 /* Pick whichever Chromium this image actually has, rather than the version
@@ -77,7 +77,7 @@ function check(name, ok, detail) {
 function startServer(env) {
   const child = spawn(process.execPath, ['server.mjs'], {
     cwd: ROOT,
-    env: { ...process.env, PORT: String(PORT), MAPPER_ACCESS_TOKEN: ACCESS, ...env },
+    env: { ...process.env, PORT: String(PORT), ...env },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   let log = '';
@@ -100,11 +100,14 @@ async function waitForServer(tries = 40) {
 
 /* ---------------------------------------------------------------- run */
 
+/* HATI_URL points at a port with nothing on it, so this run verifies the
+   "HaTi unreachable" path (check 6). MAPPER_TOKEN is a sentinel: it is a real
+   secret the server holds, and check 7 asserts it never appears in anything
+   the browser can see. */
+const HATI_SECRET = 'sentinel-mapper-token-must-not-leak-9f3a';
 const server = startServer({
-  // No HATI_URL: this run deliberately verifies the "HaTi unreachable" path,
-  // which is check 6.
-  HATI_URL: '',
-  MAPPER_TOKEN: '',
+  HATI_URL: 'http://127.0.0.1:59997',
+  MAPPER_TOKEN: HATI_SECRET,
 });
 
 let browser;
@@ -112,43 +115,32 @@ try {
   await waitForServer();
   console.log(`\nHaTi-Mapper verification — server on ${BASE}\n`);
 
-  /* ---- 5. Without the access token: no data, and both routes 401 ---- */
-  console.log('5. Access control');
-  const noTokScan = await fetch(`${BASE}/api/scan`);
-  const noTokPulse = await fetch(`${BASE}/api/pulse`);
-  check('GET /api/scan without a token returns 401', noTokScan.status === 401, `got ${noTokScan.status}`);
-  check('GET /api/pulse without a token returns 401', noTokPulse.status === 401, `got ${noTokPulse.status}`);
-  const badTok = await fetch(`${BASE}/api/scan`, { headers: { 'X-Mapper-Token': 'wrong' } });
-  check('A wrong token returns 401', badTok.status === 401, `got ${badTok.status}`);
-  const errBody = await badTok.json().catch(() => ({}));
-  check('The 401 body reveals nothing about why',
-    JSON.stringify(errBody) === JSON.stringify({ error: 'Unauthorized' }),
-    JSON.stringify(errBody));
+  /* ---- 5. What is and is not exposed ----
+     The access-token gate was removed at the owner's request: the dashboard
+     now loads straight into the data and both routes answer any caller. What
+     must still hold is that the secrets never leave the server — no source
+     file is servable, and nothing sensitive appears in either payload (check
+     7 below). The URL itself is now the only access control. */
+  console.log('5. What is exposed');
+  const openScan = await fetch(`${BASE}/api/scan`);
+  const openPulse = await fetch(`${BASE}/api/pulse`);
+  check('GET /api/scan answers without any credential', openScan.ok, `got ${openScan.status}`);
+  check('GET /api/pulse answers without any credential', openPulse.ok, `got ${openPulse.status}`);
 
-  for (const p of ['/server.mjs', '/lib/scan.mjs', '/data/copy.js', '/package.json']) {
+  /* The files holding the tokens must remain unreachable over HTTP. */
+  for (const p of ['/server.mjs', '/lib/scan.mjs', '/lib/github.mjs', '/data/copy.js', '/package.json', '/render.yaml', '/.env']) {
     const r = await fetch(BASE + p);
     check(`${p} is not servable`, r.status === 404, `got ${r.status}`);
+  }
+  /* Only index.html and app.js may be fetched, and neither may carry a secret. */
+  for (const p of ['/', '/app.js']) {
+    const body = await (await fetch(BASE + p)).text();
+    const leaked = /ghp_[A-Za-z0-9]{20,}|github_pat_|sk-ant-/.test(body) || body.includes(HATI_SECRET);
+    check(`${p} contains no secret`, !leaked);
   }
 
   browser = await chromium.launch({ executablePath: chromiumPath() });
   const ctx = await browser.newContext();
-
-  /* The gate, with no token in sessionStorage. */
-  {
-    const page = await ctx.newPage();
-    const consoleErrors = [], externalAssetErrors = [];
-    attachConsole(page, consoleErrors, externalAssetErrors);
-    await page.goto(BASE, { waitUntil: 'networkidle' });
-    const gateVisible = await page.isVisible('#gate');
-    const appHidden = !(await page.isVisible('#app'));
-    check('Without a token the app shows the prompt', gateVisible && appHidden,
-      `gate=${gateVisible} appHidden=${appHidden}`);
-    const glance = await page.textContent('#glance');
-    check('Without a token no data is rendered', !glance || !glance.trim(), `glance="${(glance || '').trim()}"`);
-    check('The gate page logs no console errors', consoleErrors.length === 0, consoleErrors.join(' | '));
-    if (externalAssetErrors.length) console.log(`        (external assets unreachable on this network, not counted: ${externalAssetErrors.length})`);
-    await page.close();
-  }
 
   /* ---- the real run ---- */
   console.log('\n1, 2, 3, 4, 6. The dashboard');
@@ -156,16 +148,15 @@ try {
   const consoleErrors = [], externalAssetErrors = [];
   attachConsole(page, consoleErrors, externalAssetErrors);
 
-  await page.goto(BASE, { waitUntil: 'domcontentloaded' });
-  await page.fill('#gateToken', ACCESS);
   const t0 = Date.now();
-  await page.click('#gateForm button[type=submit]');
+  await page.goto(BASE, { waitUntil: 'domcontentloaded' });
+  check('The dashboard loads straight in, with no prompt', (await page.$('#gate')) === null);
   await page.waitForSelector('#glance .g', { timeout: 180000 });
   const coldMs = Date.now() - t0;
 
   /* Pull the payloads the page actually used, straight from the API. */
-  const scan = await (await fetch(`${BASE}/api/scan`, { headers: { 'X-Mapper-Token': ACCESS } })).json();
-  const pulse = await (await fetch(`${BASE}/api/pulse`, { headers: { 'X-Mapper-Token': ACCESS } })).json();
+  const scan = await (await fetch(`${BASE}/api/scan`)).json();
+  const pulse = await (await fetch(`${BASE}/api/pulse`)).json();
 
   if (scan.error) throw new Error(`the scan itself failed: ${scan.detail || scan.error}`);
 
@@ -177,7 +168,7 @@ try {
     `${scan.requestCount} requests for ${scan.fileCount} files`);
   check('A cold scan completes in reasonable time', coldMs < 120000, `${(coldMs / 1000).toFixed(1)}s to first render`);
   const warm0 = Date.now();
-  const warm = await (await fetch(`${BASE}/api/scan`, { headers: { 'X-Mapper-Token': ACCESS } })).json();
+  const warm = await (await fetch(`${BASE}/api/scan`)).json();
   check('The cache is used on a second call', warm.cached === true, `cached=${warm.cached}, ${Date.now() - warm0}ms`);
 
   /* ---- 1. headline counts match the payload arrays ---- */
@@ -292,7 +283,7 @@ try {
     [/\bsk-ant-[A-Za-z0-9_-]{8,}/g, 'an Anthropic API key'],
     [/\bghp_[A-Za-z0-9]{20,}|\bgithub_pat_[A-Za-z0-9_]{20,}/g, 'a GitHub token'],
     [/\bKES\s?[\d,]+(?:\.\d+)?|\bUSD\s?[\d,]+(?:\.\d+)?|[£$€]\s?[\d,]{4,}/g, 'a monetary value'],
-    [/verify-access-token|test-access-abc/g, 'the Mapper access token'],
+    [new RegExp(HATI_SECRET, 'g'), "HaTi's MAPPER_TOKEN"],
     [/"(?:counterparty|partyEmail|signerEmail|signatory|ownerName|userName)"\s*:\s*"[^"]+"/g, 'a party or user name'],
     [/\bBearer\s+\S+/g, 'a bearer credential'],
   ];

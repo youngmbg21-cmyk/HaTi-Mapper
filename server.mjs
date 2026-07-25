@@ -10,21 +10,21 @@
  * The server holds every secret, so nothing sensitive reaches the browser, and
  * it calls HaTi server-to-server, which means CORS never enters the picture.
  *
- * The Mapper is NOT public. It displays HaTi's file paths, its unauthenticated
- * routes and its known weaknesses; a public URL showing that is a gift to an
- * attacker. Both routes require MAPPER_ACCESS_TOKEN, and the failure they
- * return is deliberately identical whether the token was wrong or the backend
- * was down.
+ * There is no access prompt: the page loads straight into the data. That means
+ * anyone who reaches this URL sees HaTi's file paths, its routes that work
+ * without logging in, and its known weaknesses — so the URL is the only thing
+ * keeping this private. Keep it unlisted, and prefer a network-level control
+ * (an IP allow-list or your host's own access control) if it ever needs one.
+ *
+ * The secrets below are still server-side only and never reach the browser.
  *
  * Environment (all set in the Render dashboard, none in any served file):
- *   GITHUB_TOKEN         fine-grained PAT, read-only, scoped to the HaTi repo
- *   HATI_URL             base URL of the running HaTi instance
- *   MAPPER_TOKEN         bearer credential HaTi's /api/pulse requires
- *   MAPPER_ACCESS_TOKEN  what the browser must present to load any data
+ *   GITHUB_TOKEN   fine-grained PAT, read-only, scoped to the HaTi repo
+ *   HATI_URL       base URL of the running HaTi instance
+ *   MAPPER_TOKEN   bearer credential HaTi's /api/pulse requires
  */
 
 import express from 'express';
-import crypto from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { makeClient, fetchRepoFiles, fetchCommits } from './lib/github.mjs';
@@ -38,7 +38,6 @@ const REF = process.env.HATI_REF || 'main';
 const GITHUB_TOKEN = (process.env.GITHUB_TOKEN || '').trim();
 const HATI_URL = (process.env.HATI_URL || '').trim().replace(/\/+$/, '');
 const MAPPER_TOKEN = (process.env.MAPPER_TOKEN || '').trim();
-const ACCESS_TOKEN = (process.env.MAPPER_ACCESS_TOKEN || '').trim();
 
 const CACHE_MS = 10 * 60 * 1000;   // the code does not change minute to minute
 /* The commit list is one call; each commit's file list is another, so a cold
@@ -52,25 +51,9 @@ app.disable('x-powered-by');
 
 /* ------------------------------------------------------------------ guard */
 
-const safeEq = (a, b) => {
-  const A = Buffer.from(String(a)), B = Buffer.from(String(b));
-  return A.length === B.length && crypto.timingSafeEqual(A, B);
-};
-
-/* One access token, presented by the browser on every call. Without
-   MAPPER_ACCESS_TOKEN configured the data routes are closed to everyone — an
-   unset variable must never mean "open". */
-function requireAccess(req, res, next) {
-  const presented = (req.get('X-Mapper-Token') || '').trim();
-  if (!ACCESS_TOKEN) {
-    console.warn('[mapper] MAPPER_ACCESS_TOKEN is not set — refusing every data request.');
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
-  if (!safeEq(presented, ACCESS_TOKEN)) return res.status(401).json({ error: 'Unauthorized' });
-  next();
-}
-
-/* A small sliding-window limiter, same shape as HaTi's. */
+/* A small sliding-window limiter, same shape as HaTi's. It is now the only
+   thing standing between an open URL and an unbounded number of repository
+   downloads, so it stays. */
 const hits = new Map();
 function rateLimit(bucket, max, windowMs) {
   return (req, res, next) => {
@@ -134,7 +117,7 @@ async function runScan() {
   return payload;
 }
 
-app.get('/api/scan', rateLimit('scan', 60, 15 * 60 * 1000), requireAccess, async (req, res) => {
+app.get('/api/scan', rateLimit('scan', 60, 15 * 60 * 1000), async (req, res) => {
   const refresh = req.query.refresh === '1';
   if (!refresh && cache && Date.now() - cache.at < CACHE_MS) {
     return res.json({ ...cache.payload, cached: true, cacheAgeMs: Date.now() - cache.at });
@@ -162,7 +145,7 @@ app.get('/api/scan', rateLimit('scan', 60, 15 * 60 * 1000), requireAccess, async
 /* The only thing that touches a running HaTi. It is called server-to-server
    with MAPPER_TOKEN as a bearer credential; the token never reaches the
    browser. Everything this returns is a number or a boolean. */
-app.get('/api/pulse', rateLimit('pulse', 120, 15 * 60 * 1000), requireAccess, async (req, res) => {
+app.get('/api/pulse', rateLimit('pulse', 120, 15 * 60 * 1000), async (req, res) => {
   if (!HATI_URL || !MAPPER_TOKEN) {
     return res.json({
       available: false,
@@ -219,5 +202,5 @@ app.use((req, res) => res.status(404).send('Not found'));
 
 app.listen(PORT, () => {
   console.log(`[mapper] listening on :${PORT}`);
-  console.log(`[mapper] repo ${REPO}@${REF}; GITHUB_TOKEN ${GITHUB_TOKEN ? 'set' : 'NOT SET'}; HATI_URL ${HATI_URL || 'NOT SET'}; MAPPER_TOKEN ${MAPPER_TOKEN ? 'set' : 'NOT SET'}; MAPPER_ACCESS_TOKEN ${ACCESS_TOKEN ? 'set' : 'NOT SET — all data requests will be refused'}`);
+  console.log(`[mapper] repo ${REPO}@${REF}; GITHUB_TOKEN ${GITHUB_TOKEN ? 'set' : 'NOT SET'}; HATI_URL ${HATI_URL || 'NOT SET'}; MAPPER_TOKEN ${MAPPER_TOKEN ? 'set' : 'NOT SET'}`);
 });

@@ -14,8 +14,17 @@ Express as the only runtime dependency — the same stack conventions as HaTi.
 - **`GET /api/pulse`** calls HaTi's own read-only endpoint server-to-server and
   returns the caps in force and today's usage.
 
-Both routes require `MAPPER_ACCESS_TOKEN`. The tar reader (`lib/tar.mjs`) is
-~90 lines over Node's built-in `zlib` rather than a package.
+The tar reader (`lib/tar.mjs`) is ~90 lines over Node's built-in `zlib` rather
+than a package.
+
+**The access-token gate was removed** after the first version shipped, at the
+owner's request: the dashboard loads straight into the data with no prompt, and
+both routes answer any caller. The trade-off is stated rather than hidden — the
+URL is now the only thing keeping the page private, and the page describes
+HaTi's unauthenticated routes and its known weaknesses. Two things were kept:
+the rate limiter, because it is what stops an open URL from triggering
+unbounded repository downloads; and the two-file serving allow-list, so no
+secret reaches the browser. `MAPPER_ACCESS_TOKEN` no longer exists.
 
 **The front end** is `index.html` plus `app.js`. The single-file version passed
 60 KB once the rendering was in it, so the JavaScript was split out as the
@@ -53,7 +62,7 @@ against a real server. **97 checks, 0 failures**, covering all eight points:
 | 2. Eight panels render with real data | None empty, loading, erroring, or showing a mockup value |
 | 3. Each "what breaks what" item highlights and explains | 5 items × 3 checks |
 | 4. Console errors | Zero from the app |
-| 5. No token → prompt, no data, both routes 401 | Plus the 401 body reveals nothing |
+| 5. What is exposed | Loads with no prompt; no source file servable; neither served file carries a secret |
 | 6. HaTi unreachable → seven panels fine, spend degrades | The whole run has no HaTi |
 | 7. Nothing sensitive in either payload | 9 patterns: emails, keys, tokens, money, names |
 | 8. Cold scan cost | **22 GitHub requests, 154 files, 2.4s** |
