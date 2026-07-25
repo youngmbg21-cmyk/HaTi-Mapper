@@ -497,7 +497,16 @@
   var currentPick = null;
   function renderBlast() {
     var d = scan.dependencies;
-    var html = '<div class="blast"><div class="picks" id="picks">' +
+
+    /* Three visual states, none of them obvious without being told. */
+    var html =
+      '<div class="key">' +
+        '<span class="k"><span class="sw on"></span><b>Reads it</b> — uses this data</span>' +
+        '<span class="k"><span class="sw risk"></span><b>Can break something already signed</b></span>' +
+        '<span class="k"><span class="sw off"></span>Not affected</span>' +
+      '</div>';
+
+    html += '<div class="blast"><div class="picks" id="picks">' +
       d.items.map(function (it, i) {
         return '<button class="pick" aria-pressed="' + (i === 0) + '" data-k="' + esc(it.key) + '">' + esc(it.label) +
           '<small>' + esc((it.fields || []).join(' · ')) + '</small></button>';
