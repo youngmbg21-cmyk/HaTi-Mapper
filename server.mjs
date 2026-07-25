@@ -10,18 +10,20 @@
  * The server holds every secret, so nothing sensitive reaches the browser, and
  * it calls HaTi server-to-server, which means CORS never enters the picture.
  *
- * There is no access prompt: the page loads straight into the data. That means
- * anyone who reaches this URL sees HaTi's file paths, its routes that work
- * without logging in, and its known weaknesses — so the URL is the only thing
- * keeping this private. Keep it unlisted, and prefer a network-level control
- * (an IP allow-list or your host's own access control) if it ever needs one.
+ * The page is behind a login — email and password, with reset by email. This
+ * matters because the dashboard lists HaTi's file paths, its routes that work
+ * without logging in, and its known weaknesses. Every route that reads or
+ * changes anything requires a session; /api/auth/status and /api/health are
+ * the only ones that answer without one, and neither returns any data.
  *
- * The secrets below are still server-side only and never reach the browser.
- *
- * Environment (all set in the Render dashboard, none in any served file):
- *   GITHUB_TOKEN   fine-grained PAT, read-only, scoped to the HaTi repo
- *   HATI_URL       base URL of the running HaTi instance
- *   MAPPER_TOKEN   bearer credential HaTi's /api/pulse requires
+ * Environment:
+ *   GITHUB_TOKEN         fine-grained PAT, read-only, scoped to the HaTi repo
+ *   HATI_URL             base URL of the running HaTi instance
+ *   MAPPER_TOKEN         bearer credential HaTi's /api/pulse requires
+ *   MAPPER_OWNER_EMAIL   optional — restricts who may claim the account
+ *   RESEND_API_KEY       optional — needed to email password resets
+ *   ANTHROPIC_API_KEY    optional — the assistant's key is normally set in the
+ *                        page instead, on the Settings panel
  */
 
 import express from 'express';
@@ -33,6 +35,8 @@ import { buildScan } from './lib/scan.mjs';
 import { History } from './lib/history.mjs';
 import { CHAT_TOOLS, buildSystem, runTool, normalizeAnswer } from './lib/chat.mjs';
 import { messages as anthropicMessages, friendlyError, DEFAULT_MODEL } from './lib/anthropic.mjs';
+import { Accounts, validEmail, normaliseEmail, SESSION_DAYS } from './lib/accounts.mjs';
+import { sendResetEmail, emailConfigured } from './lib/mail.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -61,12 +65,21 @@ const COMMIT_COUNT = Number(process.env.COMMIT_COUNT || 20);
 const DATA_DIR = process.env.MAPPER_DATA || path.join(__dirname, '.mapper-state');
 const history = new History(DATA_DIR);
 
+/* -------------------------------------------------------------- accounts */
+
+const accounts = new Accounts(DATA_DIR);
+/* Restricts who may claim the account on a fresh install. With it set, only
+   that address can register; without it, the first visitor claims it — which
+   is why the setup page says to do it straight away. */
+const OWNER_EMAIL = normaliseEmail(process.env.MAPPER_OWNER_EMAIL || '');
+
 /* ---------------------------------------------------------- the AI brain */
 
-/* The key can come from the environment or be pasted into the page. The
-   environment wins: the Mapper has no login, so a key set in Render cannot be
-   changed by anyone who merely reaches the URL, and that is the safer of the
-   two. A pasted key is only used when no environment key exists. */
+/* The key is set from inside the platform, on the Settings panel, and stored
+   on this server. An ANTHROPIC_API_KEY in the environment still works as a
+   fallback for anyone who prefers it, but the key set in the page wins —
+   the same precedence HaTi uses. This is safe because the page is behind a
+   login: only the signed-in owner can read or change it. */
 const ENV_AI_KEY = (process.env.ANTHROPIC_API_KEY || '').trim();
 const AI_MODEL = (process.env.ANTHROPIC_MODEL || '').trim() || DEFAULT_MODEL;
 const KEY_FILE = path.join(DATA_DIR, 'ai-key.json');
@@ -76,8 +89,8 @@ try {
   pastedKey = (JSON.parse(fs.readFileSync(KEY_FILE, 'utf8')).key || '').trim();
 } catch (_) { /* no key stored yet — normal */ }
 
-const aiKey = () => ENV_AI_KEY || pastedKey;
-const aiKeySource = () => (ENV_AI_KEY ? 'environment' : (pastedKey ? 'pasted' : null));
+const aiKey = () => pastedKey || ENV_AI_KEY;
+const aiKeySource = () => (pastedKey ? 'platform' : (ENV_AI_KEY ? 'environment' : null));
 
 function savePastedKey(key) {
   pastedKey = (key || '').trim();
@@ -143,6 +156,156 @@ app.use((req, res, next) => {
   next();
 });
 
+/* ------------------------------------------------------------ the login */
+
+const COOKIE = 'mapper_session';
+
+/* Secure cookies whenever the connection is actually https. Render terminates
+   TLS at its edge and forwards x-forwarded-proto, so that header is what tells
+   us — checking req.secure alone would never be true behind the proxy. */
+const isHttps = req =>
+  req.secure ||
+  (req.headers['x-forwarded-proto'] || '').split(',')[0].trim() === 'https' ||
+  String(process.env.HTTPS || '').toLowerCase() === 'true';
+
+function setSessionCookie(req, res, token) {
+  const bits = [
+    `${COOKIE}=${token}`,
+    'Path=/',
+    'HttpOnly',
+    'SameSite=Lax',
+    `Max-Age=${SESSION_DAYS * 24 * 60 * 60}`,
+  ];
+  if (isHttps(req)) bits.push('Secure');
+  res.setHeader('Set-Cookie', bits.join('; '));
+}
+
+function clearSessionCookie(req, res) {
+  const bits = [`${COOKIE}=`, 'Path=/', 'HttpOnly', 'SameSite=Lax', 'Max-Age=0'];
+  if (isHttps(req)) bits.push('Secure');
+  res.setHeader('Set-Cookie', bits.join('; '));
+}
+
+function sessionToken(req) {
+  const raw = req.headers.cookie || '';
+  const hit = raw.split(/;\s*/).find(c => c.startsWith(COOKIE + '='));
+  return hit ? hit.slice(COOKIE.length + 1) : null;
+}
+
+/* Every route that reads or changes anything sits behind this. */
+function requireAuth(req, res, next) {
+  const token = sessionToken(req);
+  const session = accounts.sessionFor(token);
+  if (!session) return res.status(401).json({ error: 'Sign in to see this.', needsAuth: true });
+  req.sessionToken = token;
+  next();
+}
+
+const clientIp = req => (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.ip || null;
+
+/* ------------------------------------------------------------ /api/auth/* */
+
+/* What the page needs before it can show anything: is there an owner yet, and
+   am I signed in? Deliberately the only route that answers without a session. */
+app.get('/api/auth/status', rateLimit('authstatus', 240, 15 * 60 * 1000), (req, res) => {
+  res.json({
+    claimed: accounts.claimed,
+    signedIn: !!accounts.sessionFor(sessionToken(req)),
+    email: accounts.sessionFor(sessionToken(req)) ? accounts.ownerEmail : null,
+    expectsEmail: OWNER_EMAIL || null,
+    canEmailResets: emailConfigured(),
+    durable: accounts.durable,
+  });
+});
+
+/* Claim the account. Only possible once. */
+app.post('/api/auth/setup', rateLimit('authsetup', 10, 15 * 60 * 1000), (req, res) => {
+  const { email, password } = req.body || {};
+  const result = accounts.register(email, password, OWNER_EMAIL);
+  if (result.error) return res.status(400).json({ error: result.error });
+  const token = accounts.createSession({ ip: clientIp(req), agent: req.get('user-agent') });
+  setSessionCookie(req, res, token);
+  console.log(`[auth] the account was claimed by ${result.email}.`);
+  res.json({ ok: true, email: result.email });
+});
+
+/* Sign in. The failure is the same whether the email or the password was
+   wrong, so this cannot be used to find out which addresses exist. */
+app.post('/api/auth/login', rateLimit('authlogin', 12, 15 * 60 * 1000), (req, res) => {
+  const { email, password } = req.body || {};
+  if (!accounts.claimed) return res.status(400).json({ error: 'This Mapper has no account yet.' });
+  if (!accounts.verify(email, password)) {
+    console.warn(`[auth] failed sign-in attempt from ${clientIp(req) || 'unknown'}.`);
+    return res.status(401).json({ error: 'That email and password do not match.' });
+  }
+  const token = accounts.createSession({ ip: clientIp(req), agent: req.get('user-agent') });
+  setSessionCookie(req, res, token);
+  console.log(`[auth] signed in from ${clientIp(req) || 'unknown'}.`);
+  res.json({ ok: true, email: accounts.ownerEmail });
+});
+
+app.post('/api/auth/logout', (req, res) => {
+  const token = sessionToken(req);
+  if (token) accounts.endSession(token);
+  clearSessionCookie(req, res);
+  res.json({ ok: true });
+});
+
+/* Ask for a reset link. Always answers the same way, whether or not the
+   address is the owner's — otherwise this route would confirm the email. */
+app.post('/api/auth/forgot', rateLimit('authforgot', 6, 15 * 60 * 1000), async (req, res) => {
+  const email = normaliseEmail((req.body || {}).email);
+  if (!validEmail(email)) return res.status(400).json({ error: 'That does not look like an email address.' });
+
+  const started = accounts.startReset(email);
+  if (started) {
+    const proto = isHttps(req) ? 'https' : 'http';
+    const link = `${proto}://${req.get('host')}/#reset=${started.fragment}`;
+    await sendResetEmail(email, link, started.minutes);
+  } else {
+    console.warn(`[auth] a reset was requested for an address that is not the owner's, from ${clientIp(req) || 'unknown'}.`);
+  }
+
+  res.json({
+    ok: true,
+    emailSent: emailConfigured(),
+    note: emailConfigured()
+      ? 'If that address belongs to this Mapper, a reset link is on its way. It expires in 30 minutes.'
+      : 'No email provider is configured on this service, so the reset link has been written to the service log instead. Open the Logs tab in your hosting dashboard to find it.',
+  });
+});
+
+/* Finish a reset. Signs every device out, including whoever asked. */
+app.post('/api/auth/reset', rateLimit('authreset', 10, 15 * 60 * 1000), (req, res) => {
+  const { token, password } = req.body || {};
+  const result = accounts.completeReset(token, password);
+  if (result.error) return res.status(400).json({ error: result.error });
+  clearSessionCookie(req, res);
+  console.log('[auth] the password was reset; every session was signed out.');
+  res.json({ ok: true });
+});
+
+/* Change the password from inside, knowing the current one. */
+app.post('/api/auth/change-password', requireAuth, rateLimit('authchange', 10, 15 * 60 * 1000), (req, res) => {
+  const { current, password } = req.body || {};
+  const result = accounts.changePassword(current, password);
+  if (result.error) return res.status(400).json({ error: result.error });
+  // Keep this device signed in; drop the rest.
+  const keep = req.sessionToken;
+  accounts.endAllSessions();
+  const token = accounts.createSession({ ip: clientIp(req), agent: req.get('user-agent') });
+  setSessionCookie(req, res, token);
+  console.log('[auth] the password was changed; other sessions were signed out.');
+  res.json({ ok: true, keptThisDevice: !!keep });
+});
+
+app.post('/api/auth/sign-out-everywhere', requireAuth, (req, res) => {
+  accounts.endAllSessions();
+  clearSessionCookie(req, res);
+  console.log('[auth] every session was signed out on request.');
+  res.json({ ok: true });
+});
+
 /* --------------------------------------------------------------- /api/scan */
 
 /* Cached for ten minutes. Every scan costs a repository download, and the code
@@ -186,7 +349,7 @@ async function runScan() {
   return payload;
 }
 
-app.get('/api/scan', rateLimit('scan', 60, 15 * 60 * 1000), async (req, res) => {
+app.get('/api/scan', requireAuth, rateLimit('scan', 60, 15 * 60 * 1000), async (req, res) => {
   const refresh = req.query.refresh === '1';
   if (!refresh && cache && Date.now() - cache.at < CACHE_MS) {
     return res.json({ ...cache.payload, cached: true, cacheAgeMs: Date.now() - cache.at });
@@ -241,7 +404,7 @@ async function readPulse() {
   }
 }
 
-app.get('/api/pulse', rateLimit('pulse', 120, 15 * 60 * 1000), async (req, res) => {
+app.get('/api/pulse', requireAuth, rateLimit('pulse', 120, 15 * 60 * 1000), async (req, res) => {
   res.json(await readPulse());
 });
 
@@ -249,7 +412,7 @@ app.get('/api/pulse', rateLimit('pulse', 120, 15 * 60 * 1000), async (req, res) 
 
 /* The Mapper's own watch log: what has actually moved in the last 72 hours,
    already written in plain English by lib/history.mjs. */
-app.get('/api/changes', rateLimit('changes', 120, 15 * 60 * 1000), (req, res) => {
+app.get('/api/changes', requireAuth, rateLimit('changes', 120, 15 * 60 * 1000), (req, res) => {
   const hours = Math.min(Math.max(Number(req.query.hours) || 72, 1), 72);
   res.json({ ...history.status(), hours, rounds: history.changes(hours) });
 });
@@ -259,28 +422,25 @@ app.get('/api/changes', rateLimit('changes', 120, 15 * 60 * 1000), (req, res) =>
 /* What the page needs to know about the brain — never the key itself. The
    hint is the last four characters, which is enough to tell two keys apart
    and not enough to be one. */
-app.get('/api/ai/config', rateLimit('aiconfig', 120, 15 * 60 * 1000), (req, res) => {
+app.get('/api/ai/config', requireAuth, rateLimit('aiconfig', 120, 15 * 60 * 1000), (req, res) => {
   const k = aiKey();
   res.json({
     configured: !!k,
     source: aiKeySource(),
     hint: k ? '••••' + k.slice(-4) : '',
     model: AI_MODEL,
-    lockedToEnvironment: !!ENV_AI_KEY,
+    // A key can still be supplied by the environment as a fallback; the page
+    // says which one is in use so there is never any doubt.
+    environmentFallback: !!ENV_AI_KEY,
     budget: chatBudget(),
     storageIsDurable: history.status().durable,
   });
 });
 
-/* Paste or clear a key. Only available when the environment has not set one:
-   with no login on this service, a key set in Render should not be replaceable
-   from the browser. */
-app.put('/api/ai/config', rateLimit('aiconfigw', 20, 15 * 60 * 1000), (req, res) => {
-  if (ENV_AI_KEY) {
-    return res.status(409).json({
-      error: 'The key is set by an environment variable on this service, so it cannot be changed from this page. Change ANTHROPIC_API_KEY in the Render dashboard instead.',
-    });
-  }
+/* Set or clear the key from inside the platform. Behind the login, so only the
+   signed-in owner can do this. A key set here takes precedence over anything
+   in the environment. */
+app.put('/api/ai/config', requireAuth, rateLimit('aiconfigw', 20, 15 * 60 * 1000), (req, res) => {
   const body = req.body || {};
   if (body.clear) {
     savePastedKey('');
@@ -294,7 +454,7 @@ app.put('/api/ai/config', rateLimit('aiconfigw', 20, 15 * 60 * 1000), (req, res)
   }
   const durable = savePastedKey(key);
   console.log('[chat] a new AI key was saved from the page.');
-  res.json({ configured: true, source: 'pasted', hint: '••••' + key.slice(-4), durable });
+  res.json({ configured: true, source: 'platform', hint: '••••' + key.slice(-4), durable });
 });
 
 /* --------------------------------------------------------------- /api/chat */
@@ -303,7 +463,7 @@ app.put('/api/ai/config', rateLimit('aiconfigw', 20, 15 * 60 * 1000), (req, res)
    needs, then calls deliver_answer exactly once. It reads only the scan, the
    change log and the live caps — the same things the dashboard shows — so it
    has no route to HaTi's contract data even if asked. */
-app.post('/api/chat', rateLimit('chat', 40, 15 * 60 * 1000), async (req, res) => {
+app.post('/api/chat', requireAuth, rateLimit('chat', 40, 15 * 60 * 1000), async (req, res) => {
   const key = aiKey();
   if (!key) {
     return res.status(400).json({ error: 'No AI key is set yet, so the assistant has no brain to think with.', needsKey: true });

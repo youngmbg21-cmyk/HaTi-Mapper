@@ -1,16 +1,19 @@
 # Render Blueprint for HaTi-Mapper.
 # Deploy: on render.com choose "New +" → "Blueprint", connect this repo, and
-# Render reads this file to create the web service. Then set the four secrets
+# Render reads this file to create the web service. Then set the secrets
 # in the dashboard — they are intentionally not stored here.
 #
-# This service sits alongside HaTi's own. It needs no disk: it holds no data
-# of its own, only a ten-minute in-memory cache of the last scan, which is
-# rebuilt from GitHub whenever it is lost.
+# This service sits alongside HaTi's own. See PERSISTENCE below on disks.
 #
 # PRIVACY: this dashboard describes how HaTi is built, including its endpoints
-# that work without logging in. It has NO login of its own, so the URL is the
-# only thing keeping it private — keep it unlisted, and add a network-level
-# control (IP allow-list or your host's access control) if it needs one.
+# that work without logging in, so it sits behind its own email-and-password
+# login. Set MAPPER_OWNER_EMAIL before the first visit so only you can claim
+# the account.
+#
+# PERSISTENCE: the account, the AI key and the 72-hour change log are written
+# under MAPPER_DATA. Without a disk they are lost on every redeploy. To keep
+# them, add a disk in the dashboard (mount /var/data) and set
+# MAPPER_DATA=/var/data.
 services:
   - type: web
     name: hati-mapper
@@ -36,8 +39,15 @@ services:
       # HaTi's /api/pulse off entirely.
       - key: MAPPER_TOKEN
         sync: false
-      # OPTIONAL — powers the chat assistant. Leave blank to paste a key into
-      # the page instead; set it here to make the key permanent and stop it
-      # being replaceable from the browser (this service has no login).
+      # The only email allowed to claim the account. Set this before the
+      # first visit, so nobody else can claim the Mapper.
+      - key: MAPPER_OWNER_EMAIL
+        sync: false
+      # Needed to email password-reset links. Without it the link is written
+      # to this service's log instead, which still works but is less private.
+      - key: RESEND_API_KEY
+        sync: false
+      # OPTIONAL fallback only — the assistant's key is normally set inside
+      # the platform, on the Settings tab, where it lives behind the login.
       - key: ANTHROPIC_API_KEY
         sync: false

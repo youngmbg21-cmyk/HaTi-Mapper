@@ -22,6 +22,8 @@ const ROOT = path.join(__dirname, '..');
 const PORT = Number(process.env.VERIFY_PORT || 4310);
 
 const BASE = `http://127.0.0.1:${PORT}`;
+const DATA = path.join(ROOT, '.tmp-verify-data');
+fs.rmSync(DATA, { recursive: true, force: true });
 
 /* Pick whichever Chromium this image actually has, rather than the version
    Playwright's own download would have fetched. */
@@ -105,9 +107,13 @@ async function waitForServer(tries = 40) {
    secret the server holds, and check 7 asserts it never appears in anything
    the browser can see. */
 const HATI_SECRET = 'sentinel-mapper-token-must-not-leak-9f3a';
+const OWNER_EMAIL = 'verify@example.com';
+const OWNER_PW = 'verifypass1';
 const server = startServer({
   HATI_URL: 'http://127.0.0.1:59997',
   MAPPER_TOKEN: HATI_SECRET,
+  MAPPER_DATA: DATA,
+  MAPPER_OWNER_EMAIL: OWNER_EMAIL,
 });
 
 let browser;
@@ -115,17 +121,19 @@ try {
   await waitForServer();
   console.log(`\nHaTi-Mapper verification — server on ${BASE}\n`);
 
-  /* ---- 5. What is and is not exposed ----
-     The access-token gate was removed at the owner's request: the dashboard
-     now loads straight into the data and both routes answer any caller. What
-     must still hold is that the secrets never leave the server — no source
-     file is servable, and nothing sensitive appears in either payload (check
-     7 below). The URL itself is now the only access control. */
-  console.log('5. What is exposed');
-  const openScan = await fetch(`${BASE}/api/scan`);
-  const openPulse = await fetch(`${BASE}/api/pulse`);
-  check('GET /api/scan answers without any credential', openScan.ok, `got ${openScan.status}`);
-  check('GET /api/pulse answers without any credential', openPulse.ok, `got ${openPulse.status}`);
+  /* ---- 5. Nothing is readable without signing in ----
+     The dashboard is behind an email-and-password login. Every route that
+     returns data must refuse without a session, and the secrets must never
+     leave the server whether signed in or not. */
+  console.log('5. Locked without a login');
+  for (const p of ['/api/scan', '/api/pulse', '/api/changes', '/api/ai/config']) {
+    const r = await fetch(BASE + p);
+    check(`${p} refuses without a session`, r.status === 401, `got ${r.status}`);
+  }
+  const statusOpen = await fetch(`${BASE}/api/auth/status`);
+  const statusBody = await statusOpen.json();
+  check('Only the status route answers without a session', statusOpen.ok);
+  check('And it returns no dashboard data', !('screens' in statusBody) && !('ai' in statusBody), JSON.stringify(statusBody));
 
   /* The files holding the tokens must remain unreachable over HTTP. */
   for (const p of ['/server.mjs', '/lib/scan.mjs', '/lib/github.mjs', '/data/copy.js', '/package.json', '/render.yaml', '/.env']) {
@@ -152,15 +160,31 @@ try {
   const consoleErrors = [], externalAssetErrors = [];
   attachConsole(page, consoleErrors, externalAssetErrors);
 
-  const t0 = Date.now();
   await page.goto(BASE, { waitUntil: 'domcontentloaded' });
-  check('The dashboard loads straight in, with no prompt', (await page.$('#gate')) === null);
+  await page.waitForSelector('#auth:not([hidden])', { timeout: 20000 });
+  check('An unclaimed Mapper asks you to set up an account', /Set up your account/i.test(await page.textContent('#authTitle')));
+  check('No dashboard data is on the page before signing in', !(await page.isVisible('#app')));
+
+  /* Claim the account through the real form, exactly as the owner would. */
+  await page.fill('#authEmail', OWNER_EMAIL);
+  await page.fill('#authPassword', OWNER_PW);
+  await page.fill('#authConfirm', OWNER_PW);
+  const t0 = Date.now();
+  await page.click('#authGo');
   await page.waitForSelector('#glance .g', { timeout: 180000 });
   const coldMs = Date.now() - t0;
+  check('Signing in lands on the dashboard', await page.isVisible('#app'));
+
+  /* Reuse the browser's session for the API assertions below. */
+  const cookies = await ctx.cookies();
+  const sessionCookie = cookies.filter(c => c.name === 'mapper_session')[0];
+  check('The session is an httpOnly cookie', !!sessionCookie && sessionCookie.httpOnly === true,
+    sessionCookie ? `httpOnly=${sessionCookie.httpOnly}` : 'no cookie');
+  const authed = (p) => fetch(BASE + p, { headers: { Cookie: `mapper_session=${sessionCookie.value}` } });
 
   /* Pull the payloads the page actually used, straight from the API. */
-  const scan = await (await fetch(`${BASE}/api/scan`)).json();
-  const pulse = await (await fetch(`${BASE}/api/pulse`)).json();
+  const scan = await (await authed('/api/scan')).json();
+  const pulse = await (await authed('/api/pulse')).json();
 
   if (scan.error) throw new Error(`the scan itself failed: ${scan.detail || scan.error}`);
 
@@ -172,7 +196,7 @@ try {
     `${scan.requestCount} requests for ${scan.fileCount} files`);
   check('A cold scan completes in reasonable time', coldMs < 120000, `${(coldMs / 1000).toFixed(1)}s to first render`);
   const warm0 = Date.now();
-  const warm = await (await fetch(`${BASE}/api/scan`)).json();
+  const warm = await (await authed('/api/scan')).json();
   check('The cache is used on a second call', warm.cached === true, `cached=${warm.cached}, ${Date.now() - warm0}ms`);
 
   /* ---- 1. headline counts match the payload arrays ---- */
@@ -331,6 +355,7 @@ try {
 } finally {
   if (browser) await browser.close().catch(() => {});
   server.kill();
+  fs.rmSync(DATA, { recursive: true, force: true });
 }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

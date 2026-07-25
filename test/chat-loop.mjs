@@ -69,11 +69,21 @@ let log = '';
 server.stdout.on('data', d => { log += d; });
 server.stderr.on('data', d => { log += d; });
 
-const ask = (question) => fetch(`${BASE}/api/chat`, {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ messages: [{ role: 'user', content: question }] }),
-}).then(async r => ({ status: r.status, body: await r.json() }));
+/* Every data route is behind the login now, so the test holds a session the
+   way a browser would. */
+let cookie = '';
+async function call(method, p, body) {
+  const res = await fetch(BASE + p, {
+    method,
+    headers: { 'Content-Type': 'application/json', ...(cookie ? { Cookie: cookie } : {}) },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const setC = res.headers.get('set-cookie');
+  if (setC) cookie = setC.split(';')[0];
+  return { status: res.status, body: await res.json().catch(() => null) };
+}
+
+const ask = (question) => call('POST', '/api/chat', { messages: [{ role: 'user', content: question }] });
 
 try {
   await new Promise((resolve, reject) => stub.listen(STUB, resolve).on('error', reject));
@@ -84,9 +94,13 @@ try {
 
   console.log('\nHaTi-Mapper — assistant tool loop\n');
 
+  /* Claim the account and hold the session, the way a browser would. */
+  const setup = await call('POST', '/api/auth/setup', { email: 'loop@example.com', password: 'looptest1' });
+  check('The test can sign in', setup.status === 200, JSON.stringify(setup.body));
+
   /* The assistant answers from the cached scan, so prime it first. */
-  const scanRes = await fetch(`${BASE}/api/scan`);
-  check('A scan is available for the assistant to read', scanRes.ok, `got ${scanRes.status}`);
+  const scanRes = await call('GET', '/api/scan');
+  check('A scan is available for the assistant to read', scanRes.status === 200, `got ${scanRes.status}`);
 
   /* ---- 1. a normal two-step answer ---- */
   seen = [];
@@ -168,18 +182,20 @@ try {
   check('The stand-in never received a bearer token or key', !/sk-ant-stand-in|Bearer /.test(allTurns));
 
   /* ---- 8. the key is never handed to the browser ---- */
-  const cfg = await (await fetch(`${BASE}/api/ai/config`)).json();
+  const cfg = (await call('GET', '/api/ai/config')).body;
   check('The config route reports a key is set', cfg.configured === true);
   check('The config route never returns the key', !JSON.stringify(cfg).includes('stand-in-key'), JSON.stringify(cfg));
   check('Only a last-four hint is exposed', /^••••/.test(cfg.hint), cfg.hint);
-  check('A key set in the environment is locked against the page', cfg.lockedToEnvironment === true);
-  const put = await fetch(`${BASE}/api/ai/config`, {
-    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: 'sk-ant-attacker' }),
+  check('The environment key is reported as a fallback', cfg.environmentFallback === true, JSON.stringify(cfg));
+  const put = await call('PUT', '/api/ai/config', { key: 'sk-ant-' + 'z'.repeat(40) });
+  check('The signed-in owner can set the key from the platform', put.status === 200, `got ${put.status}`);
+  const anon = await fetch(`${BASE}/api/ai/config`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: 'sk-ant-' + 'q'.repeat(40) }),
   });
-  check('The page cannot overwrite an environment-set key', put.status === 409, `got ${put.status}`);
+  check('Nobody without a session can set the key', anon.status === 401, `got ${anon.status}`);
 
   /* ---- 9. the change log ---- */
-  const ch = await (await fetch(`${BASE}/api/changes`)).json();
+  const ch = (await call('GET', '/api/changes')).body;
   check('The change log is watching', ch.watching === true, JSON.stringify(ch).slice(0, 120));
   check('It keeps 72 hours', ch.retentionHours === 72);
   check('The first scan records a baseline, not a change', ch.rounds.length === 0 && ch.snapshots === 1, JSON.stringify(ch.rounds).slice(0, 80));

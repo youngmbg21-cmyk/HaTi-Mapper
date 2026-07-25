@@ -52,10 +52,185 @@
     return d.toLocaleString('en-GB', opts);
   }
 
+  /* ------------------------------------------------------------- the login */
+
+  /* Four states in one card: sign in, first-time set up, ask for a reset link,
+     and set a new password from a link. `authState` says which. */
+  var authState = 'login';
+  var authInfo = null;
+
+  function post(path, body) {
+    return fetch(path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify(body || {}),
+    }).then(function (res) {
+      return res.text().then(function (raw) {
+        var b = null;
+        try { b = JSON.parse(raw); } catch (e) {}
+        if (!b) throw new Error('The server is not reachable. If this page has just been redeployed, wait a moment and try again.');
+        if (!res.ok) { var e2 = new Error(b.error || 'That did not work.'); e2.body = b; throw e2; }
+        return b;
+      });
+    });
+  }
+
+  function authMsg(kind, text) {
+    var el = $('authMsg');
+    if (!text) { el.hidden = true; return; }
+    el.className = 'msg ' + kind;
+    el.innerHTML = text;
+    el.hidden = false;
+  }
+
+  function resetTokenFromUrl() {
+    var m = String(location.hash || '').match(/^#reset=(.+)$/);
+    return m ? m[1] : null;
+  }
+
+  function showAuth(state) {
+    authState = state;
+    $('app').hidden = true;
+    $('ask').hidden = true;
+    $('askLaunch').hidden = true;
+    $('auth').hidden = false;
+    authMsg(null);
+
+    var title = $('authTitle'), lede = $('authLede'), go = $('authGo'), alt = $('authAlt');
+    var showEmail = true, showPw = true, showConfirm = false, showForgot = false;
+
+    if (state === 'setup') {
+      title.textContent = 'Set up your account';
+      lede.innerHTML = authInfo && authInfo.expectsEmail
+        ? 'This Mapper is set up for <b>' + esc(authInfo.expectsEmail) + '</b>. Choose a password and you are in.'
+        : 'Nobody has claimed this Mapper yet. Set your email and password now — until you do, anyone who finds this address could claim it.';
+      go.textContent = 'Create account';
+      showConfirm = true;
+      $('hPassword').hidden = false;
+      $('lPassword').textContent = 'Choose a password';
+      $('authPassword').setAttribute('autocomplete', 'new-password');
+      alt.hidden = true;
+    } else if (state === 'login') {
+      title.textContent = 'Sign in';
+      lede.textContent = 'This page describes how HaTi is built, so it is behind a login.';
+      go.textContent = 'Sign in';
+      $('hPassword').hidden = true;
+      $('lPassword').textContent = 'Password';
+      $('authPassword').setAttribute('autocomplete', 'current-password');
+      showForgot = true;
+      alt.hidden = true;
+    } else if (state === 'forgot') {
+      title.textContent = 'Reset your password';
+      lede.textContent = 'Enter your email and we will send you a link to set a new password.';
+      go.textContent = 'Send the link';
+      showPw = false;
+      alt.hidden = false;
+      alt.textContent = 'Back to sign in';
+    } else if (state === 'reset') {
+      title.textContent = 'Choose a new password';
+      lede.textContent = 'This link works once. Setting a new password signs you out everywhere.';
+      go.textContent = 'Save new password';
+      showEmail = false;
+      showConfirm = true;
+      $('hPassword').hidden = false;
+      $('lPassword').textContent = 'New password';
+      $('authPassword').setAttribute('autocomplete', 'new-password');
+      alt.hidden = false;
+      alt.textContent = 'Back to sign in';
+    }
+
+    $('fEmail').hidden = !showEmail;
+    $('fPassword').hidden = !showPw;
+    $('fConfirm').hidden = !showConfirm;
+    $('authFoot').hidden = !showForgot;
+
+    if (authInfo && authInfo.expectsEmail && state === 'setup') $('authEmail').value = authInfo.expectsEmail;
+    $('authPassword').value = '';
+    $('authConfirm').value = '';
+    setTimeout(function () {
+      var first = showEmail && !$('authEmail').value ? $('authEmail') : (showPw ? $('authPassword') : $('authEmail'));
+      if (first) first.focus();
+    }, 60);
+  }
+
+  function showApp(info) {
+    authInfo = info || authInfo;
+    $('auth').hidden = true;
+    $('app').hidden = false;
+    $('askLaunch').hidden = false;
+  }
+
+  $('authForm').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var email = $('authEmail').value.trim();
+    var password = $('authPassword').value;
+    var confirm = $('authConfirm').value;
+    var go = $('authGo');
+    authMsg(null);
+
+    if ((authState === 'setup' || authState === 'reset') && password !== confirm) {
+      return authMsg('bad', 'The two passwords do not match.');
+    }
+
+    go.disabled = true;
+    var was = go.textContent;
+    go.textContent = 'Working…';
+    var done = function () { go.disabled = false; go.textContent = was; };
+
+    if (authState === 'forgot') {
+      post('/api/auth/forgot', { email: email })
+        .then(function (b) {
+          done();
+          authMsg(b.emailSent ? 'good' : 'info', esc(b.note));
+        })
+        .catch(function (err) { done(); authMsg('bad', esc(err.message)); });
+      return;
+    }
+
+    if (authState === 'reset') {
+      post('/api/auth/reset', { token: resetTokenFromUrl(), password: password })
+        .then(function () {
+          done();
+          location.hash = '';
+          showAuth('login');
+          authMsg('good', 'Your password is set. Sign in with it now.');
+        })
+        .catch(function (err) { done(); authMsg('bad', esc(err.message)); });
+      return;
+    }
+
+    var route = authState === 'setup' ? '/api/auth/setup' : '/api/auth/login';
+    post(route, { email: email, password: password })
+      .then(function (b) {
+        done();
+        return boot(b);
+      })
+      .catch(function (err) { done(); authMsg('bad', esc(err.message)); });
+  });
+
+  $('authForgot').addEventListener('click', function () { showAuth('forgot'); });
+  $('authAlt').addEventListener('click', function () { location.hash = ''; showAuth('login'); });
+
+  function signOut(everywhere) {
+    return post(everywhere ? '/api/auth/sign-out-everywhere' : '/api/auth/logout', {})
+      .catch(function () {})
+      .then(function () { location.reload(); });
+  }
+
   /* ---------------------------------------------------------- requests */
 
   function apiGet(path) {
-    return fetch(path, { cache: 'no-store' }).then(function (res) {
+    return fetch(path, { cache: 'no-store', credentials: 'same-origin' }).then(function (res) {
+      /* The session expired or was signed out elsewhere — back to the login
+         rather than showing a broken page. */
+      if (res.status === 401) {
+        var e0 = new Error('Your session has ended.');
+        e0.needsAuth = true;
+        showAuth('login');
+        authMsg('info', 'Your session has ended. Sign in again.');
+        throw e0;
+      }
       return res.text().then(function (raw) {
         var body = null;
         try { body = JSON.parse(raw); } catch (e) { /* handled below */ }
@@ -685,10 +860,11 @@
       $('askSugg').hidden = needsKey;
       $('askFoot').hidden = needsKey;
 
-      if (cfg.lockedToEnvironment) {
-        $('askKeyState').textContent = 'Set by the service environment.';
-      } else if (cfg.configured) {
-        $('askKeyState').textContent = 'Saved: ' + cfg.hint;
+      if (cfg.configured) {
+        $('askKeyState').textContent = 'Saved: ' + cfg.hint +
+          (cfg.source === 'environment' ? ' (from the service environment)' : '');
+      } else {
+        $('askKeyState').textContent = 'You can also set this on the Settings tab.';
       }
       if (cfg.budget && cfg.budget.limit) {
         $('askNote').innerHTML = 'It can see how HaTi is built — never what is inside it. No contracts, clients or figures reach it.<br>' +
@@ -749,6 +925,7 @@
     fetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
       body: JSON.stringify({ messages: payload }),
     })
       .then(function (res) {
@@ -817,6 +994,7 @@
     fetch('/api/ai/config', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
       body: JSON.stringify({ key: key }),
     })
       .then(function (res) { return res.json().then(function (b) { if (!res.ok) throw new Error(b.error || 'That key was not accepted.'); return b; }); })
@@ -828,9 +1006,106 @@
       .then(function () { btn.disabled = false; btn.textContent = 'Save key'; });
   });
 
+  /* ==================================================================== */
+  /*  Settings                                                             */
+  /* ==================================================================== */
+
+  function renderSettings(cfg) {
+    if (!cfg) return;
+    $('setModel').textContent = cfg.model || '—';
+    $('setBudget').textContent = cfg.budget
+      ? cfg.budget.used + ' of ' + cfg.budget.limit + ' today'
+      : '—';
+    var st = $('setKeyState');
+    if (cfg.configured) {
+      st.className = 'state good';
+      st.textContent = 'Saved · ' + cfg.hint +
+        (cfg.source === 'environment' ? ' (from this service’s environment)' : '');
+    } else {
+      st.className = 'state';
+      st.textContent = cfg.environmentFallback
+        ? 'Not set here — falling back to the service environment.'
+        : 'Not set. The assistant cannot answer until you add one.';
+    }
+    $('setEmail').textContent = (authInfo && authInfo.email) || '—';
+    $('setStorageNote').innerHTML = cfg.storageIsDurable
+      ? 'Your account, your key and the 72-hour change log are written to this service’s disk.'
+      : '<b>This service has no permanent disk.</b> Your account, your key and the change log are held in memory, so they will be lost when it restarts or redeploys. Attach a disk in your hosting dashboard and point <code style="font-family:var(--mono)">MAPPER_DATA</code> at it to make them permanent.';
+  }
+
+  function settingsState(id, kind, text) {
+    var el = $(id);
+    el.className = 'state' + (kind ? ' ' + kind : '');
+    el.textContent = text;
+  }
+
+  $('setKeySave').addEventListener('click', function () {
+    var key = $('setKey').value.trim();
+    if (!key) return settingsState('setKeyState', 'bad', 'Paste the key first.');
+    var btn = this; btn.disabled = true;
+    settingsState('setKeyState', '', 'Saving…');
+    post('/api/ai/config', { key: key })
+      .then(function () { $('setKey').value = ''; return refreshBrain(); })
+      .then(function (cfg) { renderSettings(cfg); })
+      .catch(function (e) { settingsState('setKeyState', 'bad', e.message); })
+      .then(function () { btn.disabled = false; });
+  });
+
+  $('setKeyClear').addEventListener('click', function () {
+    var btn = this; btn.disabled = true;
+    fetch('/api/ai/config', {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin', body: JSON.stringify({ clear: true }),
+    })
+      .then(function () { return refreshBrain(); })
+      .then(function (cfg) { renderSettings(cfg); })
+      .catch(function (e) { settingsState('setKeyState', 'bad', e.message); })
+      .then(function () { btn.disabled = false; });
+  });
+
+  $('setPwSave').addEventListener('click', function () {
+    var current = $('setPwCurrent').value, next = $('setPwNew').value;
+    if (!current || !next) return settingsState('setPwState', 'bad', 'Fill in both boxes.');
+    var btn = this; btn.disabled = true;
+    settingsState('setPwState', '', 'Changing…');
+    post('/api/auth/change-password', { current: current, password: next })
+      .then(function () {
+        $('setPwCurrent').value = ''; $('setPwNew').value = '';
+        settingsState('setPwState', 'good', 'Changed. Other devices were signed out.');
+      })
+      .catch(function (e) { settingsState('setPwState', 'bad', e.message); })
+      .then(function () { btn.disabled = false; });
+  });
+
+  $('setSignOut').addEventListener('click', function () { signOut(false); });
+  $('setSignOutAll').addEventListener('click', function () { signOut(true); });
+
   /* --------------------------------------------------------------- boot */
 
-  load(false);
-  loadWatch();
-  refreshBrain().then(function () { $('askLaunch').hidden = false; }, function () { $('askLaunch').hidden = false; });
+  /* Everything the dashboard does needs a session, so nothing is fetched
+     until we know there is one. */
+  function boot(after) {
+    return fetch('/api/auth/status', { cache: 'no-store', credentials: 'same-origin' })
+      .then(function (r) { return r.json(); })
+      .then(function (info) {
+        authInfo = info;
+        if (after && after.email) authInfo.email = after.email;
+
+        var resetToken = resetTokenFromUrl();
+        if (resetToken && !info.signedIn) return showAuth('reset');
+        if (!info.claimed) return showAuth('setup');
+        if (!info.signedIn && !(after && after.ok)) return showAuth('login');
+
+        showApp(authInfo);
+        load(false);
+        loadWatch();
+        refreshBrain().then(renderSettings, function () {});
+      })
+      .catch(function () {
+        showAuth('login');
+        authMsg('bad', 'The server did not answer. If this page has just been redeployed, wait a moment and reload.');
+      });
+  }
+
+  boot();
 })();

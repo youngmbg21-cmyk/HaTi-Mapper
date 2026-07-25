@@ -23,6 +23,10 @@
   --shadow:0 1px 2px rgba(43,43,45,.05), 0 10px 26px -12px rgba(43,43,45,.20);
 }
 *{box-sizing:border-box;}
+/* A `display` rule beats the hidden attribute, so anything given display:flex
+   or display:grid stays visible when hidden. Restate it once, globally, rather
+   than remembering a [hidden] override for every such rule. */
+[hidden]{display:none !important;}
 body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font);font-size:13px;line-height:1.55;-webkit-font-smoothing:antialiased;}
 .wrap{max-width:1080px;margin:0 auto;padding:22px 20px 64px;}
 
@@ -240,17 +244,86 @@ tbody tr:hover{background:#fcfcfb;}
 .keybox a{color:var(--a800);}
 .keybox ol{margin:0 0 11px;padding-left:18px;font-size:11.5px;color:var(--n600);line-height:1.6;}
 
+/* ---------- sign in / set up / reset ---------- */
+.auth{max-width:400px;margin:9vh auto;background:var(--surface);border:1px solid var(--divider);border-radius:var(--r-md);box-shadow:var(--shadow);padding:26px 26px 22px;}
+.auth h1{margin:6px 0 4px;font-size:18px;font-weight:600;letter-spacing:-0.01em;}
+.auth .lede{margin:0 0 18px;font-size:12px;color:var(--n600);line-height:1.55;}
+.auth label{display:block;font-family:var(--mono);font-size:9px;font-weight:600;letter-spacing:.13em;text-transform:uppercase;color:var(--n500);margin:0 0 5px;}
+.auth input{width:100%;font-family:var(--font);font-size:13px;color:var(--text);background:var(--bg);border:1px solid var(--divider);border-radius:var(--r-sm);padding:10px 12px;}
+.auth input:focus{outline:2px solid var(--accent);outline-offset:1px;}
+.auth .field{margin-bottom:13px;}
+.auth .hint{font-size:10.5px;color:var(--n500);margin-top:5px;line-height:1.45;}
+.auth .actions{display:flex;gap:9px;align-items:center;margin-top:18px;}
+.auth .btn{padding:9px 16px;font-size:12.5px;}
+.auth .link{background:none;border:0;color:var(--a800);font-family:var(--font);font-size:11.5px;cursor:pointer;padding:4px 2px;text-decoration:underline;}
+.auth .link:hover{color:var(--a700);}
+.auth .msg{margin:14px 0 0;font-size:11.5px;line-height:1.55;padding:10px 12px;border-radius:var(--r-sm);}
+.auth .msg.bad{background:#fdf1f0;color:#8f322b;}
+.auth .msg.good{background:#eef7f2;color:var(--emerald-d);}
+.auth .msg.info{background:var(--a100);color:var(--a800);}
+.auth .foot{margin-top:16px;padding-top:14px;border-top:1px solid var(--divider);display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;}
+.auth code{font-family:var(--mono);font-size:11px;background:var(--n100);padding:1px 5px;border-radius:3px;}
+
+/* ---------- account chip in the header ---------- */
+.who{display:flex;align-items:center;gap:7px;font-size:11px;color:var(--n600);}
+.who .dot{width:6px;height:6px;border-radius:50%;background:var(--emerald);display:block;}
+
+/* ---------- settings panel ---------- */
+.setrow{display:flex;gap:16px;align-items:flex-start;padding:14px 0;border-bottom:1px solid var(--divider);}
+.setrow:last-child{border-bottom:0;}
+.setrow .lhs{flex:none;width:190px;}
+.setrow .lhs b{display:block;font-size:12.5px;font-weight:600;}
+.setrow .lhs span{display:block;font-size:11px;color:var(--n600);margin-top:2px;line-height:1.45;}
+.setrow .rhs{flex:1;min-width:0;}
+.setrow input{width:100%;font-family:var(--mono);font-size:12px;color:var(--text);background:var(--bg);border:1px solid var(--divider);border-radius:var(--r-sm);padding:9px 11px;}
+.setrow input:focus{outline:2px solid var(--accent);outline-offset:1px;}
+.setrow .actions{display:flex;gap:8px;align-items:center;margin-top:9px;flex-wrap:wrap;}
+.setrow .state{font-size:11.5px;color:var(--n600);}
+.setrow .state.good{color:var(--emerald-d);}
+.setrow .state.bad{color:#8f322b;}
+
 </style>
 </head>
 <body>
 
-<div class="wrap" id="app">
+<!-- Sign in / set up / forgotten password / reset. One card, four states,
+     driven by app.js. Nothing is fetched until there is a session. -->
+<div class="auth" id="auth" hidden>
+  <div class="eyebrow">HaTi · internal</div>
+  <h1 id="authTitle">Platform map</h1>
+  <p class="lede" id="authLede"></p>
+  <form id="authForm">
+    <div class="field" id="fEmail">
+      <label for="authEmail">Email</label>
+      <input id="authEmail" type="email" autocomplete="username" spellcheck="false">
+    </div>
+    <div class="field" id="fPassword">
+      <label for="authPassword" id="lPassword">Password</label>
+      <input id="authPassword" type="password" autocomplete="current-password">
+      <div class="hint" id="hPassword" hidden>At least 8 characters, with a letter and a number.</div>
+    </div>
+    <div class="field" id="fConfirm" hidden>
+      <label for="authConfirm">Confirm password</label>
+      <input id="authConfirm" type="password" autocomplete="new-password">
+    </div>
+    <div class="actions">
+      <button class="btn btn-primary" type="submit" id="authGo">Sign in</button>
+      <button class="link" type="button" id="authAlt" hidden></button>
+    </div>
+  </form>
+  <div class="msg" id="authMsg" hidden></div>
+  <div class="foot" id="authFoot" hidden>
+    <button class="link" type="button" id="authForgot">I've forgotten my password</button>
+  </div>
+</div>
+
+<div class="wrap" id="app" hidden>
 
   <div class="devbar">
     <svg class="devbar-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 9v4M12 17h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
     <div>
-      <h4>Internal tool — keep this URL private</h4>
-      <p>This page lists HaTi's file paths, its endpoints that work without logging in, and its known weaknesses. It has no login, so anyone with this address can read all of it — don't share the link. It reads HaTi's source from GitHub, and asks the running HaTi for nothing but caps and counts through one read-only endpoint — switch that off any time by clearing <code>MAPPER_TOKEN</code> in HaTi's environment.</p>
+      <h4>Internal tool — for your eyes only</h4>
+      <p>This page lists HaTi's file paths, its endpoints that work without logging in, and its known weaknesses, which is why it sits behind your own sign-in. It reads HaTi's source from GitHub, and asks the running HaTi for nothing but caps and counts through one read-only endpoint — switch that off any time by clearing <code>MAPPER_TOKEN</code> in HaTi's environment.</p>
     </div>
   </div>
 
@@ -277,6 +350,7 @@ tbody tr:hover{background:#fcfcfb;}
     <button role="tab" aria-selected="false" data-p="public">Open to the public</button>
     <button role="tab" aria-selected="false" data-p="changes">What changed</button>
     <button role="tab" aria-selected="false" data-p="weight">Getting bulky</button>
+    <button role="tab" aria-selected="false" data-p="settings">Settings</button>
   </nav>
 
   <!-- SCREENS -->
@@ -363,6 +437,72 @@ tbody tr:hover{background:#fcfcfb;}
       <h2>Attached to <code style="font-family:var(--mono);font-size:12px">window</code> but never used</h2>
       <p class="lede">HaTi shares everything through <code style="font-family:var(--mono);font-size:11px">window</code>, which makes "is this reachable from anywhere?" a cheap question to ask. These names are exported and then referenced nowhere else in the repository.</p>
       <div id="orphanBody"></div>
+    </div>
+  </section>
+
+  <!-- SETTINGS -->
+  <section class="panel" data-panel="settings" hidden>
+    <div class="card">
+      <h2>The assistant's AI key</h2>
+      <p class="lede">The chat assistant answers using Claude, the same AI engine HaTi itself uses. Your key is stored on this service and never sent to your browser — only the last four characters are ever shown back.</p>
+      <div class="setrow">
+        <div class="lhs">
+          <b>Anthropic API key</b>
+          <span>From <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener" style="color:var(--a800)">console.anthropic.com</a> → Create key. It begins <code style="font-family:var(--mono);font-size:11px">sk-ant-</code>.</span>
+        </div>
+        <div class="rhs">
+          <input id="setKey" type="password" placeholder="sk-ant-…" autocomplete="off" spellcheck="false">
+          <div class="actions">
+            <button class="btn btn-primary" id="setKeySave">Save key</button>
+            <button class="btn" id="setKeyClear">Remove</button>
+            <span class="state" id="setKeyState"></span>
+          </div>
+        </div>
+      </div>
+      <div class="setrow">
+        <div class="lhs">
+          <b>Model</b>
+          <span>Which Claude model answers your questions.</span>
+        </div>
+        <div class="rhs"><span class="state" id="setModel">—</span></div>
+      </div>
+      <div class="setrow">
+        <div class="lhs">
+          <b>Questions today</b>
+          <span>A daily ceiling so a runaway loop cannot run up a bill.</span>
+        </div>
+        <div class="rhs"><span class="state" id="setBudget">—</span></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Your account</h2>
+      <p class="lede">This Mapper has one account — yours. Signing in is what keeps HaTi's file paths, open addresses and known weaknesses off the open internet.</p>
+      <div class="setrow">
+        <div class="lhs"><b>Signed in as</b><span>The only account on this Mapper.</span></div>
+        <div class="rhs"><span class="state" id="setEmail">—</span></div>
+      </div>
+      <div class="setrow">
+        <div class="lhs"><b>Change password</b><span>You need your current one. Other devices are signed out.</span></div>
+        <div class="rhs">
+          <input id="setPwCurrent" type="password" placeholder="Current password" autocomplete="current-password" style="margin-bottom:8px">
+          <input id="setPwNew" type="password" placeholder="New password" autocomplete="new-password">
+          <div class="actions">
+            <button class="btn btn-primary" id="setPwSave">Change password</button>
+            <span class="state" id="setPwState"></span>
+          </div>
+        </div>
+      </div>
+      <div class="setrow">
+        <div class="lhs"><b>Sign out</b><span>End this session, or every session everywhere.</span></div>
+        <div class="rhs">
+          <div class="actions" style="margin-top:0">
+            <button class="btn" id="setSignOut">Sign out</button>
+            <button class="btn" id="setSignOutAll">Sign out everywhere</button>
+          </div>
+        </div>
+      </div>
+      <div class="blast-note" id="setStorageNote"></div>
     </div>
   </section>
 

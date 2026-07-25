@@ -41,33 +41,40 @@ credential, is `GET` only, is rate limited, and sends no CORS headers — the
 Mapper calls it server-to-server, and their absence stops any browser reaching
 it directly. The Mapper never writes to HaTi.
 
-**3. The Mapper has no login — the URL is the only thing keeping it private.**
-It displays HaTi's file paths, its unauthenticated routes and its known
-weaknesses, and it loads straight into that data for anyone who reaches the
-address. Keep the URL unlisted, don't share the link, and if it ever needs real
-protection put it behind a network-level control (an IP allow-list, a VPN, or
-your host's own access control) rather than in the app.
+**3. The Mapper is behind your own login.** It displays HaTi's file paths, its
+unauthenticated routes and its known weaknesses, so it asks for an email and
+password. Passwords are hashed with scrypt and a per-account salt; sessions are
+server-side behind an httpOnly, SameSite=Lax cookie, Secure whenever the
+connection is https. Every route that returns or changes anything requires a
+session — `/api/auth/status` and `/api/health` are the only ones that answer
+without one, and neither returns any data.
 
-The rate limiter stays: it is what stops an open URL from triggering unbounded
-repository downloads.
+**Forgotten password** sends a single-use link that expires in 30 minutes. Only
+a hash of the token is stored, so a copy of the account file cannot be used to
+reset. Completing a reset signs every device out. The route answers identically
+whether or not the address is the owner's, so it cannot be used to discover
+which email the Mapper belongs to.
 
-Every secret still lives in an environment variable read by the server. **No
-token, key or repository credential appears in `index.html`, in `app.js`, or in
-any other file served to the browser** — the server serves exactly two files
-and refuses everything else, and `npm run verify` asserts both.
+Secrets live in environment variables or in the server's own state directory.
+**No token, key or credential appears in `index.html`, in `app.js`, or in any
+other file served to the browser** — the server serves exactly two files and
+refuses everything else, and `npm run verify` asserts it.
 
 ---
 
 ## Environment variables
 
-Set all three in the Render dashboard. None belongs in git.
+Set these in the Render dashboard. None belongs in git.
 
 | Variable | Purpose |
 |---|---|
 | `GITHUB_TOKEN` | A **fine-grained** personal access token with **read-only Contents** permission on `youngmbg21-cmyk/mkataba-clm` **and nothing else**. Without it GitHub allows 60 requests an hour, which a handful of scans exhausts; with it, 5,000. |
 | `HATI_URL` | Base URL of the running HaTi, e.g. `https://hati-clm.onrender.com`. Unset → the spend panel shows code defaults and says so; the other seven panels are unaffected. |
 | `MAPPER_TOKEN` | Must match the `MAPPER_TOKEN` set on **HaTi**. This is the bearer credential the Mapper presents to HaTi's `/api/pulse`. |
-| `ANTHROPIC_API_KEY` | **Optional.** Powers the assistant. You can instead paste a key into the page, but a key set here is the durable one — see "The assistant" below. |
+| `MAPPER_OWNER_EMAIL` | **Recommended.** The only email allowed to claim the account. Without it, whoever reaches the URL first can claim it — so set this before the first visit, or set up your account immediately. |
+| `RESEND_API_KEY` | **Needed for password resets by email.** Without it the reset link is written to the service log instead, which still works but means anyone with dashboard access could read it while it is valid. |
+| `EMAIL_FROM` | Optional. From-address on the reset email. Defaults to Resend's shared sender. |
+| `ANTHROPIC_API_KEY` | **Optional and not the normal route** — the assistant's key is set inside the platform, on the Settings tab. This exists only as a fallback; a key set in the page takes precedence. |
 
 Optional: `HATI_REPO` (default `youngmbg21-cmyk/mkataba-clm`), `HATI_REF`
 (default `main`), `COMMIT_COUNT` (default `20`), `PORT` (default `3000`),
@@ -89,25 +96,21 @@ log and the live caps — exactly what the dashboard already displays. It has no
 tool that can reach HaTi's database, so no contract, counterparty, name, email
 or monetary value can reach it even if asked directly.
 
-**Giving it a brain.** It needs an Anthropic key, the same kind HaTi uses.
-Two ways:
+**Giving it a brain.** Sign in, open the **Settings** tab, and paste an
+Anthropic key from
+[console.anthropic.com](https://console.anthropic.com/settings/keys). That is
+the normal route — the key lives in the platform, not in your hosting
+dashboard. It is stored on the server, never sent back to the browser, and only
+the last four characters are ever shown. Behind the login, only you can read or
+change it.
 
-1. **Paste it into the page** — open the assistant and follow the prompt. It is
-   stored on the server, never sent back to the browser, and only a last-four
-   hint is ever shown. **Caveat:** without a persistent disk this is lost
-   whenever the service redeploys, which happens every time the repository
-   changes.
-2. **Set `ANTHROPIC_API_KEY` in Render** — permanent, and it cannot be replaced
-   from the browser. When this is set the page shows the key as locked and the
-   paste box is refused with a 409. **This is the recommended option**, because
-   this service has no login.
+`ANTHROPIC_API_KEY` still works as an environment fallback if you prefer it,
+but a key set in the page takes precedence, the same way HaTi treats its own.
 
-**Cost control.** Because the page has no login, an open URL plus a working key
-means anyone who finds the address could spend your Anthropic credit. Three
-things bound that: the assistant is rate limited (40 questions per 15 minutes
-per address), it has a daily ceiling (`CHAT_DAILY_LIMIT`, default 200
-questions, resetting at midnight UTC), and answering never triggers a
-repository download. Keep the URL private regardless.
+**Cost control.** The assistant is rate limited (40 questions per 15 minutes)
+and has a daily ceiling (`CHAT_DAILY_LIMIT`, default 200 questions, resetting
+at midnight UTC), so a runaway loop cannot run up a bill. Answering a question
+never triggers a repository download.
 
 ---
 
@@ -122,11 +125,15 @@ A scan that finds nothing changed adds nothing, so the log stays a list of real
 events rather than a list of look-ups. It holds names, paths, counts and byte
 sizes only — the same class of information the dashboard already shows.
 
-It is written to `MAPPER_DATA` (default `./.mapper-state`), so it survives restarts.
-**It does not survive a redeploy unless a persistent disk is attached** — the
-panel says so on screen when that is the case. To make it durable, add a disk
-to the service in Render (Settings → Disks, mount at `/var/data`) and set
-`MAPPER_DATA=/var/data`.
+It is written to `MAPPER_DATA` (default `./.mapper-state`), alongside your
+account and the AI key, so all three survive restarts.
+
+**They do not survive a redeploy unless a persistent disk is attached** — and a
+redeploy happens every time this repository changes. Without a disk you would
+have to set your password again after each one. The Settings tab says so on
+screen when that is the case. To fix it permanently: in Render open the service
+→ **Settings → Disks → Add Disk**, mount it at `/var/data`, then add
+`MAPPER_DATA=/var/data` to the environment.
 
 ---
 
@@ -135,10 +142,14 @@ to the service in Render (Settings → Disks, mount at `/var/data`) and set
 `render.yaml` at the repository root defines one Node web service — no build
 command, `npm start`, health check on `/api/health`, mirroring HaTi's own
 blueprint. On render.com choose **New + → Blueprint**, connect this repo, then
-set the three variables above in the dashboard.
+set the variables above in the dashboard.
 
 Then, on **HaTi's** service, set `MAPPER_TOKEN` to the same value and redeploy.
 Until you do, the spend panel degrades gracefully and everything else works.
+
+**On first visit** the Mapper asks you to set up your account. Do this straight
+away — until you do, the account is unclaimed. Setting `MAPPER_OWNER_EMAIL`
+beforehand means only your address can claim it.
 
 **One Render caveat.** On the free tier a service spins down after inactivity
 and takes the better part of a minute to wake. The ten-minute scan cache lives
