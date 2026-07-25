@@ -155,13 +155,16 @@
     if (multiScreen.length || multiJob.length) {
       var bits = [];
       multiScreen.forEach(function (m) {
-        bits.push('<b>' + esc(m.module.replace(/^js\//, '')) + '</b> backs ' + m.screens.length + ' screens (' + esc(m.screens.join(', ')) + ').');
+        bits.push('<div style="margin-bottom:4px"><b>' + esc(m.module.replace(/^js\//, '')) + '</b> backs ' +
+          m.screens.length + ' screens — ' + esc(m.screens.join(' and ')) + '.</div>');
       });
       multiJob.forEach(function (m) {
-        bits.push('<b>' + esc(m.module.replace(/^js\//, '')) + '</b> carries ' + m.sections.length +
-          ' separately-banner-ed jobs — ' + esc(m.sections.join('; ')) + ' — across ' + kb(m.bytes) + ' and ' + m.exportCount + ' exported names.');
+        bits.push('<div style="margin-bottom:4px"><b>' + esc(m.module.replace(/^js\//, '')) + '</b> carries ' +
+          m.sections.length + ' separate jobs in one file, by its own section headings — ' +
+          esc(m.sections.map(function (s) { return s.replace(/^VIEW:\s*/, ''); }).join('; ')) +
+          ' — across ' + kb(m.bytes) + ' and ' + m.exportCount + ' exported names.</div>');
       });
-      html += '<div class="blast-note">' + bits.join(' ') + '</div>';
+      html += '<div class="blast-note">' + bits.join('') + '</div>';
     }
 
     html += '<div class="streams"><span class="eyebrow" style="margin-right:2px">Value streams</span>' +
@@ -187,7 +190,7 @@
         ? f.models.map(function (m) { return esc(m); }).join('<br>')
         : nd();
       var used = f.usedBy.length
-        ? f.usedBy.map(function (p) { return esc(screenNameFor(p)); }).join(', ')
+        ? f.usedBy.map(function (c) { return esc(callSiteName(c)); }).join(', ')
         : '<span class="none">not called from the front end</span>';
       return '<tr>' +
         '<td><b>' + esc(f.label || f.feature) + '</b>' +
@@ -207,18 +210,26 @@
     if (scan.ai.nonBillingAiRoutes && scan.ai.nonBillingAiRoutes.length) {
       html += '<div class="blast-note">Another ' + scan.ai.nonBillingAiRoutes.length + ' routes sit under <span class="path">/api/ai/</span> ' +
         'but never call Anthropic — they read and set configuration, so they cost nothing: ' +
-        scan.ai.nonBillingAiRoutes.map(function (r) { return '<span class="path">' + esc(r.path) + '</span>'; }).join(', ') + '.</div>';
+        scan.ai.nonBillingAiRoutes.map(function (r) { return '<span class="path">' + esc(r.label || r.path) + '</span>'; }).join(', ') + '.</div>';
     }
     $('costBody').innerHTML = html;
     renderCaps();
   }
 
-  /* Attribute a front-end module to the screen it renders, so the panel names
-     a screen rather than a file path wherever it can. */
+  /* Name a screen rather than a file path wherever possible. A view module is
+     its screen; a shared module is named by the screens that reach it. */
   function screenNameFor(modulePath) {
     var hit = scan.screens.filter(function (s) { return s.module === modulePath; });
     if (hit.length) return hit.map(function (s) { return s.label; }).join(' / ');
     return modulePath.replace(/^js\//, '');
+  }
+
+  function callSiteName(site) {
+    if (site.via && site.via.length) {
+      var screens = site.via.map(screenNameFor).filter(function (v, i, a) { return a.indexOf(v) === i; });
+      return screens.join(', ');
+    }
+    return screenNameFor(site.module);
   }
 
   /* The one panel that needs a running HaTi. If the pulse is unavailable it
@@ -420,13 +431,14 @@
       return;
     }
     $('changesBody').innerHTML = scan.changes.map(function (c) {
-      var areas = c.areas === null
-        ? '<span class="none">areas not detected</span>'
-        : (c.areas.length ? esc(c.areas.join(', ')) : 'nothing in the tracked areas');
+      var files = c.fileCount != null ? c.fileCount + ' file' + (c.fileCount === 1 ? '' : 's') : null;
+      var what;
+      if (c.areas === null) what = '<span class="none">areas not detected</span>';
+      else if (c.areas.length) what = 'Touched ' + esc(c.areas.join(', ')) + (files ? ' · ' + files : '');
+      else what = (files || 'Files') + ', none in the tracked areas';
       return '<div class="chg"><span class="when">' + esc(fmtDate(c.date)) + '</span><div>' +
         '<div class="t">' + esc(c.subject) + '</div>' +
-        '<div class="d">Touched ' + areas + (c.fileCount != null ? ' · ' + c.fileCount + ' file' + (c.fileCount === 1 ? '' : 's') : '') +
-        ' <span class="path">' + esc(c.sha) + '</span></div></div></div>';
+        '<div class="d">' + what + ' <span class="path">' + esc(c.sha) + '</span></div></div></div>';
     }).join('');
   }
 

@@ -28,6 +28,13 @@ a design where the panel lived inside HaTi. It now says what is true: this is a
 separate internal service on a private URL, and HaTi's contribution is one
 read-only numbers endpoint that is switched off by clearing `MAPPER_TOKEN`.
 
+**One CSS bug was fixed rather than reproduced.** The mockup's weight bars
+never rendered: `.bar .track` is blockified because it is a grid item, but
+`.bar .fill` inside it is a plain inline span, so its `width` and `height` were
+ignored and every bar showed an empty track. Adding `display:block` to `.fill`
+is the whole fix. The brief says not to redesign the mockup, and this is not a
+redesign — a bar chart with no bars is the design failing to render.
+
 **The HaTi change** is on branch `claude/new-session-5b3551` in
 `mkataba-clm`, unmerged, one commit: `GET /api/pulse` plus a README section.
 It is not registered at all unless `MAPPER_TOKEN` is set, requires that token
