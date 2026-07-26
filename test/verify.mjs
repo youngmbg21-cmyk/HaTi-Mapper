@@ -256,6 +256,68 @@ try {
     check(`No mockup value survives: "${leftover.slice(0, 40)}"`, !wholePage.includes(leftover));
   }
 
+  /* ---- Settings and the assistant panel, driven through the real controls ----
+     These are clicked rather than called, because the bug this guards against
+     was a button that sent the wrong HTTP method: the route worked perfectly
+     when called directly, and only the real button was broken. */
+  console.log('\nSettings and the assistant panel');
+  await page.click('.nav button[data-p="settings"]');
+  await page.waitForSelector('#setKey');
+  await page.fill('#setKey', 'sk-ant-' + 'a'.repeat(40));
+  await page.click('#setKeySave');
+  let keySaved = true;
+  try { await page.waitForFunction(() => /Saved/.test(document.getElementById('setKeyState').textContent), null, { timeout: 15000 }); }
+  catch (_) { keySaved = false; }
+  check('Saving the AI key from Settings works', keySaved, await page.textContent('#setKeyState'));
+  check('Only a last-four hint is shown back, never the key',
+    !(await page.textContent('#setKeyState')).includes('aaaa' + 'aaaa'), await page.textContent('#setKeyState'));
+
+  await page.click('#setKeyClear');
+  let keyCleared = true;
+  try { await page.waitForFunction(() => /Not set/.test(document.getElementById('setKeyState').textContent), null, { timeout: 15000 }); }
+  catch (_) { keyCleared = false; }
+  check('Removing the AI key from Settings works', keyCleared, await page.textContent('#setKeyState'));
+
+  /* expand / shrink, and that the choice is remembered */
+  await page.click('#askLaunch');
+  await page.waitForSelector('#ask:not([hidden])');
+  const widthOf = () => page.$eval('#ask', e => Math.round(e.getBoundingClientRect().width));
+  const narrow = await widthOf();
+  await page.click('#askExpand');
+  await page.waitForTimeout(250);
+  const wide = await widthOf();
+  check('The assistant panel expands', wide > narrow + 100, `${narrow}px → ${wide}px`);
+  check('Expanding flips the button to a shrink control',
+    /Shrink/i.test(await page.getAttribute('#askExpand', 'title')), await page.getAttribute('#askExpand', 'title'));
+  await page.click('#askExpand');
+  await page.waitForTimeout(250);
+  check('And shrinks back again', (await widthOf()) === narrow, `${await widthOf()}px`);
+  await page.click('#askExpand');
+  await page.waitForTimeout(200);
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForSelector('#glance .g', { timeout: 180000 });
+  await page.click('#askLaunch');
+  await page.waitForTimeout(300);
+  check('The expanded choice is remembered across a reload',
+    await page.$eval('#ask', e => e.classList.contains('expanded')));
+
+  /* clear history */
+  await page.evaluate(() => document.getElementById('askClear').click());
+  await page.waitForTimeout(300);
+  check('Clearing an empty conversation says so rather than doing nothing',
+    /Nothing to delete/i.test((await page.textContent('#toast').catch(() => '')) || ''),
+    await page.textContent('#toast').catch(() => '(no toast)'));
+
+  /* Escape shrinks an expanded panel before it closes it, so the key never
+     loses a conversation you were only trying to make smaller. */
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(200);
+  check('Escape shrinks an expanded panel rather than closing it',
+    !(await page.$eval('#ask', e => e.classList.contains('expanded'))) && !(await page.$eval('#ask', e => e.hidden)));
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(200);
+  check('Escape again closes it', await page.$eval('#ask', e => e.hidden));
+
   /* ---- 3. what breaks what ---- */
   console.log('\n3. What breaks what');
   await page.click('.nav button[data-p="blast"]');

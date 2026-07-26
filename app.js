@@ -59,9 +59,12 @@
   var authState = 'login';
   var authInfo = null;
 
-  function post(path, body) {
+  /* One sender for every write. It takes the method explicitly, because the
+     routes are not all POST — /api/ai/config is a PUT, and a helper that
+     silently assumed otherwise is exactly how that save came to 404. */
+  function send(method, path, body) {
     return fetch(path, {
-      method: 'POST',
+      method: method,
       headers: { 'Content-Type': 'application/json' },
       credentials: 'same-origin',
       body: JSON.stringify(body || {}),
@@ -75,6 +78,8 @@
       });
     });
   }
+
+  var post = function (path, body) { return send('POST', path, body); };
 
   function authMsg(kind, text) {
     var el = $('authMsg');
@@ -846,9 +851,58 @@
     $('askLaunch').hidden = open;
     if (open) {
       refreshBrain();
+      setExpanded(rememberedExpanded());   // restore the remembered width
       if (!chat.history.length) renderFeed();
       setTimeout(function () { var i = $('askInput'); if (i && !$('askKey').hidden === false) i.focus(); }, 60);
     }
+  }
+
+  /* ---- expand / shrink, remembered between visits ---- */
+
+  var EXPAND_KEY = 'hati-mapper.chatExpanded';
+
+  function rememberedExpanded() {
+    try { return localStorage.getItem(EXPAND_KEY) === '1'; } catch (e) { return false; }
+  }
+
+  /* Chevrons that point the way the panel will move: outward to grow, inward
+     to shrink — the same cue HaTi's own Copilot uses. */
+  var CHEV_GROW = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M11 17l-5-5 5-5"/><path d="M18 17l-5-5 5-5"/></svg>';
+  var CHEV_SHRINK = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M13 17l5-5-5-5"/><path d="M6 17l5-5-5-5"/></svg>';
+
+  function setExpanded(want) {
+    $('ask').classList.toggle('expanded', !!want);
+    var b = $('askExpand');
+    b.innerHTML = want ? CHEV_SHRINK : CHEV_GROW;
+    b.title = want ? 'Shrink the panel' : 'Expand the panel';
+    b.setAttribute('aria-label', b.title);
+    try { localStorage.setItem(EXPAND_KEY, want ? '1' : '0'); } catch (e) {}
+  }
+
+  /* ---- a brief confirmation for actions that are easy to miss ---- */
+  var toastTimer = null;
+  function toast(text) {
+    var el = document.getElementById('toast');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'toast';
+      el.className = 'toast';
+      el.setAttribute('role', 'status');
+      document.body.appendChild(el);
+    }
+    el.textContent = text;
+    requestAnimationFrame(function () { el.classList.add('on'); });
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { el.classList.remove('on'); }, 2200);
+  }
+
+  /* Cleared straight away, no confirm — the conversation is local and cheap to
+     start again, and a prompt for something this reversible is just friction. */
+  function clearChat() {
+    if (!chat.history.length) return toast('Nothing to delete yet');
+    chat.history = [];
+    renderFeed();
+    toast('Conversation deleted');
   }
 
   function refreshBrain() {
@@ -964,6 +1018,18 @@
   /* --- wiring --- */
   $('askLaunch').addEventListener('click', function () { askOpen(true); });
   $('askClose').addEventListener('click', function () { askOpen(false); });
+  $('askExpand').addEventListener('click', function () {
+    setExpanded(!$('ask').classList.contains('expanded'));
+  });
+  $('askClear').addEventListener('click', clearChat);
+
+  /* Escape shrinks an expanded panel first, then closes it — so the key never
+     loses a conversation you were only trying to make smaller. */
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape' || $('ask').hidden) return;
+    if ($('ask').classList.contains('expanded')) setExpanded(false);
+    else askOpen(false);
+  });
 
   $('askForm').addEventListener('submit', function (e) {
     e.preventDefault();
@@ -1000,13 +1066,7 @@
     this.disabled = true;
     this.textContent = 'Saving…';
     var btn = this;
-    fetch('/api/ai/config', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'same-origin',
-      body: JSON.stringify({ key: key }),
-    })
-      .then(function (res) { return res.json().then(function (b) { if (!res.ok) throw new Error(b.error || 'That key was not accepted.'); return b; }); })
+    send('PUT', '/api/ai/config', { key: key })
       .then(function () {
         $('askKeyInput').value = '';
         return refreshBrain();
@@ -1053,7 +1113,7 @@
     if (!key) return settingsState('setKeyState', 'bad', 'Paste the key first.');
     var btn = this; btn.disabled = true;
     settingsState('setKeyState', '', 'Saving…');
-    post('/api/ai/config', { key: key })
+    send('PUT', '/api/ai/config', { key: key })
       .then(function () { $('setKey').value = ''; return refreshBrain(); })
       .then(function (cfg) { renderSettings(cfg); })
       .catch(function (e) { settingsState('setKeyState', 'bad', e.message); })
@@ -1062,10 +1122,8 @@
 
   $('setKeyClear').addEventListener('click', function () {
     var btn = this; btn.disabled = true;
-    fetch('/api/ai/config', {
-      method: 'PUT', headers: { 'Content-Type': 'application/json' },
-      credentials: 'same-origin', body: JSON.stringify({ clear: true }),
-    })
+    settingsState('setKeyState', '', 'Removing…');
+    send('PUT', '/api/ai/config', { clear: true })
       .then(function () { return refreshBrain(); })
       .then(function (cfg) { renderSettings(cfg); })
       .catch(function (e) { settingsState('setKeyState', 'bad', e.message); })
