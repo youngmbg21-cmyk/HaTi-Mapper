@@ -45,6 +45,7 @@ import { messages as anthropicMessages, friendlyError, DEFAULT_MODEL } from './l
 import { Accounts, validEmail, normaliseEmail, SESSION_DAYS } from './lib/accounts.mjs';
 import { sendResetEmail, emailConfigured } from './lib/mail.mjs';
 import { readFixture, FIXTURE_WARNING } from './lib/fixture.mjs';
+import { driftVerdict } from './lib/drift.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -512,8 +513,16 @@ async function readPulse() {
   }
 }
 
+/* The drift verdict is answered here rather than on /api/scan because it takes
+   both hashes to work out, and only this route has been anywhere near a
+   running HaTi. The scan carries its own hash, as it always has. */
 app.get('/api/pulse', requireAuth, rateLimit('pulse', 120, 15 * 60 * 1000), async (req, res) => {
-  res.json(await readPulse());
+  const pulse = await readPulse();
+  res.json({
+    ...pulse,
+    scannedCommit: cache?.payload?.commit || null,
+    drift: driftVerdict(cache?.payload, pulse),
+  });
 });
 
 /* ------------------------------------------------------------ /api/changes */

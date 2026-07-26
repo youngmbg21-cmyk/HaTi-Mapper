@@ -14,6 +14,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { hatiSource, announce } from './source.mjs';
+import { driftVerdict } from '../lib/drift.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, '..');
@@ -349,6 +350,31 @@ try {
   const clearedLock = JSON.parse(fs.readFileSync(path.join(SPOOF_DATA, 'account.json'), 'utf8'));
   check('And signing in resets the count to nothing',
     clearedLock.login.failures === 0 && clearedLock.login.until === 0, JSON.stringify(clearedLock.login));
+
+  /* ---- is this what's live? ----
+     The headless run can only reach the "can't tell" state, because it has no
+     HaTi to ask. The other two need both hashes, so they are asserted here
+     against the verdict itself. */
+  console.log('\nIs this what\'s live?');
+  const scanned = { commit: 'a1b2c3d', changes: [
+    { sha: 'a1b2c3d4e5f6' }, { sha: 'b2c3d4e5f607' }, { sha: 'c3d4e5f60718' }, { sha: 'd4e5f6071829' },
+  ] };
+  const same = driftVerdict(scanned, { available: true, version: 'a1b2c3d4e5f60718293a' });
+  check('Matching versions read as good news', same.state === 'match', JSON.stringify(same));
+  check('And say so in plain English', /You’re looking at the code that’s live\./.test(same.message), same.message);
+
+  const behind = driftVerdict(scanned, { available: true, version: 'c3d4e5f60718293a4b5c' });
+  check('A live version further down the list is counted', behind.state === 'different' && behind.behind === 2, JSON.stringify(behind));
+  check('And the count is put into the sentence', /2 commits behind/.test(behind.message), behind.message);
+
+  const unknownCommit = driftVerdict(scanned, { available: true, version: '9999999999999999' });
+  check('A live version nobody recognises is still reported as different',
+    unknownCommit.state === 'different' && unknownCommit.behind === null, JSON.stringify(unknownCommit));
+  check('Without inventing a number', !/\d+ commits?/.test(unknownCommit.message), unknownCommit.message);
+
+  const cannotTell = driftVerdict(scanned, { available: false, reason: 'nope' });
+  check('An unreachable HaTi is "can\'t tell", never "probably fine"',
+    cannotTell.state === 'unknown' && cannotTell.liveCommit === null, JSON.stringify(cannotTell));
 
   /* ---- the documents describe the code as it is ----
      Documentation drift is the disease this whole tool exists to cure, so the

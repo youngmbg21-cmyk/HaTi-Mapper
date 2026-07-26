@@ -18,6 +18,15 @@ the product, written for someone who does not read code:
 There is also an **assistant** — a chat panel that can explain any of it in plain
 English. It reads the same data the tabs show and nothing else.
 
+**"Is this what's live?"** A badge under the title answers the one question
+that could make everything else on the page misleading: whether the code being
+described is the code your customers are actually using. The scan knows which
+version it read; HaTi's pulse reports which version is deployed. Green means
+they match. Amber means the live site is running something else, with the
+number of commits behind when that can be worked out and no number when it
+cannot. Grey means HaTi is not answering, so the honest reply is "can't tell" —
+never "probably fine".
+
 Seven of the eight panels are read from HaTi's **source code**. Only "Where the
 money goes" needs anything from a running HaTi, and all it asks for is caps and
 a count.

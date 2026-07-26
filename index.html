@@ -284,6 +284,16 @@ tbody tr:hover{background:#fcfcfb;}
 .auth .foot{margin-top:16px;padding-top:14px;border-top:1px solid var(--divider);display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;}
 .auth code{font-family:var(--mono);font-size:11px;background:var(--n100);padding:1px 5px;border-radius:3px;}
 
+/* ---------- "is this what's live?" ---------- */
+.drift{display:inline-flex;align-items:center;gap:7px;margin-top:8px;font-size:11.5px;font-weight:500;padding:4px 11px;border-radius:999px;border:1px solid var(--divider);background:var(--surface);color:var(--n700);}
+.drift i{flex:none;width:7px;height:7px;border-radius:50%;background:var(--n400);display:block;}
+.drift.ok{background:#eef7f2;border-color:#bfe0d0;color:var(--emerald-d);}
+.drift.ok i{background:var(--emerald);}
+.drift.warn{background:#fdf6e7;border-color:#ecd9a8;color:#8a6a2e;}
+.drift.warn i{background:var(--amber);}
+.drift.unknown{background:var(--n100);border-color:var(--n200);color:var(--n600);}
+.drift.unknown i{background:var(--n400);}
+
 /* ---------- account chip in the header ---------- */
 .who{display:flex;align-items:center;gap:7px;font-size:11px;color:var(--n600);}
 .who .dot{width:6px;height:6px;border-radius:50%;background:var(--emerald);display:block;}
@@ -352,6 +362,9 @@ tbody tr:hover{background:#fcfcfb;}
       <div class="eyebrow">Settings · internal</div>
       <h1>Platform map</h1>
       <p class="sub">What's in HaTi, what it costs to run, and what depends on what.</p>
+      <!-- Whether the code described below is the code your customers are
+           actually using. Filled in once the pulse answers. -->
+      <span class="drift unknown" id="drift" hidden><i></i><span id="driftText"></span></span>
     </div>
     <div class="head-actions">
       <span class="stamp" id="stamp">scanning…</span>

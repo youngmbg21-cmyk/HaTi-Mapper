@@ -374,6 +374,20 @@ try {
   check('The other seven panels rendered with no HaTi running', true,
     'checks under "2. Every panel" all ran against a server with HATI_URL unset');
 
+  /* ---- is this what's live? ----
+     This run has no HaTi, so the only state reachable here is the honest "I
+     can't tell". The other two are asserted against lib/drift.mjs in
+     test/auth.mjs, where both hashes can be supplied. */
+  console.log('\nIs this what\'s live?');
+  const drift = await page.evaluate(() => {
+    const el = document.getElementById('drift');
+    return { hidden: el.hidden, cls: el.className, text: (el.innerText || '').trim() };
+  });
+  check('The badge is shown', !drift.hidden);
+  check('With HaTi unreachable it says it cannot tell', /Can’t tell whether this is what’s live/.test(drift.text), drift.text);
+  check('And it is drawn as neither good nor bad news', /\bunknown\b/.test(drift.cls) && !/\bok\b|\bwarn\b/.test(drift.cls), drift.cls);
+  check('The pulse payload carries the verdict', pulse.drift && pulse.drift.state === 'unknown', JSON.stringify(pulse.drift));
+
   /* ---- what the page is allowed to load ---- */
   console.log('\nContent-Security-Policy');
   const csp = (await fetch(BASE + '/')).headers.get('content-security-policy') || '';

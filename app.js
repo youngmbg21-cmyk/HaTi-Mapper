@@ -744,7 +744,28 @@
       : '';
   }
 
+  /* ---- is this what's live? ---- */
+
+  /* The one way this whole dashboard could quietly mislead: every panel
+     accurate about code nobody is running. The server compares the commit the
+     scan read with the commit the running HaTi was built from and says which
+     of three things is true. Never a guess — when it cannot tell, it says so. */
+  function renderDrift() {
+    var el = $('drift');
+    var d = (pulse && pulse.drift) || {
+      state: 'unknown',
+      message: 'Can’t tell whether this is what’s live — the Mapper could not ask HaTi.',
+    };
+    el.className = 'drift ' + (d.state === 'match' ? 'ok' : d.state === 'different' ? 'warn' : 'unknown');
+    $('driftText').textContent = d.message;
+    el.title = d.scannedCommit
+      ? 'Reading ' + d.scannedCommit + (d.liveCommit ? ' · live is ' + d.liveCommit : ' · the live version is unknown')
+      : '';
+    el.hidden = false;
+  }
+
   function renderAll() {
+    renderDrift();
     renderGlance();
     renderScreens();
     renderCost();
