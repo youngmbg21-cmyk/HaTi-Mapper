@@ -430,6 +430,23 @@ so a stand-in can never be mistaken for the live product. Set `HATI_FIXTURE` to
 a directory to force it by hand. Leave it unset in production, which is the
 default — then the tarball download is the only way source reaches the scanner.
 
+## Checks on every push
+
+`.github/workflows/verify.yml` runs the same `npm run verify` on every push and
+every pull request: Node 22, `npm install`, the Playwright Chromium the suite
+drives, then the suite itself. No live HaTi and no deployed Mapper is involved —
+the suite starts its own server on a spare port, and the panels that need a
+running HaTi assert the "cannot reach it" wording instead.
+
+The token it hands the scan is the one GitHub issues for the run, read-only. It
+can read this repository but not HaTi's, so CI falls back to the stand-in in
+`test/fixture/` and says so at the top of the run. **To have CI scan the real
+HaTi, add a repository secret named `HATI_SCAN_TOKEN`** — a fine-grained token
+with read-only Contents permission on `youngmbg21-cmyk/mkataba-clm` and nothing
+else. It is also the answer if the default token's rate limit ever proves too
+tight. With no such secret the workflow uses the run's own token, so it works
+unchanged either way.
+
 ---
 
 ## Turning HaTi's endpoint off

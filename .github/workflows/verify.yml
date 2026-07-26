@@ -1,0 +1,55 @@
+# HaTi-Mapper — the verification suite, on every push.
+#
+# The whole point of this dashboard is that it tells the truth about HaTi, so
+# the one thing that must never rot is the suite that proves it. This runs the
+# same command a person runs locally — `npm run verify` — against the same real
+# server and the same real browser. No live HaTi and no deployed Mapper is
+# needed: the suite starts its own server on a spare port, and the panels that
+# depend on a running HaTi assert the "cannot reach it" wording instead.
+#
+# About the token below: `secrets.GITHUB_TOKEN` is issued by GitHub for this
+# run and is read-only here (see `permissions:`). It can read this repository,
+# which is all the workflow itself needs. It cannot read HaTi's own repository,
+# so the suite falls back to the stand-in source in `test/fixture/` and says so
+# at the top of the run — every check still runs, but the numbers describe the
+# stand-in rather than the live product.
+#
+# To have CI scan the real HaTi instead, add a repository secret named
+# HATI_SCAN_TOKEN: a fine-grained personal access token with read-only Contents
+# permission on youngmbg21-cmyk/mkataba-clm and nothing else. It is also the
+# answer if the default token's GitHub rate limit ever proves too tight. With
+# no such secret set the line below falls back to the run's own token, so this
+# workflow works unchanged either way.
+
+name: verify
+
+on:
+  push:
+  pull_request:
+
+# Nothing here writes anything. Read-only is all it needs.
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # Express is the only runtime dependency and Playwright the only dev one.
+      - run: npm install
+
+      # Playwright ships no browser of its own here, so fetch the one it drives.
+      # --with-deps installs the system libraries Chromium needs on a bare runner.
+      - run: npx playwright install --with-deps chromium
+
+      - run: npm run verify
+        env:
+          GITHUB_TOKEN: ${{ secrets.HATI_SCAN_TOKEN || secrets.GITHUB_TOKEN }}

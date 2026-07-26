@@ -926,6 +926,103 @@ try {
   check('And pressing it anyway is refused with the reason',
     noSitePress.status === 409 && noSitePress.body.disabled === true, JSON.stringify(noSitePress.body));
 
+  /* ---- the suite runs on every push ----
+     A broken workflow file fails silently: GitHub simply never runs it, and
+     the first anyone knows is months of unverified commits. There is no YAML
+     library here — Express is the only runtime dependency and Playwright the
+     only dev one — so this reads the small subset of YAML the file actually
+     uses (nested mappings, sequences of mappings, plain scalars) and asserts
+     the structure. It does not claim to validate YAML in general; it claims
+     the file says what this project needs it to say. */
+  console.log('\nThe suite runs on every push');
+
+  function miniYaml(text) {
+    const lines = text.split('\n')
+      .map(l => l.replace(/\s+$/, ''))
+      .filter(l => l.trim() && !/^\s*#/.test(l));
+    let i = 0;
+
+    const indentOf = l => l.length - l.trimStart().length;
+
+    function block(indent) {
+      // A sequence and a mapping cannot share a level, so the first line decides.
+      if (/^-\s/.test(lines[i].trim())) {
+        const out = [];
+        while (i < lines.length && indentOf(lines[i]) === indent && /^-\s/.test(lines[i].trim())) {
+          const rest = lines[i].trim().slice(2);
+          const childIndent = indentOf(lines[i]) + 2;
+          i++;
+          const m = rest.match(/^([\w.-]+):\s*(.*)$/);
+          if (!m) { out.push(rest); continue; }
+          const item = {};
+          item[m[1]] = m[2] === '' ? (i < lines.length && indentOf(lines[i]) > childIndent ? block(indentOf(lines[i])) : null) : scalar(m[2]);
+          while (i < lines.length && indentOf(lines[i]) === childIndent) Object.assign(item, one(childIndent));
+          out.push(item);
+        }
+        return out;
+      }
+      const out = {};
+      while (i < lines.length && indentOf(lines[i]) === indent) Object.assign(out, one(indent));
+      return out;
+    }
+
+    function one(indent) {
+      const m = lines[i].trim().match(/^([\w.-]+):\s*(.*)$/);
+      if (!m) throw new Error(`line ${i + 1} is neither a key nor a list item: ${lines[i]}`);
+      i++;
+      if (m[2] !== '') return { [m[1]]: scalar(m[2]) };
+      if (i < lines.length && indentOf(lines[i]) > indent) return { [m[1]]: block(indentOf(lines[i])) };
+      return { [m[1]]: null };
+    }
+
+    const scalar = v => v.replace(/^'(.*)'$/, '$1').replace(/^"(.*)"$/, '$1');
+    return block(0);
+  }
+
+  const WF = path.join(ROOT, '.github', 'workflows', 'verify.yml');
+  check('There is a workflow file at all', fs.existsSync(WF), WF);
+  const wfText = fs.readFileSync(WF, 'utf8');
+  check('It uses spaces throughout, which YAML requires', !/\t/.test(wfText));
+
+  let wf = null;
+  try { wf = miniYaml(wfText); } catch (e) { check('The workflow file parses', false, e.message); }
+  if (wf) {
+    check('The workflow file parses', true);
+    check('It runs on both a push and a pull request',
+      wf.on && 'push' in wf.on && 'pull_request' in wf.on, JSON.stringify(wf.on));
+    check('It is allowed to read and nothing else',
+      wf.permissions && wf.permissions.contents === 'read' && Object.keys(wf.permissions).length === 1,
+      JSON.stringify(wf.permissions));
+
+    const job = wf.jobs && wf.jobs.verify;
+    check('There is a job that runs the verification', !!job, JSON.stringify(Object.keys(wf.jobs || {})));
+    const steps = (job && job.steps) || [];
+    const runs = steps.filter(s => s.run).map(s => s.run);
+    check('It installs the dependencies', runs.includes('npm install'), runs.join(' | '));
+    check('It fetches the browser the suite drives',
+      runs.some(r => /playwright install/.test(r) && /chromium/.test(r)), runs.join(' | '));
+    check('It runs the very command a person runs locally',
+      runs.includes('npm run verify'), runs.join(' | '));
+
+    const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
+    check('And that command exists in package.json', typeof pkg.scripts.verify === 'string', JSON.stringify(pkg.scripts));
+    check('It asks for the Node the project asks for',
+      steps.some(s => s.with && String(s.with['node-version']) === '22'),
+      JSON.stringify(steps.map(s => s.with).filter(Boolean)));
+
+    const verifyStep = steps.find(s => s.run === 'npm run verify');
+    check('The scan is given a GitHub token rather than left to the anonymous limit',
+      verifyStep && verifyStep.env && /GITHUB_TOKEN/.test(Object.keys(verifyStep.env).join(',')),
+      JSON.stringify(verifyStep && verifyStep.env));
+    check('With a repository secret able to take over when the default is not enough',
+      verifyStep && /HATI_SCAN_TOKEN/.test(JSON.stringify(verifyStep.env)),
+      JSON.stringify(verifyStep && verifyStep.env));
+  }
+  check('The workflow says why the token is what it is',
+    /HATI_SCAN_TOKEN/.test(wfText) && /read-only/.test(wfText));
+  check('And it is written down in the README',
+    /HATI_SCAN_TOKEN/.test(fs.readFileSync(path.join(ROOT, 'README.md'), 'utf8')));
+
   /* ---- the documents describe the code as it is ----
      Documentation drift is the disease this whole tool exists to cure, so the
      statements that were once true and are now false are asserted gone. Each
