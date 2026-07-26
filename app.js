@@ -971,16 +971,26 @@
     var max = w.files.length ? w.files[0].bytes : 1;
     var markPct = (w.threshold / max) * 100;
 
-    var html = '<div class="bars">' + w.files.map(function (f) {
+    /* A path is an address, not an answer. Each row leads with what the file
+       IS and demotes the address to a chip, because the person reading this
+       does not write code and should not have to decode one. */
+    var html = '<div class="files">' + w.files.map(function (f) {
       var big = f.bytes > w.threshold;
-      return '<div class="bar' + (big ? ' big' : '') + '"><span class="f" title="' + esc(f.path) + '">' + esc(f.path.replace(/^js\//, '')) +
-        (big ? ' ' + fixButton('file-size', f.path) : '') + '</span>' +
+      return '<div class="file' + (big ? ' big' : '') + '">' +
+        '<div class="top">' +
+        '<span class="nm">' + (f.name ? esc(f.name) : '<span class="none">no plain-English note yet</span>') + '</span>' +
+        '<span class="path" title="Where this file lives in HaTi">' + esc(f.path) + '</span>' +
+        (big ? fixButton('file-size', f.path) : '') +
+        '<span class="kb">' + kb(f.bytes) + (big ? ' · <b>over the line</b>' : '') + '</span></div>' +
+        (f.does ? '<div class="say">' + esc(f.does) + '</div>' : '') +
         '<span class="track"><span class="fill" style="width:' + ((f.bytes / max) * 100).toFixed(1) + '%"></span></span>' +
-        '<span class="s">' + kb(f.bytes) + '</span></div>';
-    }).join('') +
-      '<div class="bar"><span class="f"></span><span class="mark"><i style="left:' + markPct.toFixed(1) + '%"></i>' +
-      '<span style="left:' + markPct.toFixed(1) + '%">60 KB</span></span><span class="s"></span></div>' +
-      '</div>';
+        '</div>';
+    }).join('') + '</div>';
+
+    html += '<div class="blast-note" style="color:var(--n500)"><b>What the sizes mean.</b> ' +
+      'KB is how much text a file holds — ' + kb(w.threshold) + ' is roughly fifteen to twenty printed pages of code. ' +
+      'Past that a file gets hard for a person, or for an AI session, to hold in mind at once, which is when mistakes creep in. ' +
+      'That is all the gold colouring says: this one has outgrown comfortable.</div>';
 
     var worst = (scan.moduleFacts || []).filter(function (m) { return m.multiJob; })
       .sort(function (a, b) { return b.bytes - a.bytes; })[0];

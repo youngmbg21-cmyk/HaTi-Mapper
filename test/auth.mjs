@@ -831,6 +831,57 @@ try {
     gh.gapMovement(5).opened === 1 && gh.gapMovement(5).closed === 1, JSON.stringify(gh.gapMovement(5)));
   fs.rmSync(GDATA, { recursive: true, force: true });
 
+  /* ---- a file is a thing, not an address ----
+     The point of this panel is that the owner does not read code, so almost
+     none of these sentences may be hand-written: a file that renders a screen
+     borrows that screen's words, and a file the dependency map names borrows
+     the subsystem titles it holds. Both of those are already validated on
+     every scan, so they cannot quietly become wrong. */
+  console.log('\nWhat each file is');
+  const sizedFiles = full.weight.files;
+  const byPath = Object.fromEntries(sizedFiles.map(f => [f.path, f]));
+
+  check('Every file carries a plain-English name and a sentence',
+    sizedFiles.every(f => f.name && f.does), sizedFiles.filter(f => !f.does).map(f => f.path).join(', ') || 'all described');
+  check('Almost none of it is hand-written — it is borrowed from what is already derived',
+    sizedFiles.filter(f => f.from === 'copy').length <= 2 && sizedFiles.filter(f => f.from !== 'copy').length >= 20,
+    JSON.stringify(sizedFiles.reduce((n, f) => ({ ...n, [f.from]: (n[f.from] || 0) + 1 }), {})));
+  check('The file every route is answered in counts its own routes',
+    byPath['server/server.js'].from === 'routes' &&
+    byPath['server/server.js'].does.includes(`all ${full.public.totalRoutes} of them`),
+    byPath['server/server.js'].does);
+  check('A screen’s own module is named after the screen',
+    byPath['js/views/contract.js'].from === 'screens' &&
+    /screen$/.test(byPath['js/views/contract.js'].name),
+    byPath['js/views/contract.js'].name);
+  check('And says what a person does there, in the screen’s own words',
+    byPath['js/views/contract.js'].does === full.screens.find(s => s.module === 'js/views/contract.js').does,
+    byPath['js/views/contract.js'].does);
+  check('A file the dependency map names is the parts it holds',
+    byPath['js/core.js'].from === 'map' && /Signature seal/.test(byPath['js/core.js'].name),
+    `${byPath['js/core.js'].name} — ${byPath['js/core.js'].does}`);
+  check('A file holding several parts lists them all rather than picking one',
+    byPath['js/versioning.js'].name.split(' · ').length === 2, byPath['js/versioning.js'].name);
+  check('Nothing invents a sentence from a file name',
+    sizedFiles.every(f => !f.does || !f.does.includes('.js')), (sizedFiles.find(f => (f.does || '').includes('.js')) || {}).path);
+
+  /* Validated the same way every other hand-written file is: an entry for a
+     file that has gone is stale and says so, rather than sitting there wrong. */
+  const goneFiles = new Map(readFixture(FIXTURE_DIR).files);
+  goneFiles.delete('js/templates.js');
+  const missingFile = buildScan({ files: goneFiles, commits: null });
+  check('An entry for a file that no longer exists is reported, not left to rot',
+    missingFile.warnings.some(w => /describes a file "js\/templates\.js"/.test(w)),
+    missingFile.warnings.filter(w => /file "/.test(w)).join(' | '));
+  check('A file nothing can explain says so rather than being guessed at',
+    (function () {
+      const extra = new Map(readFixture(FIXTURE_DIR).files);
+      extra.set('js/mystery.js', Buffer.from('/* nothing references this */\n'.repeat(40)));
+      const s = buildScan({ files: extra, commits: null });
+      const row = s.weight.files.find(f => f.path === 'js/mystery.js');
+      return row && row.name === null && row.does === null;
+    })(), 'an unexplained file must come back with no sentence at all');
+
   /* ---- knocking on the doors ----
      "Open to the public" is a claim about HaTi's source. This is the one place
      the Mapper checks that claim against a running site, so the stand-in HaTi

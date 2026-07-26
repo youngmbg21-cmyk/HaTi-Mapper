@@ -291,7 +291,7 @@ try {
     await page.waitForSelector(`#${bodyId}`, { state: 'attached' });
     const info = await page.$eval(`#${bodyId}`, (el, min) => ({
       text: el.innerText.trim(),
-      rows: el.querySelectorAll('tr, .gap, .pub, .chg, .bar, .dep').length,
+      rows: el.querySelectorAll('tr, .gap, .pub, .chg, .bar, .file, .dep').length,
       skeleton: !!el.querySelector('.skel'),
       errored: !!el.querySelector('.notice.bad'),
     }), minRows);
@@ -419,6 +419,48 @@ try {
     `payload says ${scan.health.percent}%`);
   check('It is graded, so a bad score looks bad',
     /\b(good|fair|poor)\b/.test(health.cls), health.cls);
+
+  /* ---- what each bulky file actually is ----
+     A path is an address, not an answer: it tells a developer where to look
+     and the owner nothing. Every row has to lead with what the file IS, and
+     the panel has to explain its own units rather than assuming KB is
+     common knowledge. */
+  console.log('\nWhat the bulky files are');
+  await page.click('.nav button[data-p="weight"]');
+  await page.waitForSelector('#weightBody .file', { timeout: 20000 });
+  const fileRows = await page.evaluate(() => [...document.querySelectorAll('#weightBody .file')].map(el => ({
+    name: (el.querySelector('.nm') || {}).textContent || '',
+    path: (el.querySelector('.path') || {}).textContent || '',
+    says: (el.querySelector('.say') || {}).textContent || '',
+    big: el.classList.contains('big'),
+    fill: (el.querySelector('.fill') || {}).getAttribute ? el.querySelector('.fill').getAttribute('style') : '',
+  })));
+  check('Every file is listed as a thing, not only as a path',
+    fileRows.length === scan.weight.files.length && fileRows.every(r => r.name.trim().length > 2),
+    `${fileRows.length} rows, ${fileRows.filter(r => !r.name.trim()).length} unnamed`);
+  check('And each says in a sentence what it is for',
+    fileRows.every(r => r.says.trim().length > 12),
+    (fileRows.find(r => r.says.trim().length <= 12) || {}).path || 'all described');
+  check('The biggest file is named as the engine room, from its own route count',
+    fileRows[0].name === 'The engine room' && /all \d+ of them/.test(fileRows[0].says),
+    `${fileRows[0].name} — ${fileRows[0].says.slice(0, 70)}`);
+  check('A file behind a screen borrows that screen’s own words',
+    fileRows.some(r => /^The .+ screen$/.test(r.name)),
+    fileRows.filter(r => /screen$/.test(r.name)).map(r => r.name).slice(0, 3).join(' | '));
+  check('The path is still there for whoever wants it',
+    fileRows.every(r => /\.js$/.test(r.path.trim())), fileRows[0].path);
+  check('The bars still draw', fileRows.every(r => /width:\s*[\d.]+%/.test(r.fill || '')), fileRows[0].fill);
+  check('Files past the line are marked as past it',
+    fileRows.filter(r => r.big).length === scan.weight.overThreshold,
+    `${fileRows.filter(r => r.big).length} of ${scan.weight.overThreshold}`);
+
+  const weightText = await page.textContent('#weightBody');
+  check('The panel explains what a KB is rather than assuming it',
+    /printed pages of code/.test(weightText));
+  check('And says what the colouring means, in words',
+    /outgrown comfortable/.test(weightText));
+  check('No row is described by a path alone',
+    !/^\s*js\/views\//m.test(await page.$eval('#weightBody .file .nm', el => el.textContent)));
 
   /* ---- draft a fix prompt ----
      The button has to be on the findings themselves, where the owner is

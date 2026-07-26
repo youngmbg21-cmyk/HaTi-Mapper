@@ -153,20 +153,23 @@ tbody tr:hover{background:#fcfcfb;}
 .gap .d{font-size:11.5px;color:var(--n600);margin-top:2px;line-height:1.5;}
 .gap .src{font-family:var(--mono);font-size:9.5px;color:var(--n500);margin-top:3px;}
 
-/* ---------- weight bars ---------- */
-.bars{display:flex;flex-direction:column;gap:8px;}
-.bar{display:grid;grid-template-columns:150px 1fr 52px;gap:11px;align-items:center;}
-.bar .f{font-family:var(--mono);font-size:10.5px;color:var(--n700);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.bar .track{height:7px;background:var(--n100);border-radius:999px;overflow:hidden;position:relative;}
-/* display:block matters: .track is blockified as a grid item, but .fill is not
-   a grid item, so as a plain inline span its width and height were ignored and
-   every bar rendered empty. */
-.bar .fill{display:block;height:100%;border-radius:999px;background:var(--accent);}
-.bar.big .fill{background:var(--amber);}
-.bar .s{font-family:var(--mono);font-size:10.5px;color:var(--n600);text-align:right;}
-.bars .mark{position:relative;height:14px;margin-top:2px;}
-.bars .mark i{position:absolute;top:0;bottom:0;width:1px;background:var(--n300);}
-.bars .mark span{position:absolute;top:0;font-family:var(--mono);font-size:9px;color:var(--n500);transform:translateX(4px);white-space:nowrap;}
+/* ---------- file sizes ----------
+   Each row leads with what the file IS. The path is still there, demoted to a
+   chip, because it is the answer to a different question. */
+.files{display:flex;flex-direction:column;}
+.file{padding:11px 0;border-top:1px solid var(--divider);}
+.file:first-child{border-top:0;}
+.file .top{display:flex;gap:9px;align-items:baseline;flex-wrap:wrap;}
+.file .nm{font-size:13.5px;font-weight:600;color:var(--text);}
+.file .path{font-family:var(--mono);font-size:10px;color:var(--n600);background:var(--n100);border-radius:4px;padding:1px 7px;}
+.file .kb{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--n600);font-variant-numeric:tabular-nums;white-space:nowrap;}
+.file .kb b{color:var(--amber);font-weight:600;}
+.file .say{font-size:12.5px;color:var(--n700);line-height:1.55;margin-top:3px;max-width:70ch;}
+.file .track{display:block;height:7px;background:var(--n100);border-radius:999px;overflow:hidden;margin-top:8px;}
+/* display:block matters: as a plain inline span the fill's width and height
+   were ignored and every bar rendered empty. */
+.file .fill{display:block;height:100%;border-radius:999px;background:var(--accent);}
+.file.big .fill{background:var(--amber);}
 
 /* ---------- public surface ---------- */
 .pub{display:flex;gap:11px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--divider);}

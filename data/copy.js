@@ -54,6 +54,31 @@ export const HASH_COPY = {
   },
 };
 
+/* What a FILE is, in the owner's words, for the "Getting bulky" panel.
+ *
+ * Deliberately short. Almost every file already answers this question through
+ * data the scan holds: a file that renders a screen borrows that screen's
+ * sentence from SCREEN_COPY, a file named in data/dependencies.js borrows the
+ * subsystem titles it holds, and the file every route is answered in describes
+ * itself by the number of routes found in it. Those are derivations, not
+ * judgements, and they stay correct on their own.
+ *
+ * Only files that no other panel already explains are written here, and the
+ * scan validates them the same way it validates the rest: an entry for a file
+ * that no longer exists comes back as a stale warning. A file with no entry
+ * and nothing derivable says so on screen rather than being guessed at.
+ */
+export const FILE_COPY = {
+  'js/app.js': {
+    name: 'The front door',
+    does: 'Draws the menu, decides which screen a click opens, and works out what a link like #share means before anyone has logged in.',
+  },
+  'js/templates.js': {
+    name: 'The template shelf',
+    does: 'Holds the built-in contract templates and the value streams the rest of the product files contracts under.',
+  },
+};
+
 export const FEATURE_COPY = {
   search:      'Ask the register a question',
   graph:       'Filter and re-cluster the map',

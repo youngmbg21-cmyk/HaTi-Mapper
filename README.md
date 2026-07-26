@@ -198,6 +198,36 @@ refused rather than drafted around. It goes through the same key, the same
 daily budget and the same rate limit — there is no second way to reach
 Anthropic.
 
+## "Getting bulky" says what each file is
+
+A line reading `server/server.js` is a file path — the address of one file
+inside HaTi, the way "kitchen, top drawer" is an address inside a house. It
+tells a developer where to look and tells the owner nothing, which made the
+panel unreadable for the person it is written for.
+
+Every row now leads with what the file **is**, and one sentence on what it does.
+The path is still there, demoted to a small chip for whoever wants it.
+
+Almost none of those sentences is written by hand, because the answer was
+already in the payload:
+
+- **A file that renders a screen** borrows that screen's own words from
+  `data/copy.js` — *"The Workspace screen. Read, edit, review, comment, share
+  and sign a single contract."*
+- **A file named in `data/dependencies.js`** is the parts it holds — *"Signature
+  seal · Audit trail."* Both the file and its proof identifier are already
+  checked to still exist on every scan, so this cannot drift into a lie.
+- **The file every route is answered in** counts its own routes — *"The engine
+  room. Every request HaTi answers arrives here, all 41 of them."*
+- **Anything nothing else explains** falls through to `FILE_COPY` in
+  `data/copy.js`, which is two entries long, and a file even that cannot
+  explain says **"no plain-English note yet"** rather than being guessed at.
+
+The panel also explains its own units, because "195 KB" means nothing on its
+own: a kilobyte is how much text a file holds, 60 KB is roughly fifteen to
+twenty printed pages of code, and past that a file gets hard for a person — or
+an AI session — to hold in mind at once. That is all the gold colouring says.
+
 ## Knocking on the doors
 
 Everything else in the Mapper answers *what does HaTi's code say*. The "Open to
@@ -532,9 +562,13 @@ feature is *for*, cannot be read out of code either. A screen's label, module
 path, size, render function and nav position are all derived; only the sentence
 is written.
 
-Validated per scan: an entry for a screen or feature that no longer exists is
-reported as stale, and a screen or feature with no entry renders as "not
-detected" rather than silently blank.
+The same file also holds `FILE_COPY`, but it is deliberately tiny — see
+[Getting bulky](#getting-bulky-says-what-each-file-is) for why almost nothing
+needs writing there.
+
+Validated per scan: an entry for a screen, feature or file that no longer
+exists is reported as stale, and a screen or feature with no entry renders as
+"not detected" rather than silently blank.
 
 ### Where the scan says "not detected"
 
