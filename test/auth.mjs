@@ -194,6 +194,27 @@ try {
     !JSON.stringify(onDisk).includes('fourthpass4') && !!onDisk.owner.hash && !!onDisk.owner.salt);
   check('Reset tokens are stored hashed too',
     (onDisk.resets || []).every(r => !!r.tokenHash && !('token' in r)));
+
+  /* ---- the documents describe the code as it is ----
+     Documentation drift is the disease this whole tool exists to cure, so the
+     statements that were once true and are now false are asserted gone. Each
+     pattern below is a sentence that used to be in these files and that the
+     code has since contradicted. */
+  console.log('\nThe documents describe the code as it is');
+  const DOCS = ['README.md', 'SUMMARY.md', 'server.mjs', 'app.js', 'lib/chat.mjs', 'lib/accounts.mjs', 'lib/history.mjs'];
+  const CONTRADICTIONS = [
+    [/this service has no login/i, 'claims this service has no login'],
+    [/Mapper has no login/i, 'claims the Mapper has no login'],
+    [/there is no access prompt|loads straight into the data/i, 'claims the page loads without a sign-in'],
+    [/both routes answer any caller/i, 'claims the data routes answer any caller'],
+    [/MAPPER_ACCESS_TOKEN/, 'still mentions MAPPER_ACCESS_TOKEN as if it existed'],
+    [/the environment wins/i, 'claims the environment AI key beats the pasted one'],
+    [/exposes two routes/i, 'claims the server exposes only two routes'],
+  ];
+  for (const [re, what] of CONTRADICTIONS) {
+    const guilty = DOCS.filter(f => re.test(fs.readFileSync(path.join(ROOT, f), 'utf8')));
+    check(`Nothing ${what}`, guilty.length === 0, guilty.join(', '));
+  }
 } catch (e) {
   check('The login test itself completed', false, e.stack || String(e));
   console.error(log.slice(-2000));

@@ -1,11 +1,18 @@
 /* HaTi-Mapper — the whole back end.
  *
- * Serves the front end and exposes two routes:
+ * Serves the front end (exactly two files) and these routes:
  *
- *   GET /api/scan   — reads the HaTi repository and returns the seven
- *                     code-derived panels as one JSON payload.
- *   GET /api/pulse  — calls HaTi's own read-only /api/pulse and returns the
- *                     caps in force and today's usage.
+ *   GET  /api/scan        — reads the HaTi repository and returns the eight
+ *                           code-derived panels as one JSON payload.
+ *   GET  /api/pulse       — calls HaTi's own read-only /api/pulse and returns
+ *                           the caps in force and today's usage.
+ *   GET  /api/changes     — the Mapper's own change log.
+ *   GET  /api/ai/config   — what the page may know about the assistant's key.
+ *   PUT  /api/ai/config   — set or clear that key from the Settings tab.
+ *   POST /api/chat        — the assistant's tool loop.
+ *   /api/auth/*           — set up, sign in, sign out, forgot, reset, change
+ *                           password, sign out everywhere.
+ *   GET  /api/health      — a liveness probe that returns nothing else.
  *
  * The server holds every secret, so nothing sensitive reaches the browser, and
  * it calls HaTi server-to-server, which means CORS never enters the picture.
@@ -112,8 +119,10 @@ function savePastedKey(key) {
 }
 
 /* A daily ceiling on chat turns, mirroring HaTi's blunt request counter. The
-   Mapper has no login, so without this an open URL could spend the owner's
-   Anthropic credit indefinitely. Resets at UTC midnight. */
+   login already keeps strangers out; this is the second line, against the
+   owner's own runaway loop or a session token that got away. Without it a
+   single mistake could spend the owner's Anthropic credit all night. Resets at
+   UTC midnight. */
 const CHAT_DAILY_LIMIT = Number(process.env.CHAT_DAILY_LIMIT || 200);
 let chatDay = '', chatCount = 0;
 function chatBudget() {
@@ -128,9 +137,10 @@ app.use(express.json({ limit: '256kb' }));
 
 /* ------------------------------------------------------------------ guard */
 
-/* A small sliding-window limiter, same shape as HaTi's. It is now the only
-   thing standing between an open URL and an unbounded number of repository
-   downloads, so it stays. */
+/* A small sliding-window limiter, same shape as HaTi's. The login is what
+   keeps the dashboard private; this is what stops the routes in front of the
+   login being hammered, and what bounds how many repository downloads one
+   signed-in session can trigger. */
 const hits = new Map();
 function rateLimit(bucket, max, windowMs) {
   return (req, res, next) => {

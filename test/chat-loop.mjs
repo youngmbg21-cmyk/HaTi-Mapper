@@ -194,6 +194,12 @@ try {
   check('The environment key is reported as a fallback', cfg.environmentFallback === true, JSON.stringify(cfg));
   const put = await call('PUT', '/api/ai/config', { key: 'sk-ant-' + 'z'.repeat(40) });
   check('The signed-in owner can set the key from the platform', put.status === 200, `got ${put.status}`);
+  /* The documents say the pasted key beats the one in the environment. This
+     server was started with ANTHROPIC_API_KEY set, so that claim is testable
+     rather than merely written down. */
+  const cfgAfter = (await call('GET', '/api/ai/config')).body;
+  check('A key set in the page beats the one in the environment', cfgAfter.source === 'platform', cfgAfter.source);
+  check('And the environment key is still reported as the fallback', cfgAfter.environmentFallback === true);
   const anon = await fetch(`${BASE}/api/ai/config`, {
     method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: 'sk-ant-' + 'q'.repeat(40) }),
   });

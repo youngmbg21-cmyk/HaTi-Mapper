@@ -9,22 +9,42 @@ on each scan; none of the hardcoded values survived.
 Express as the only runtime dependency — the same stack conventions as HaTi.
 
 - **`GET /api/scan`** downloads the HaTi repository as a single gzipped tarball,
-  unpacks it in memory and parses the seven code-derived panels out of it.
+  unpacks it in memory and parses the code-derived panels out of it.
   Cached for ten minutes; `?refresh=1` bypasses the cache.
 - **`GET /api/pulse`** calls HaTi's own read-only endpoint server-to-server and
   returns the caps in force and today's usage.
+- **`GET /api/changes`** serves the Mapper's own change log.
+- **`GET` / `PUT /api/ai/config`** report and set the assistant's key. The key
+  itself is never returned — only its last four characters.
+- **`POST /api/chat`** runs the assistant's tool loop.
+- **`/api/auth/*`** is the login: set up, sign in, sign out, forgotten
+  password, reset, change password, sign out everywhere.
+- **`GET /api/health`** is a liveness probe and returns nothing else.
+
+Everything above except `/api/auth/status` and `/api/health` requires a
+session.
 
 The tar reader (`lib/tar.mjs`) is ~90 lines over Node's built-in `zlib` rather
 than a package.
 
-**The access-token gate was removed** after the first version shipped, at the
-owner's request: the dashboard loads straight into the data with no prompt, and
-both routes answer any caller. The trade-off is stated rather than hidden — the
-URL is now the only thing keeping the page private, and the page describes
-HaTi's unauthenticated routes and its known weaknesses. Two things were kept:
-the rate limiter, because it is what stops an open URL from triggering
-unbounded repository downloads; and the two-file serving allow-list, so no
-secret reaches the browser. `MAPPER_ACCESS_TOKEN` no longer exists.
+**The Mapper is behind its own login.** The single shared access token that
+shipped in the first version was removed, and replaced by a proper account:
+email and password, scrypt hashing with a per-account salt, server-side
+sessions behind an httpOnly, SameSite=Lax cookie that is Secure whenever the
+connection is https, and password reset by a single-use link that expires in
+thirty minutes. The shared token and its environment variable are gone
+entirely — there is no longer any way in that is not an account.
+
+Every route that returns or changes anything sits behind `requireAuth`.
+`/api/auth/status` and `/api/health` are the only two that answer without a
+session, and neither returns any data — status says whether an account exists
+and whether you are signed in, nothing more. The page fetches nothing until the
+server confirms a session.
+
+Two things from the earlier version were kept for their own sake: the rate
+limiter, which bounds how hard the routes in front of the login can be hit and
+how many repository downloads one session can trigger; and the two-file serving
+allow-list, so no secret reaches the browser.
 
 **An assistant and a 72-hour change log were added in a later round**, both
 requested after the dashboard shipped.
@@ -43,11 +63,12 @@ it. And its tools reach only the scan, the change log and the caps — there is
 no tool that can touch HaTi's database, so contract data cannot reach it even
 if asked directly.
 
-The key can be pasted into the page (as asked) or set as `ANTHROPIC_API_KEY`.
-The environment wins, and when it is set the paste box is refused with a 409 —
-this service has no login, so a key set in Render should not be replaceable by
-anyone who reaches the URL. A daily ceiling and a rate limit bound what an open
-page can spend.
+The key can be pasted into the page, on the Settings tab, or set as
+`ANTHROPIC_API_KEY`. **The pasted key wins** — the environment is a fallback
+for anyone who prefers it, the same precedence HaTi uses. That is safe because
+the page is behind the login: only the signed-in owner can read the key's last
+four characters or replace it. A daily ceiling and a rate limit bound what a
+runaway loop can spend.
 
 The change log (`lib/history.mjs`) fingerprints each scan and diffs it against
 the last, turning differences into sentences: a new screen, a feature that
@@ -89,12 +110,12 @@ against a real server. **97 checks, 0 failures**, covering all eight points:
 |---|---|
 | 1. Headline counts match the payload arrays | All six tiles |
 | 2. Eight panels render with real data | None empty, loading, erroring, or showing a mockup value |
-| 3. Each "what breaks what" item highlights and explains | 5 items × 3 checks |
+| 3. Each "what breaks what" item highlights and explains | Every hand-written item × 3 checks |
 | 4. Console errors | Zero from the app |
-| 5. What is exposed | Loads with no prompt; no source file servable; neither served file carries a secret |
+| 5. What is exposed | Nothing is readable without a session; no source file servable; neither served file carries a secret |
 | 6. HaTi unreachable → seven panels fine, spend degrades | The whole run has no HaTi |
 | 7. Nothing sensitive in either payload | 9 patterns: emails, keys, tokens, money, names |
-| 8. Cold scan cost | **22 GitHub requests, 154 files, 2.4s** |
+| 8. Cold scan cost | One tarball download, well under the request ceiling |
 
 Two notes on how those were run:
 

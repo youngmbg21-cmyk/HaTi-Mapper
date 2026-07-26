@@ -5,10 +5,15 @@
  * derived, the page says "not detected" rather than filling the space with
  * something plausible.
  *
- * The page loads straight into the data — there is no access prompt. The
- * secrets the server needs (the GitHub token and HaTi's MAPPER_TOKEN) stay in
- * the server's environment and are never sent to the browser, but the page
- * itself is reachable by anyone who reaches the URL, so keep the URL private.
+ * Nothing is fetched until there is a session. The page shows a sign-in card
+ * first and only draws the dashboard once the server confirms the login, which
+ * matters because what it draws is HaTi's file paths, its addresses that work
+ * without logging in, and its known weaknesses.
+ *
+ * The secrets the server needs — the GitHub token, HaTi's MAPPER_TOKEN and the
+ * Anthropic key — stay in the server's environment or its state directory and
+ * are never sent to the browser. The key is only ever echoed back as its last
+ * four characters.
  */
 (function () {
   'use strict';
