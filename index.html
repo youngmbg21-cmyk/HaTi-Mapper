@@ -53,9 +53,16 @@ body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font);fon
 /* ---------- segmented nav ---------- */
 /* Pinned to the top of the window, so switching tabs is one click from
    wherever you have read to. The hairline gives the pinned row an edge, so
-   content scrolling underneath it does not look like it belongs to it. */
-.nav{position:sticky;top:0;z-index:20;display:flex;gap:2px;overflow-x:auto;background:var(--bg);padding:10px 0 11px;margin-bottom:4px;border-bottom:1px solid var(--divider);scrollbar-width:none;}
-.nav::-webkit-scrollbar{display:none;}
+   content scrolling underneath it does not look like it belongs to it.
+   The tabs WRAP rather than scroll sideways. At this type size all nine no
+   longer fit across the column, and a scrolling strip slides the whole row
+   when you click a tab near its end — so the tabs move out from under the
+   cursor, which is the same complaint as the page jumping. Wrapped, every tab
+   is always visible and always in the same place. */
+.nav{position:sticky;top:0;z-index:20;display:flex;flex-wrap:wrap;gap:2px;background:var(--bg);padding:10px 0 11px;margin-bottom:4px;border-bottom:1px solid var(--divider);}
+/* On a phone the wrapped rows would eat most of the screen, so the row gives
+   up its pin there and simply scrolls away with the rest of the page. */
+@media (max-width:700px){.nav{position:static;}}
 .nav button{flex:none;font-family:var(--font);font-size:13.5px;font-weight:600;color:var(--n600);background:none;border:0;border-radius:var(--r-sm);padding:8px 13px;cursor:pointer;white-space:nowrap;transition:background .12s,color .12s;}
 .nav button:hover{color:var(--text);background:var(--n100);}
 .nav button[aria-selected="true"]{background:var(--a800);color:#fff;}
@@ -209,7 +216,7 @@ tbody tr:hover{background:#fcfcfb;}
    collapsed the document would drag the scroll — and the reader — up with it,
    so every panel reserves a screenful. The cost is some white space under the
    shortest ones, which is worth it. */
-.panel{min-height:calc(100vh - 130px);}
+.panel{min-height:calc(100vh - 100px);}
 /* Chrome shifts the scroll position on its own when content above the viewport
    changes height, which is exactly what swapping panels does. This is a page
    of independent panels, not a feed, so that guesswork is unwanted. */

@@ -339,6 +339,45 @@ requirement it was written from, so a requirement misread at the start stays
 misread all the way through a green suite. The user saying "it still jumps" was
 worth more than any of it.
 
+---
+
+## Driving the page by hand found what the suite could not
+
+**What broke.** Asked to test the tab fix rather than assert it, I drove the
+real dashboard in a real browser — park at a reading position, click all nine
+tabs, screenshot each, and record where the window and the panel heading
+actually ended up. The numbers were clean at two window sizes and 4px out at a
+third. The screenshots were not:
+
+    Screens | Where the money goes | ... | What changed
+    ^ the row had scrolled sideways; "Screens" was half off the left edge
+
+Raising the type in the previous change had pushed the nine tabs past the width
+of the column — they need 1306px and have 1096. The row had been
+`overflow-x: auto` since long before, so it silently became a scrolling strip.
+Clicking a tab near its end slid the whole row to bring it into view, which
+moves every other tab out from under the cursor. That is the owner's complaint
+exactly, on the axis nobody was checking.
+
+**How it ended.** Both fixed. The tabs wrap onto two rows instead of scrolling,
+so every one of them is always visible and always in the same place; below
+700px the row gives up its pin rather than eat a phone screen. The 4px was the
+panel reserve being three pixels short of what a tall window needs — the
+document could not quite reach the parked position — so the reserve went from
+`100vh - 130px` to `100vh - 100px`. Re-driven afterwards: zero pixels of
+movement across all nine tabs at 1500x900, 1280x720 and 1440x1100, with the
+panel heading landing on the same line every time.
+
+A check now asserts the row never scrolls sideways and that all nine tabs are
+within it, so this cannot come back the next time the type changes.
+
+**Worth keeping.** Three rounds on this one feature, and each was found a
+different way: the first by making a test discriminate, the second by the owner
+using the page, the third by looking at a screenshot. The suite was green for
+all three. Automated checks are good at holding a thing still once you know
+what to hold; they are no good at all at noticing what you never thought to
+measure.
+
 ## Nothing was abandoned
 
 Rule 4 of the brief covers the case where an item breaks verification and

@@ -367,7 +367,7 @@ one, under the date they happened, with each reference code moved into a chip
 out of the way of the sentence. The numbering is worked out on the server, so
 the card and the morning email tell the same story with the same numbers.
 
-**Verification.** `npm run verify`: **513 checks, 0 failures** (226 + 61 + 226).
+**Verification.** `npm run verify`: **515 checks, 0 failures** (228 + 61 + 226).
 
 ### 2. "Getting bulky" says what each file is
 
@@ -403,9 +403,21 @@ all nine tabs in a circuit and requires each to hold the position to within two
 pixels; the one case that cannot be honoured — scrolling deeper than a short
 panel reaches — is asserted to land at that panel's end rather than at the top.
 
-Both rounds are written up in `BUGLOG.md`, including a browser check that
-passed while asserting nothing, and the more useful lesson: twice on this
-feature the tests agreed with the code and the code was still wrong.
+A third round came from being asked to test it by hand rather than assert it:
+driving the page in a real browser and looking at the screenshots showed the
+tab row itself had begun scrolling sideways, because raising the type had
+pushed the nine tabs past the width of the column. Clicking a tab near the end
+slid the whole row, moving every other tab out from under the cursor — the same
+complaint on the axis nobody was checking. The tabs wrap onto two rows now, and
+a check holds them there.
+
+Re-driven afterwards: **zero pixels of movement across all nine tabs at
+1500x900, 1280x720 and 1440x1100**, with the panel heading landing on the same
+line every time.
+
+All three rounds are in `BUGLOG.md`. Each was found a different way — one by
+making a test discriminate, one by the owner using the page, one by looking at
+a screenshot — and the suite was green through all three.
 
 ### 4. "0 scans" no longer printed bare
 

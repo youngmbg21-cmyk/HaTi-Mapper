@@ -446,6 +446,27 @@ try {
   check('The tabs are pinned to the top of the window, not left up the page',
     navPinned === 'sticky', navPinned);
 
+  /* Raising the type pushed the nine tabs past the width of the column, and a
+     sideways-scrolling strip slides the whole row when you click a tab near
+     its end — so the tabs move out from under the cursor. Same complaint as
+     the page jumping, different axis. They wrap instead. */
+  const navRow = await page.evaluate(() => {
+    const nav = document.querySelector('.nav');
+    const btns = [...nav.querySelectorAll('button')];
+    return {
+      scrollsSideways: nav.scrollWidth > nav.clientWidth + 1,
+      offRow: btns.filter(b => {
+        const r = b.getBoundingClientRect(), n = nav.getBoundingClientRect();
+        return r.left < n.left - 1 || r.right > n.right + 1;
+      }).map(b => b.textContent.trim()),
+      count: btns.length,
+    };
+  });
+  check('The tab row never scrolls sideways', !navRow.scrollsSideways);
+  check('Every tab is visible at once, so none of them moves when you click',
+    navRow.offRow.length === 0 && navRow.count === 9,
+    navRow.offRow.length ? `off the row: ${navRow.offRow.join(', ')}` : `all ${navRow.count} in view`);
+
   /* Scroll a long way down one tab, go elsewhere, come back. The place has to
      be waiting where it was left. Reloaded first, because "a tab you have not
      opened before" is only true of a page that has not been driven through

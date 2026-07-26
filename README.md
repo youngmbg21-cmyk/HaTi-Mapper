@@ -220,7 +220,7 @@ down; restoring a position the tab remembers from last time moves you when you
 were not. Both were tried, and both are jumps — the only behaviour that never
 surprises is not moving.
 
-Two things make it possible:
+Three things make it possible:
 
 - **Every panel reserves a screenful** (`min-height`). A panel too short to
   fill the window would shrink the document when it opened, and the browser
@@ -229,6 +229,13 @@ Two things make it possible:
   position by itself when content above the viewport changes height, which is
   exactly what swapping panels does. That guesswork suits a feed and not a page
   of independent panels.
+- **The tabs wrap rather than scroll sideways.** At this type size the nine no
+  longer fit across the column, and a scrolling strip slides the whole row when
+  you click a tab near its end — the tabs move out from under the cursor, which
+  is the same complaint on the other axis. Wrapped onto two rows, every tab is
+  always visible and always in the same place. On a phone the rows would eat
+  the screen, so below 700px the row gives up its pin and scrolls away with
+  everything else.
 
 The one case that cannot be honoured is scrolling deeper than a panel reaches —
 from the bottom of the long file list to a short panel, say. There is no
