@@ -648,8 +648,30 @@
         '<div class="src">' + esc(x.source) + '</div></div></div>';
     }).join('') + '</div>';
 
-    html += '<div class="blast-note" style="color:var(--n500)">None of these sources states a severity, so none is shown. ' +
-      'The order is the order the sources list them in, not a ranking.</div>';
+    /* How the list has moved lately — the one thing on this panel that comes
+       from the Mapper's own archive rather than from HaTi's source. */
+    var mv = scan.gapMovement;
+    if (mv && (mv.opened || mv.closed)) {
+      html += '<div class="blast-note"><b>' +
+        (mv.closed ? mv.closed + ' closed' : 'None closed') +
+        ', ' + (mv.opened ? mv.opened + ' opened' : 'none opened') +
+        ' in the last ' + mv.days + ' days.</b> Counted from the change log, so it only covers the time the Mapper has been watching.</div>';
+    } else if (mv) {
+      html += '<div class="blast-note">Nothing on this list has opened or closed in the last ' + mv.days +
+        ' days' + (mv.watchedSince ? ', and the Mapper has been watching since ' + esc(fmtDate(mv.watchedSince)) : '') + '.</div>';
+    }
+
+    if (g.ranked) {
+      var sc = g.severityCounts;
+      html += '<div class="blast-note" style="color:var(--n500)">Ranked by the severity the documents state: ' +
+        sc.high + ' high, ' + sc.medium + ' medium, ' + sc.low + ' low' +
+        (sc.unstated ? ', and ' + sc.unstated + ' that say nothing — those keep their source order underneath' : '') + '.</div>';
+    } else {
+      html += '<div class="blast-note" style="color:var(--n500)">None of these sources states a severity, so none is shown. ' +
+        'The order is the order the sources list them in, not a ranking. ' +
+        'To rank them, start a bullet in HaTi’s README or SECURITY.md with <span class="path">[high]</span>, ' +
+        '<span class="path">[medium]</span> or <span class="path">[low]</span> — nothing else needs to change here.</div>';
+    }
     $('gapsBody').innerHTML = html;
   }
 

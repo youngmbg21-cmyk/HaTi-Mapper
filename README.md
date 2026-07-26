@@ -171,6 +171,24 @@ says so.
 
 ---
 
+## Severity on "Not finished"
+
+The panel gathers known gaps from HaTi's README, its `SECURITY.md` and the
+notes left in the code. None of those sources states how serious anything is,
+so nothing is ranked and the panel says so — the order is source order, not a
+judgement.
+
+**If you want them ranked, the documents can say so.** Start a bullet in HaTi's
+README or `SECURITY.md` with `[high]`, `[medium]` or `[low]` (case doesn't
+matter) and that bullet gets a severity and moves up the list; the tag itself
+never appears in the text. Untagged bullets keep their source order underneath
+the ranked ones. Nothing is ever inferred: a bullet with no tag has no
+severity, and the Mapper will not guess one from its wording.
+
+The panel also shows how the list has moved — *"3 closed, 1 opened in the last
+30 days"* — counted from the change log, so it covers only the time the Mapper
+has been watching.
+
 ## Roughly what it costs
 
 "Where the money goes" used to show models and request counts and never money,

@@ -1,5 +1,31 @@
 # HaTi-Mapper — what shipped
 
+## Waiting on the owner
+
+Everything below is built and verified. These are the things only you can do,
+because they need a hosting dashboard or a change to HaTi itself:
+
+- **Set `MAPPER_OWNER_EMAIL` in Render**, and attach a persistent disk — mount
+  it at `/var/data` and set `MAPPER_DATA=/var/data`. Without a disk, your
+  account, the change log and its archive, your settings and the day's question
+  count are all lost on every redeploy.
+- **Review and merge HaTi's `/api/pulse` branch** (`claude/new-session-5b3551`
+  in `mkataba-clm`) and set a matching `MAPPER_TOKEN` on both services. Until
+  then the spend panel shows code defaults, the "is this what's live?" badge
+  reads "can't tell", and the AI-request tripwire cannot be checked.
+- **Adopt the severity convention in HaTi's documents** if you want the "Not
+  finished" list ranked: start a bullet in HaTi's README or `SECURITY.md` with
+  `[high]`, `[medium]` or `[low]`. The Mapper side is built and will pick them
+  up on the next scan; until a document states one, nothing is ranked and the
+  panel says why.
+- **Add `RESEND_API_KEY`** if you want the morning summary and the alerts by
+  email. Without it the reset link goes to the service log, the morning summary
+  is simply not sent, and the alerts appear as banners instead — everything
+  degrades rather than breaking, and the Settings tab says which.
+- **Set `MAPPER_URL`** (optional) to this dashboard's own address, so emails
+  you asked for can link back to it.
+
+
 The mockup is now an application. Every number on the page is read from HaTi
 on each scan; none of the hardcoded values survived.
 

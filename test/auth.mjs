@@ -724,6 +724,67 @@ try {
   check('Which also drags the health score down', unpriced.health.percent < full.health.percent,
     `${full.health.percent}% → ${unpriced.health.percent}%`);
 
+  /* ---- severity on the "Not finished" list ----
+     An optional convention: a bullet that starts [high] / [medium] / [low]
+     states its own severity. Nothing is inferred — an untagged document must
+     behave exactly as it did before. */
+  console.log('\nSeverity on the "Not finished" list');
+  check('Untagged documents state no severity at all',
+    full.gaps.gaps.every(g => g.severity === null) && full.gaps.ranked === false,
+    `${full.gaps.gaps.filter(g => g.severity).length} tagged`);
+  const sourceOrder = full.gaps.gaps.map(g => g.title);
+
+  const tagged = readFixture(FIXTURE_DIR);
+  tagged.files.set('README.md', Buffer.from(
+    tagged.files.get('README.md').toString('utf8')
+      .replace('- **Rich text is stored as HTML.**', '- [low] **Rich text is stored as HTML.**')
+      .replace('- **There is no audit export.**', '- [HIGH] **There is no audit export.**')
+      .replace('- **Bulk import has no undo.**', '- [medium] **Bulk import has no undo.**')));
+  const ranked = buildScan({ files: tagged.files, commits: tagged.commits, repo: 'f', ref: 'main', requestCount: 0 });
+
+  check('A tagged bullet takes the severity the document states',
+    ranked.gaps.gaps.filter(g => g.severity).length === 3,
+    JSON.stringify(ranked.gaps.severityCounts));
+  check('Case does not matter', ranked.gaps.gaps.some(g => g.severity === 'high'),
+    JSON.stringify(ranked.gaps.gaps.filter(g => g.severity).map(g => g.severity)));
+  check('High comes before medium comes before low',
+    ranked.gaps.gaps.filter(g => g.severity).map(g => g.severity).join(',') === 'high,medium,low',
+    ranked.gaps.gaps.filter(g => g.severity).map(g => g.severity).join(','));
+  check('And the ranked ones come before everything untagged',
+    ranked.gaps.gaps.slice(0, 3).every(g => g.severity) && !ranked.gaps.gaps[3].severity,
+    ranked.gaps.gaps.slice(0, 4).map(g => g.severity).join(','));
+  check('The tag itself never leaks into the title',
+    !ranked.gaps.gaps.some(g => /\[(high|medium|low)\]/i.test(g.title + ' ' + (g.detail || ''))),
+    ranked.gaps.gaps.map(g => g.title).find(t => /\[/.test(t)) || '');
+  check('The panel is told it may rank them', ranked.gaps.ranked === true);
+  check('Untagged bullets keep the order the source wrote them in',
+    ranked.gaps.gaps.filter(g => !g.severity).map(g => g.title).join('|') ===
+    sourceOrder.filter(t => ranked.gaps.gaps.find(g => g.title === t && !g.severity)).join('|'));
+
+  /* Opened and closed over time, counted from tagged log events rather than
+     by matching their wording. */
+  const GDATA = path.join(ROOT, '.tmp-gapmove-data');
+  fs.rmSync(GDATA, { recursive: true, force: true });
+  const gh = new History(GDATA);
+  const gapScan = (at, list) => ({
+    scannedAt: at, commit: 'g', screens: [], ai: { features: [] },
+    storage: { tables: [] }, public: { routes: [], hashes: [] },
+    gaps: { gaps: list.map(t => ({ title: t })), markerCount: 0 },
+    weight: { files: [], orphans: [] }, streams: [], dependencies: { warnings: [] },
+  });
+  gh.record(gapScan(daysAgo(20), ['one', 'two', 'three']));
+  gh.record(gapScan(daysAgo(10), ['one', 'three', 'four']));            // two closed, four opened
+  gh.record(gapScan(new Date().toISOString(), ['one', 'four', 'five'])); // three closed, five opened
+  const movement = gh.gapMovement(30);
+  check('Gaps opening and closing are counted over a window',
+    movement.opened === 2 && movement.closed === 2, JSON.stringify(movement));
+  check('Counted from a tag, not from the wording of the sentence',
+    gh.changes(720).some(r => r.events.some(e => e.tag === 'gap-opened')),
+    JSON.stringify(gh.changes(720)[0].events[0]));
+  check('A shorter window sees only what happened inside it',
+    gh.gapMovement(5).opened === 1 && gh.gapMovement(5).closed === 1, JSON.stringify(gh.gapMovement(5)));
+  fs.rmSync(GDATA, { recursive: true, force: true });
+
   /* ---- the documents describe the code as it is ----
      Documentation drift is the disease this whole tool exists to cure, so the
      statements that were once true and are now false are asserted gone. Each

@@ -483,6 +483,10 @@ async function runScan() {
     console.warn('[history] could not record this scan:', e.message);
   }
   payload.history = history.status();
+  /* How the "Not finished" list has moved lately. Derived here rather than in
+     the scanner, because it is the one thing on that panel that comes from the
+     archive rather than from HaTi's source. */
+  payload.gapMovement = history.gapMovement(30);
   payload.tripped = prefs.get('tripped') || [];
   return payload;
 }
