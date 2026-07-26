@@ -205,6 +205,27 @@ tbody tr:hover{background:#fcfcfb;}
 .ev .x{font-size:12px;color:var(--n800);line-height:1.5;}
 .ev.w3 .x{font-weight:500;}
 
+/* ---------- a tripwire went off ---------- */
+.tripped{margin-bottom:14px;}
+.trip{display:flex;gap:11px;align-items:flex-start;background:#fdf1f0;border:1px solid #eec7c3;border-left:3px solid var(--danger);border-radius:var(--r-sm);padding:11px 14px;margin-bottom:7px;}
+.trip .ic{flex:none;width:17px;height:17px;margin-top:1px;color:var(--danger);}
+.trip .body{flex:1;min-width:0;}
+.trip h4{margin:0 0 2px;font-size:12.5px;font-weight:600;color:#8f322b;}
+.trip p{margin:0;font-size:11.5px;color:#8f322b;line-height:1.5;}
+.trip .when{font-family:var(--mono);font-size:9.5px;color:#a9635c;margin-top:3px;}
+.trip button{flex:none;font-family:var(--font);font-size:11px;font-weight:600;color:#8f322b;background:transparent;border:1px solid #eec7c3;border-radius:var(--r-sm);padding:4px 10px;cursor:pointer;}
+.trip button:hover{background:#fbe6e4;}
+
+/* ---------- watch rules ---------- */
+.rule{display:flex;gap:14px;align-items:flex-start;padding:12px 0;border-bottom:1px solid var(--divider);}
+.rule:last-child{border-bottom:0;}
+.rule .body{flex:1;min-width:0;}
+.rule .say{font-size:12.5px;color:var(--text);line-height:1.5;}
+.rule .why{font-size:11px;color:var(--n600);margin-top:3px;line-height:1.45;}
+.rule input{width:78px;font-family:var(--mono);font-size:12px;color:var(--text);background:var(--bg);border:1px solid var(--divider);border-radius:var(--r-sm);padding:3px 8px;margin:0 5px;}
+.rule .toggle{flex:none;font-family:var(--font);font-size:11px;font-weight:600;min-width:52px;padding:5px 12px;border-radius:999px;border:1px solid var(--divider);background:var(--surface);color:var(--n600);cursor:pointer;}
+.rule .toggle[aria-pressed="true"]{background:var(--a800);border-color:var(--a800);color:#fff;}
+
 /* ---------- last night ---------- */
 .digest .head-line{font-size:13px;font-weight:600;color:var(--text);line-height:1.5;margin-bottom:11px;}
 .digest .sect{padding:9px 0;border-top:1px solid var(--divider);}
@@ -372,6 +393,10 @@ tbody tr:hover{background:#fcfcfb;}
 </div>
 
 <div class="wrap" id="app" hidden>
+
+  <!-- Pinned to the top until dismissed. Only ever filled in by a tripwire the
+       owner armed themselves. -->
+  <div class="tripped" id="tripped" hidden></div>
 
   <div class="devbar">
     <svg class="devbar-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 9v4M12 17h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
@@ -555,6 +580,8 @@ tbody tr:hover{background:#fcfcfb;}
     <div class="card">
       <h2>Being told about things</h2>
       <p class="lede">The dashboard always shows everything. These are the things worth interrupting you for.</p>
+      <!-- Set once, then stop thinking about them. Checked on every scan. -->
+      <div id="watchRules"></div>
       <div class="setrow">
         <div class="lhs">
           <b>Email me each morning</b>

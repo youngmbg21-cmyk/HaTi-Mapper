@@ -39,13 +39,14 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { makeClient, fetchRepoFiles, fetchCommits } from './lib/github.mjs';
 import { buildScan } from './lib/scan.mjs';
-import { History, MAX_HISTORY_HOURS } from './lib/history.mjs';
+import { History, MAX_HISTORY_HOURS, snapshot } from './lib/history.mjs';
 import { CHAT_TOOLS, buildSystem, runTool, normalizeAnswer } from './lib/chat.mjs';
 import { messages as anthropicMessages, friendlyError, DEFAULT_MODEL } from './lib/anthropic.mjs';
 import { Accounts, validEmail, normaliseEmail, SESSION_DAYS } from './lib/accounts.mjs';
-import { sendResetEmail, sendDigestEmail, emailConfigured } from './lib/mail.mjs';
+import { sendResetEmail, sendDigestEmail, sendAlertEmail, emailConfigured } from './lib/mail.mjs';
 import { Prefs } from './lib/prefs.mjs';
 import { buildDigest, digestText } from './lib/digest.mjs';
+import { evaluateWatch, describeRules, RULES } from './lib/watch.mjs';
 import { readFixture, FIXTURE_WARNING } from './lib/fixture.mjs';
 import { driftVerdict } from './lib/drift.mjs';
 
@@ -453,16 +454,70 @@ async function runScan() {
   if (!FIXTURE && !GITHUB_TOKEN) payload.warnings.push('GITHUB_TOKEN is not set — GitHub allows only 60 unauthenticated requests an hour, so scans will start failing.');
 
   /* Every fresh scan is compared with the last one and anything that moved is
-     written to the 72-hour log. Scans that find nothing changed add nothing,
-     so the log stays a list of real events rather than a list of look-ups. */
+     written to the log. Scans that find nothing changed add nothing, so the
+     log stays a list of real events rather than a list of look-ups.
+
+     The tripwires are evaluated against the same pair of snapshots, before the
+     new one replaces the old, and anything they catch is written into the log
+     as a high-weight event alongside the derived ones. */
   try {
-    const events = history.record(payload);
+    const prevSnap = history.latestSnapshot();
+    const nextSnap = snapshot(payload);
+
+    // Only rule (c) needs a running HaTi, and it is the only reason to ask.
+    let pulse = null;
+    if (prefs.get('watch')?.aiRequests?.on) {
+      pulse = await readPulse().catch(() => null);
+    }
+
+    const trips = evaluateWatch({ prev: prevSnap, next: nextSnap, pulse, rules: prefs.get('watch') });
+    const fresh = recordTrips(trips);
+
+    const events = history.record(payload, fresh.map(t => ({ weight: 3, kind: 'watch', text: t.text })));
     if (events.length) console.log(`[history] ${events.length} change(s) noticed in this scan.`);
+    if (fresh.length) {
+      console.warn(`[watch] ${fresh.length} rule(s) tripped: ${fresh.map(t => t.rule).join(', ')}.`);
+      alertOnTrips(fresh).catch(e => console.warn('[watch] the alert could not be sent:', e.message));
+    }
   } catch (e) {
     console.warn('[history] could not record this scan:', e.message);
   }
   payload.history = history.status();
+  payload.tripped = prefs.get('tripped') || [];
   return payload;
+}
+
+/* Keep the trips that are new. A rule that has already raised a banner and not
+   been dismissed must not raise it again on the next scan ten minutes later —
+   that is how a warning becomes wallpaper. */
+function recordTrips(trips) {
+  const standing = prefs.get('tripped') || [];
+  const known = new Set(standing.map(t => t.key));
+  const fresh = trips.filter(t => !known.has(t.key));
+  if (!fresh.length) return [];
+  prefs.update({ tripped: [...standing, ...fresh].slice(-40) });
+  return fresh;
+}
+
+/* Rule (a) is the one that should not wait until morning. The rest ride along
+   in the next day's summary, which they do automatically by being in the log. */
+async function alertOnTrips(fresh) {
+  const urgent = fresh.filter(t => t.immediate);
+  if (!urgent.length) return;
+  if (!prefs.get('digestEmail') || !emailConfigured() || !accounts.ownerEmail) return;
+  await sendAlertEmail(
+    accounts.ownerEmail,
+    'HaTi — something opened that needs no login',
+    [
+      'One of the tripwires you set on the Mapper has gone off.',
+      '',
+      ...urgent.map(t => '- ' + t.text),
+      '',
+      'This is not waiting for the morning summary because of what it is.',
+      PUBLIC_URL ? 'The dashboard: ' + PUBLIC_URL : '',
+      '',
+      'Turn these off in the Mapper\'s Settings if you no longer want them.',
+    ].filter(Boolean).join('\n'));
 }
 
 app.get('/api/scan', requireAuth, rateLimit('scan', 60, 15 * 60 * 1000), async (req, res) => {
@@ -568,6 +623,35 @@ app.put('/api/preferences', requireAuth, rateLimit('prefsw', 40, 15 * 60 * 1000)
   prefs.update(patch);
   console.log(`[prefs] morning summaries are now ${prefs.get('digestEmail') ? 'on' : 'off'}.`);
   res.json({ digestEmail: prefs.get('digestEmail'), canEmail: emailConfigured(), durable: prefs.durable });
+});
+
+/* -------------------------------------------------------------- /api/watch */
+
+/* The tripwires, and whatever they have caught that has not been dismissed. */
+app.get('/api/watch', requireAuth, rateLimit('watch', 120, 15 * 60 * 1000), (req, res) => {
+  res.json({
+    rules: describeRules(prefs.get('watch')),
+    tripped: prefs.get('tripped') || [],
+    canWatchLiveUsage: !!(HATI_URL && MAPPER_TOKEN),
+    durable: prefs.durable,
+  });
+});
+
+app.put('/api/watch', requireAuth, rateLimit('watchw', 60, 15 * 60 * 1000), (req, res) => {
+  const { name, on, threshold } = req.body || {};
+  if (!RULES[name]) return res.status(400).json({ error: 'There is no rule by that name.' });
+  prefs.setRule(name, { on, threshold });
+  console.log(`[watch] "${name}" is now ${prefs.get('watch')[name].on ? 'on' : 'off'}.`);
+  res.json({ rules: describeRules(prefs.get('watch')), tripped: prefs.get('tripped') || [] });
+});
+
+/* Dismissing clears the banner and lets the rule fire again next time. */
+app.post('/api/watch/dismiss', requireAuth, rateLimit('watchd', 60, 15 * 60 * 1000), (req, res) => {
+  const key = (req.body || {}).key;
+  const standing = prefs.get('tripped') || [];
+  const left = key ? standing.filter(t => t.key !== key) : [];
+  prefs.update({ tripped: left });
+  res.json({ tripped: left });
 });
 
 /* ------------------------------------------------------------- /api/digest */

@@ -621,6 +621,7 @@
   var KIND_LABEL = {
     screens: 'screens', ai: 'AI cost', data: 'storage',
     public: 'open door', gaps: 'gaps', weight: 'file size', map: 'the map',
+    watch: 'you asked',
   };
 
   /* How far back the panel is looking. 72 hours is the working set; the longer
@@ -905,6 +906,7 @@
         // summary and the log below it.
         loadWatch();
         loadDigest();
+        loadWatchRules();
         $('rescan').disabled = false;
         $('rescan').textContent = 'Rescan';
       })
@@ -1277,6 +1279,87 @@
       .then(function () { btn.disabled = false; });
   });
 
+  /* ==================================================================== */
+  /*  Tripwires                                                            */
+  /*                                                                       */
+  /*  Things the owner decides once and then stops thinking about. The     */
+  /*  banner stays pinned to the top of the page until it is dismissed,    */
+  /*  because a warning that scrolls away is a warning that was missed.    */
+  /* ==================================================================== */
+
+  var watch = null;
+
+  var TRIP_ICON = '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">' +
+    '<path d="M12 9v4M12 17h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>';
+
+  function renderTripped(tripped) {
+    var el = $('tripped');
+    var list = tripped || [];
+    if (!list.length) { el.hidden = true; el.innerHTML = ''; return; }
+    el.innerHTML = list.map(function (t) {
+      return '<div class="trip">' + TRIP_ICON + '<div class="body">' +
+        '<h4>' + esc(t.title) + '</h4>' +
+        '<p>' + esc(t.text) + '</p>' +
+        '<div class="when">noticed ' + esc(fmtDate(t.at, true)) + '</div>' +
+        '</div><button type="button" data-key="' + esc(t.key) + '">Dismiss</button></div>';
+    }).join('');
+    el.hidden = false;
+  }
+
+  $('tripped').addEventListener('click', function (e) {
+    var b = e.target.closest('button[data-key]');
+    if (!b) return;
+    b.disabled = true;
+    post('/api/watch/dismiss', { key: b.getAttribute('data-key') })
+      .then(function (r) { renderTripped(r.tripped); })
+      .catch(function () { b.disabled = false; });
+  });
+
+  function renderWatchRules(w) {
+    if (!w) return;
+    watch = w;
+    renderTripped(w.tripped);
+
+    $('watchRules').innerHTML = w.rules.map(function (r) {
+      var say = esc(r.plain);
+      if (r.unit) {
+        say += ' <input type="number" min="1" data-th="' + esc(r.name) + '" value="' + esc(r.threshold) + '"' +
+          (r.on ? '' : ' disabled') + '> ' + esc(r.unit);
+      }
+      var why = r.why;
+      if (r.name === 'aiRequests' && !w.canWatchLiveUsage) {
+        why += ' Right now the Mapper cannot reach the running HaTi, so this one cannot be checked.';
+      }
+      return '<div class="rule"><div class="body"><div class="say">' + say + '</div>' +
+        '<div class="why">' + esc(why) + '</div></div>' +
+        '<button type="button" class="toggle" data-rule="' + esc(r.name) + '" aria-pressed="' + (r.on ? 'true' : 'false') + '">' +
+        (r.on ? 'On' : 'Off') + '</button></div>';
+    }).join('');
+  }
+
+  function loadWatchRules() {
+    return apiGet('/api/watch').then(renderWatchRules, function () {});
+  }
+
+  function saveRule(name, patch) {
+    return send('PUT', '/api/watch', { name: name, on: patch.on, threshold: patch.threshold })
+      .then(function (r) { renderWatchRules({ rules: r.rules, tripped: r.tripped, canWatchLiveUsage: watch && watch.canWatchLiveUsage }); });
+  }
+
+  $('watchRules').addEventListener('click', function (e) {
+    var b = e.target.closest('button[data-rule]');
+    if (!b) return;
+    b.disabled = true;
+    saveRule(b.getAttribute('data-rule'), { on: b.getAttribute('aria-pressed') !== 'true' })
+      .catch(function () { b.disabled = false; });
+  });
+
+  $('watchRules').addEventListener('change', function (e) {
+    var i = e.target.closest('input[data-th]');
+    if (!i) return;
+    saveRule(i.getAttribute('data-th'), { threshold: Number(i.value) }).catch(function () {});
+  });
+
   /* ---- being told about things ---- */
 
   var prefs = null;
@@ -1345,8 +1428,10 @@
         load(false);
         loadWatch();
         loadDigest();
+        loadWatchRules();
         refreshBrain().then(renderSettings, function () {});
         loadPrefs();
+        loadWatchRules();
       })
       .catch(function () {
         showAuth('login');

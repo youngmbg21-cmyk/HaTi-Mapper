@@ -19,6 +19,8 @@ import { History, snapshot } from '../lib/history.mjs';
 import { buildScan } from '../lib/scan.mjs';
 import { readFixture } from '../lib/fixture.mjs';
 import { buildDigest, digestText } from '../lib/digest.mjs';
+import { evaluateWatch } from '../lib/watch.mjs';
+import { WATCH_DEFAULTS } from '../lib/prefs.mjs';
 import { FIXTURE_DIR } from './source.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -456,6 +458,94 @@ try {
 
   check('The score goes into the snapshot, so it can be watched over time',
     snapshot(full).health === full.health.percent, `${snapshot(full).health}`);
+
+  /* ---- tripwires ----
+     Each rule is tripped by a seeded pair of snapshots, so what is asserted is
+     the rule firing on the right change and staying quiet on the others. */
+  console.log('\nTripwires');
+  const snapOf = (over) => ({
+    at: new Date().toISOString(), openRoutes: [], hashRoutes: [], files: [], health: 100, ...over,
+  });
+  const armed = (name, threshold) => ({
+    ...Object.fromEntries(Object.keys(WATCH_DEFAULTS).map(k => [k, { on: false, threshold: null }])),
+    [name]: { on: true, threshold: threshold ?? null },
+  });
+
+  const doorOpened = evaluateWatch({
+    prev: snapOf({ openRoutes: ['GET /api/contracts'] }),
+    next: snapOf({ openRoutes: ['GET /api/contracts', 'GET /api/notes'] }),
+    rules: armed('openRoute'),
+  });
+  check('A door that opens with no login trips its rule', doorOpened.length === 1, JSON.stringify(doorOpened));
+  check('It names the address and says why it matters',
+    /GET \/api\/notes now answers without anyone logging in/.test(doorOpened[0].text), doorOpened[0].text);
+  check('And it is the one that does not wait until morning', doorOpened[0].immediate === true);
+
+  const newLink = evaluateWatch({
+    prev: snapOf({ hashRoutes: ['share'] }),
+    next: snapOf({ hashRoutes: ['share', 'invoice'] }),
+    rules: armed('publicLink'),
+  });
+  check('A new kind of public link trips its rule',
+    newLink.length === 1 && /#invoice/.test(newLink[0].text), JSON.stringify(newLink));
+
+  const grew = evaluateWatch({
+    prev: snapOf({ files: [{ path: 'js/big.js', bytes: 90 * 1024 }] }),
+    next: snapOf({ files: [{ path: 'js/big.js', bytes: 130 * 1024 }] }),
+    rules: armed('fileSize', 100),
+  });
+  check('A file crossing the size you set trips its rule',
+    grew.length === 1 && /js\/big\.js is now 130 KB, past the 100 KB/.test(grew[0].text), JSON.stringify(grew));
+  const stillBig = evaluateWatch({
+    prev: snapOf({ files: [{ path: 'js/big.js', bytes: 130 * 1024 }] }),
+    next: snapOf({ files: [{ path: 'js/big.js', bytes: 140 * 1024 }] }),
+    rules: armed('fileSize', 100),
+  });
+  check('But a file that was already over it does not trip every scan', stillBig.length === 0, JSON.stringify(stillBig));
+
+  const spending = evaluateWatch({
+    prev: snapOf({}), next: snapOf({}),
+    pulse: { available: true, usage: { count: 240, date: '2026-07-26' } },
+    rules: armed('aiRequests', 150),
+  });
+  check('Too many AI requests on the live site trips its rule',
+    spending.length === 1 && /240 AI requests today, past the 150/.test(spending[0].text), JSON.stringify(spending));
+  const noPulse = evaluateWatch({
+    prev: snapOf({}), next: snapOf({}), pulse: { available: false }, rules: armed('aiRequests', 150),
+  });
+  check('With no live HaTi it stays quiet rather than assuming the best', noPulse.length === 0);
+
+  const slipped = evaluateWatch({
+    prev: snapOf({ health: 97 }), next: snapOf({ health: 71 }), rules: armed('scanHealth', 90),
+  });
+  check('The scanner losing its grip trips its rule',
+    slipped.length === 1 && /read only 71% .* below the 90%/.test(slipped[0].text), JSON.stringify(slipped));
+
+  const allOff = evaluateWatch({
+    prev: snapOf({ openRoutes: [] }),
+    next: snapOf({ openRoutes: ['GET /api/notes'], health: 10, files: [{ path: 'a.js', bytes: 999999 }] }),
+    rules: Object.fromEntries(Object.keys(WATCH_DEFAULTS).map(k => [k, { on: false, threshold: 1 }])),
+  });
+  check('A rule that is switched off never fires', allOff.length === 0, JSON.stringify(allOff));
+
+  /* The route, and that the two dangerous ones are armed out of the box. */
+  const watch0 = await get('/api/watch');
+  check('/api/watch lists every rule in plain words', watch0.status === 200 && watch0.body.rules.length === 5,
+    JSON.stringify(watch0.body.rules?.map(r => r.name)));
+  check('The two about someone reaching HaTi are on by default',
+    watch0.body.rules.filter(r => r.on).map(r => r.name).sort().join(',') === 'openRoute,publicLink',
+    watch0.body.rules.filter(r => r.on).map(r => r.name).join(','));
+  check('Each rule is phrased as an instruction, not a setting name',
+    watch0.body.rules.every(r => /^Tell me/.test(r.plain)), watch0.body.rules[0].plain);
+
+  const armRule = await call('PUT', '/api/watch', { name: 'fileSize', on: true, threshold: 60 });
+  check('A rule can be armed and given a number', armRule.status === 200 &&
+    armRule.body.rules.find(r => r.name === 'fileSize').threshold === 60,
+    JSON.stringify(armRule.body.rules.find(r => r.name === 'fileSize')));
+  check('And it is written to disk, so it survives a restart',
+    JSON.parse(fs.readFileSync(path.join(DATA, 'prefs.json'), 'utf8')).watch.fileSize.threshold === 60);
+  const junkRule = await call('PUT', '/api/watch', { name: 'nonsense', on: true });
+  check('A rule nobody has heard of is refused', junkRule.status === 400, `got ${junkRule.status}`);
 
   /* ---- what did last night's session do? ----
      The same events the log holds, grouped into one report. Seeded here with a

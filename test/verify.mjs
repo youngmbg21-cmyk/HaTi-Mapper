@@ -26,6 +26,21 @@ const BASE = `http://127.0.0.1:${PORT}`;
 const DATA = path.join(ROOT, '.tmp-verify-data');
 fs.rmSync(DATA, { recursive: true, force: true });
 
+/* A tripwire that has already gone off, seeded before the server starts.
+   Nothing in a first-ever scan can trip one — there is no previous snapshot to
+   compare against — so this is the only honest way to see the banner the way
+   the owner would. */
+const SEEDED_TRIP = {
+  rule: 'openRoute',
+  key: 'openRoute:GET /api/seeded',
+  title: 'A door opened that needs no login',
+  text: 'GET /api/seeded now answers without anyone logging in. If that was not deliberate, it is the most urgent thing on this page.',
+  at: new Date().toISOString(),
+  immediate: true,
+};
+fs.mkdirSync(DATA, { recursive: true });
+fs.writeFileSync(path.join(DATA, 'prefs.json'), JSON.stringify({ tripped: [SEEDED_TRIP] }));
+
 /* Pick whichever Chromium this image actually has, rather than the version
    Playwright's own download would have fetched. */
 function chromiumPath() {
@@ -389,6 +404,50 @@ try {
     `payload says ${scan.health.percent}%`);
   check('It is graded, so a bad score looks bad',
     /\b(good|fair|poor)\b/.test(health.cls), health.cls);
+
+  /* ---- tripwires ---- */
+  console.log('\nTripwires');
+  const banner = await page.evaluate(() => {
+    const el = document.getElementById('tripped');
+    return { hidden: el.hidden, text: (el.innerText || '').trim(), count: el.querySelectorAll('.trip').length };
+  });
+  check('A rule that has gone off is pinned to the top of the page', !banner.hidden && banner.count === 1,
+    `hidden=${banner.hidden}, ${banner.count} banners`);
+  check('It says what happened in the owner\'s own words',
+    /now answers without anyone logging in/.test(banner.text), banner.text.slice(0, 120));
+  check('And it sits above everything else on the page',
+    await page.evaluate(() => {
+      const t = document.getElementById('tripped').getBoundingClientRect().top;
+      const g = document.getElementById('glance').getBoundingClientRect().top;
+      return t < g;
+    }));
+
+  await page.click('.nav button[data-p="settings"]');
+  await page.waitForSelector('#watchRules .rule');
+  const rules = await page.$$eval('#watchRules .rule', els => els.map(e => ({
+    say: e.querySelector('.say').innerText.trim(),
+    on: e.querySelector('.toggle').getAttribute('aria-pressed') === 'true',
+  })));
+  check('Every rule is offered on the Settings tab', rules.length === 5, `${rules.length} rules`);
+  check('Each one is phrased as an instruction', rules.every(r => /^Tell me/.test(r.say)), rules[0]?.say);
+  check('The two dangerous ones are armed out of the box',
+    rules.filter(r => r.on).length === 2, `${rules.filter(r => r.on).length} on`);
+
+  await page.click('#watchRules .toggle[data-rule="fileSize"]');
+  await page.waitForFunction(
+    () => document.querySelector('#watchRules .toggle[data-rule="fileSize"]').getAttribute('aria-pressed') === 'true',
+    null, { timeout: 15000 });
+  check('A rule can be armed through the real button', true, 'fileSize now on');
+  check('And arming it reveals the number it uses',
+    await page.$eval('#watchRules input[data-th="fileSize"]', i => !i.disabled && Number(i.value) === 100),
+    await page.$eval('#watchRules input[data-th="fileSize"]', i => i.value));
+
+  /* Dismissing has to actually clear it, not just hide it locally. */
+  await page.click('#tripped button[data-key]');
+  await page.waitForFunction(() => document.getElementById('tripped').hidden, null, { timeout: 15000 });
+  const afterDismiss = await (await authed('/api/watch')).json();
+  check('Dismissing clears it on the server, not just on screen',
+    afterDismiss.tripped.length === 0, JSON.stringify(afterDismiss.tripped));
 
   /* ---- last night ---- */
   console.log('\nLast night');

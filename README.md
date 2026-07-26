@@ -171,6 +171,36 @@ says so.
 
 ---
 
+## Tripwires
+
+The dashboard shows everything, all the time, which is exactly the problem: you
+have to remember to look, and to know what to look for. Settings → *Being told
+about things* holds five rules you set once and then stop thinking about. Each
+is written as an instruction rather than as a setting name:
+
+| Rule | Default |
+|---|---|
+| Tell me the moment a door opens that needs no login | **On** |
+| Tell me if a new kind of link starts opening without a login | **On** |
+| Tell me when any file gets bigger than *N* KB | Off, 100 KB |
+| Tell me if the live site makes more AI requests in a day than *N* | Off, 150 — only checkable when the Mapper can reach the running HaTi |
+| Tell me if the Mapper can read less of what it looks for than *N*% | Off, 90% |
+
+The two armed by default are the two about somebody else being able to reach
+HaTi's data. The rest are about cost and tidiness, and being nagged about those
+unasked would only teach you to ignore the banner.
+
+They are checked on every scan, against the same snapshots the change log is
+built from. When one goes off: a red banner is pinned to the top of the
+dashboard until you dismiss it, and a high-priority entry goes into the change
+log — which means it also appears in the next morning's summary. The first rule
+does not wait for morning: if the email path is switched on it sends
+immediately, because a door that needs no login is not a thing to read about
+over breakfast.
+
+A rule that has already raised a banner does not raise it again on the next
+scan; dismissing it lets it fire afresh.
+
 ## "What did last night's session do?"
 
 The question the owner asks every morning, answered as one card at the top of
