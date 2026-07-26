@@ -19,6 +19,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, '..');
 const PORT = Number(process.env.LOOP_PORT || 4410);
 const STUB = PORT + 1;
+const RESTART_PORT = PORT + 2;
+let restarted = null;
 const BASE = `http://127.0.0.1:${PORT}`;
 const DATA = path.join(ROOT, '.tmp-loop-data');
 
@@ -169,6 +171,10 @@ try {
   const r5 = await ask('do something odd');
   check('An unknown tool is handled, not fatal', r5.status === 200 && r5.body.answer === 'Recovered.', JSON.stringify(r5.body).slice(0, 100));
 
+  /* The count of questions asked today, taken before anything is allowed to
+     fail, so the two can be compared afterwards. */
+  const usedBeforeFailures = (await call('GET', '/api/ai/config')).body.budget.used;
+
   /* ---- 6. provider failures are put in plain English ---- */
   seen = [];
   script = [{ status: 401, body: { error: { message: 'invalid x-api-key' } } }];
@@ -180,6 +186,41 @@ try {
   script = [{ status: 429, body: {} }];
   const r7 = await ask('anything');
   check('Rate limiting is explained in plain words', /rate-limiting/i.test(r7.body.error || ''), r7.body.error);
+
+  /* ---- the daily question count ----
+     It used to live in memory and be added to before Anthropic was called, so
+     it reset on every restart and a run of outages could eat the whole day's
+     allowance without producing a single answer. */
+  console.log('\nThe daily question count');
+  const budgetAfterFailures = (await call('GET', '/api/ai/config')).body.budget;
+  check('Five questions were answered and counted', usedBeforeFailures === 5, `${usedBeforeFailures}`);
+  check('A rejected key and a rate limit cost nothing against the day',
+    budgetAfterFailures.used === usedBeforeFailures, `${usedBeforeFailures} → ${budgetAfterFailures.used}`);
+  check('The count reports itself as durable', budgetAfterFailures.durable === true);
+
+  const budgetOnDisk = JSON.parse(fs.readFileSync(path.join(DATA, 'chat-budget.json'), 'utf8'));
+  check('It is written to disk with today\'s date',
+    budgetOnDisk.used === budgetAfterFailures.used && budgetOnDisk.date === new Date().toISOString().slice(0, 10),
+    JSON.stringify(budgetOnDisk));
+
+  /* Restart against the same state directory. The count has to survive, which
+     is the whole point of writing it down. */
+  restarted = spawn(process.execPath, ['server.mjs'], {
+    cwd: ROOT,
+    env: { ...process.env, PORT: String(RESTART_PORT), MAPPER_DATA: DATA, HATI_URL: '', MAPPER_TOKEN: '', ...source.env },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  const restartBase = `http://127.0.0.1:${RESTART_PORT}`;
+  let up = false;
+  for (let i = 0; i < 60; i++) {
+    try { if ((await fetch(`${restartBase}/api/health`)).ok) { up = true; break; } } catch (_) {}
+    await new Promise(r => setTimeout(r, 250));
+  }
+  check('A restarted Mapper came up on the same state directory', up);
+  const afterRestart = await fetch(`${restartBase}/api/ai/config`, { headers: { Cookie: cookie } });
+  const restartBudget = (await afterRestart.json()).budget;
+  check('Restarting mid-day does not hand back a fresh allowance',
+    restartBudget.used === budgetAfterFailures.used, `${budgetAfterFailures.used} → ${restartBudget.used}`);
 
   /* ---- 7. nothing from HaTi's contracts can reach the model ---- */
   const everythingSent = JSON.stringify(seen.concat(script)) + JSON.stringify(seen);
@@ -215,6 +256,7 @@ try {
   console.error(log);
 } finally {
   server.kill();
+  if (restarted) restarted.kill();
   stub.close();
   fs.rmSync(DATA, { recursive: true, force: true });
 }

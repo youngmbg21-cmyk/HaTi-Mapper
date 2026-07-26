@@ -140,6 +140,14 @@ and has a daily ceiling (`CHAT_DAILY_LIMIT`, default 200 questions, resetting
 at midnight UTC), so a runaway loop cannot run up a bill. Answering a question
 never triggers a repository download.
 
+Two details make that ceiling real rather than nominal. The day's count is kept
+on disk in `MAPPER_DATA`, so restarting the service — which on Render's free
+tier happens after every idle period — does not hand back a fresh allowance.
+And a question is only counted once Anthropic has actually answered it: a
+rejected key, a rate limit or an outage costs nothing against the day. Without
+a writable state directory the count falls back to memory and the service log
+says so.
+
 ---
 
 ## The 72-hour change log

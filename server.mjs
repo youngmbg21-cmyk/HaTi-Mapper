@@ -124,11 +124,46 @@ function savePastedKey(key) {
    single mistake could spend the owner's Anthropic credit all night. Resets at
    UTC midnight. */
 const CHAT_DAILY_LIMIT = Number(process.env.CHAT_DAILY_LIMIT || 200);
-let chatDay = '', chatCount = 0;
+
+/* The count is kept on disk, next to the account and the change log. Held in
+   memory it reset every time the service restarted — which on Render's free
+   tier is after every idle period — so the ceiling it was supposed to be never
+   really applied. Same pattern the account uses: if the directory cannot be
+   written, say so once and carry on in memory rather than failing. */
+const BUDGET_FILE = path.join(DATA_DIR, 'chat-budget.json');
+let chatDay = '', chatCount = 0, budgetWritable = true;
+try {
+  const raw = JSON.parse(fs.readFileSync(BUDGET_FILE, 'utf8'));
+  chatDay = String(raw.date || '');
+  chatCount = Number(raw.used) || 0;
+} catch (e) {
+  if (e.code !== 'ENOENT') console.warn('[chat] the daily question count could not be read:', e.message);
+}
+
+function saveBudget() {
+  if (!budgetWritable) return;
+  try {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.writeFileSync(BUDGET_FILE, JSON.stringify({ date: chatDay, used: chatCount }));
+  } catch (e) {
+    budgetWritable = false;
+    console.warn('[chat] the daily question count cannot be written to disk, so it will reset when this service restarts:', e.message);
+  }
+}
+
 function chatBudget() {
   const today = new Date().toISOString().slice(0, 10);
-  if (today !== chatDay) { chatDay = today; chatCount = 0; }
-  return { date: chatDay, used: chatCount, limit: CHAT_DAILY_LIMIT };
+  if (today !== chatDay) { chatDay = today; chatCount = 0; saveBudget(); }
+  return { date: chatDay, used: chatCount, limit: CHAT_DAILY_LIMIT, durable: budgetWritable };
+}
+
+/* Called once a question has actually been answered. Counting before the call
+   meant a run of Anthropic outages could eat the whole day's allowance without
+   the owner getting a single answer for it. */
+function countAnsweredQuestion() {
+  chatBudget();                 // rolls the day over first, if it has changed
+  chatCount++;
+  saveBudget();
 }
 
 const app = express();
@@ -574,7 +609,6 @@ app.post('/api/chat', requireAuth, rateLimit('chat', 40, 15 * 60 * 1000), async 
   const ctx = { scan, history, pulse };
   let final = null, usedModel = AI_MODEL, toolsUsed = [];
 
-  chatCount++;
   try {
     for (let step = 0; step < 5; step++) {
       const resp = await anthropicMessages(key, { max_tokens: 1600, system, tools: CHAT_TOOLS, messages: working }, AI_MODEL);
@@ -609,6 +643,9 @@ app.post('/api/chat', requireAuth, rateLimit('chat', 40, 15 * 60 * 1000), async 
     if (!final) {
       final = normalizeAnswer({ answer: 'I could not finish working that one out. Try asking it a slightly different way, or narrow it to one part of the platform.' });
     }
+    /* Anthropic answered, so this one counts. Anything that returned above —
+       a rejected key, a rate limit, an outage — did not. */
+    countAnsweredQuestion();
     res.json({ ...final, model: usedModel, toolsUsed, budget: chatBudget() });
   } catch (e) {
     console.error('[chat] failed:', e.message);
