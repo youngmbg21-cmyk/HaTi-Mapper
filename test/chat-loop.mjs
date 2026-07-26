@@ -222,6 +222,71 @@ try {
   check('Restarting mid-day does not hand back a fresh allowance',
     restartBudget.used === budgetAfterFailures.used, `${budgetAfterFailures.used} → ${restartBudget.used}`);
 
+  /* ---- draft a fix prompt ----
+     The point of this feature is that the owner never has to remember a file
+     path. So what is asserted is that the real path or identifier, taken from
+     the scan, reaches the model — along with the standing rules, word for
+     word. The model's wording is not the thing under test. */
+  console.log('\nDrafting a fix prompt');
+  const scanned = scanRes.body;
+
+  const draftFor = async (kind, id) => {
+    seen = [];
+    script = [{ content: [toolUse('deliver_answer', { answer: 'A prompt.' })] }];
+    const r = await call('POST', '/api/chat', { draft: { kind, id } });
+    return { res: r, sent: seen[0] ? String(seen[0].messages[0].content) : '', system: seen[0] ? seen[0].system : '' };
+  };
+
+  /* (1) a paid AI endpoint nothing calls */
+  const unused = scanned.ai.features.find(f => (f.usedBy || []).length === 0);
+  check('The scan found an AI endpoint nothing calls to draft against', !!unused, unused ? unused.feature : 'none');
+  const d1 = await draftFor('ai-unused', unused.feature);
+  check('Drafting against it succeeds', d1.res.status === 200 && !!d1.res.body.answer, JSON.stringify(d1.res.body).slice(0, 100));
+  check('It is marked as a drafted prompt, not an ordinary answer', d1.res.body.drafted === true);
+  check('The real route reaches the model', d1.sent.includes(unused.route), unused.route);
+  check('So does the identifier it is tagged with in the source',
+    d1.sent.includes(`aiFeature('${unused.feature}')`), unused.feature);
+  check('And the fact that nothing calls it',
+    new RegExp(`api\\('ai/${unused.feature}'\\)`).test(d1.sent));
+
+  /* (2) a name published on window that nothing references */
+  const orphan = scanned.weight.orphans[0];
+  check('The scan found an unused published name to draft against', !!orphan, orphan ? orphan.name : 'none');
+  const d2 = await draftFor('orphan', orphan.name);
+  check('Drafting against it succeeds', d2.res.status === 200);
+  check('The real file it is exported from reaches the model',
+    d2.sent.includes(orphan.exportedFrom) && d2.sent.includes(orphan.name),
+    `${orphan.name} in ${orphan.exportedFrom}`);
+
+  /* (3) a gap the documents admit to */
+  const gap = scanned.gaps.gaps[0];
+  const d3 = await draftFor('gap', gap.title);
+  check('Drafting against a written-down gap succeeds', d3.res.status === 200);
+  check('Both the gap and the document it is written in reach the model',
+    d3.sent.includes(gap.title) && d3.sent.includes(gap.source), gap.source);
+
+  /* The boundaries are the reason this exists — they go in verbatim. */
+  for (const line of [
+    'Do not build or modify the mobile/WhatsApp counterparty portal.',
+    "Run the project's verification before finishing, and do not finish while it is failing.",
+    'Produce BUGLOG.md and SUMMARY.md updates describing what changed and anything that did not work.',
+  ]) {
+    check(`Every draft carries: "${line.slice(0, 46)}…"`,
+      [d1.sent, d2.sent, d3.sent].every(x => x.includes(line)));
+  }
+  check('And is told to reproduce them word for word',
+    /reproduced word for word/.test(d1.sent), d1.sent.slice(0, 60));
+  check('The model is told it is writing a prompt, not answering a question',
+    /YOU ARE DRAFTING A PROMPT, NOT ANSWERING A QUESTION/.test(d1.system));
+  check('And told to add no facts of its own', /Do not add facts/.test(d1.system));
+
+  /* A finding that is not there must be refused, not drafted around. */
+  const missing = await call('POST', '/api/chat', { draft: { kind: 'orphan', id: 'noSuchNameAnywhere' } });
+  check('A finding that no longer exists is refused rather than invented',
+    missing.status === 404 && /no unused published name/i.test(missing.body.error), JSON.stringify(missing.body));
+  const nonsense = await call('POST', '/api/chat', { draft: { kind: 'not-a-kind', id: 'x' } });
+  check('So is a kind of finding nobody has heard of', nonsense.status === 404, `got ${nonsense.status}`);
+
   /* ---- 7. nothing from HaTi's contracts can reach the model ---- */
   const everythingSent = JSON.stringify(seen.concat(script)) + JSON.stringify(seen);
   const allTurns = JSON.stringify(seen);

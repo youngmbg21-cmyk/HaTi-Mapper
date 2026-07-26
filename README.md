@@ -171,6 +171,29 @@ says so.
 
 ---
 
+## "Draft a fix prompt"
+
+The dashboard was good at showing what is wrong and no help at all with doing
+something about it. The next step is always the same — describe the finding
+accurately to an overnight Claude Code session — and describing it accurately
+means naming files and identifiers nobody should have to remember.
+
+So findings carry a **Draft a fix prompt** button: a paid AI endpoint nothing
+calls, a name published on `window` and never used, a file over the line, a gap
+the documents admit to, and any tripwire that has gone off. Pressing it writes
+a prompt for a session on **HaTi's** repository that states the finding with
+the real paths and identifiers, scopes the change narrowly, and ends with your
+standing rules reproduced word for word — no mobile/WhatsApp portal, no new
+dependencies, nothing outside the scope, run the verification before finishing,
+update `BUGLOG.md`, `SUMMARY.md` and the README. Copy it out of the chat panel
+and paste it.
+
+The facts come from the scan, on the server; the model writes the wording, not
+the research, and is told to add nothing. A finding that no longer exists is
+refused rather than drafted around. It goes through the same key, the same
+daily budget and the same rate limit — there is no second way to reach
+Anthropic.
+
 ## Which way things are moving
 
 A strip of six small charts on the overview, drawn from the archive's

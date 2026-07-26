@@ -49,6 +49,7 @@ import { buildDigest, digestText } from './lib/digest.mjs';
 import { evaluateWatch, describeRules, RULES } from './lib/watch.mjs';
 import { readFixture, FIXTURE_WARNING } from './lib/fixture.mjs';
 import { driftVerdict } from './lib/drift.mjs';
+import { describeFinding, draftInstruction } from './lib/draft.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -847,15 +848,6 @@ app.post('/api/chat', requireAuth, rateLimit('chat', 40, 15 * 60 * 1000), async 
     });
   }
 
-  const incoming = Array.isArray(req.body?.messages) ? req.body.messages : [];
-  const convo = incoming
-    .filter(m => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string' && m.content.trim())
-    .slice(-10)
-    .map(m => ({ role: m.role, content: m.content.slice(0, 4000) }));
-  if (!convo.length || convo[convo.length - 1].role !== 'user') {
-    return res.status(400).json({ error: 'The last message needs to be a question from you.' });
-  }
-
   /* The assistant answers from the cached scan. It never triggers a fresh
      repository download — asking a question should not cost a scan. */
   if (!cache) {
@@ -863,10 +855,31 @@ app.post('/api/chat', requireAuth, rateLimit('chat', 40, 15 * 60 * 1000), async 
   }
   const scan = cache.payload;
 
+  /* "Draft a fix prompt" on a finding. The instruction is built here, from the
+     scan, so the paths and identifiers in it are the ones that were actually
+     scanned rather than anything typed or remembered. Same key, same budget,
+     same rate limit, same loop — there is no second way to reach Anthropic. */
+  const draftReq = req.body?.draft;
+  let convo;
+  if (draftReq && typeof draftReq.kind === 'string') {
+    const finding = describeFinding(scan, draftReq.kind, String(draftReq.id || ''));
+    if (finding.error) return res.status(404).json({ error: finding.error });
+    convo = [{ role: 'user', content: draftInstruction(scan, finding) }];
+  } else {
+    const incoming = Array.isArray(req.body?.messages) ? req.body.messages : [];
+    convo = incoming
+      .filter(m => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string' && m.content.trim())
+      .slice(-10)
+      .map(m => ({ role: m.role, content: m.content.slice(0, 4000) }));
+    if (!convo.length || convo[convo.length - 1].role !== 'user') {
+      return res.status(400).json({ error: 'The last message needs to be a question from you.' });
+    }
+  }
+
   let pulse = null;
   try { pulse = await readPulse(); } catch (_) { pulse = { available: false }; }
 
-  const system = buildSystem({ scan, historyStatus: history.status(), pulse });
+  const system = buildSystem({ scan, historyStatus: history.status(), pulse, draft: !!draftReq });
   const working = convo.slice();
   const ctx = { scan, history, pulse };
   let final = null, usedModel = AI_MODEL, toolsUsed = [];
@@ -908,7 +921,7 @@ app.post('/api/chat', requireAuth, rateLimit('chat', 40, 15 * 60 * 1000), async 
     /* Anthropic answered, so this one counts. Anything that returned above —
        a rejected key, a rate limit, an outage — did not. */
     countAnsweredQuestion();
-    res.json({ ...final, model: usedModel, toolsUsed, budget: chatBudget() });
+    res.json({ ...final, model: usedModel, toolsUsed, budget: chatBudget(), drafted: !!draftReq });
   } catch (e) {
     console.error('[chat] failed:', e.message);
     res.status(502).json({ error: `The assistant could not complete that: ${e.message}` });

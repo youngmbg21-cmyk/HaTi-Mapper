@@ -392,7 +392,7 @@
         : nd();
       var used = f.usedBy.length
         ? f.usedBy.map(function (c) { return esc(callSiteName(c)); }).join(', ')
-        : '<span class="none">not called from the front end</span>';
+        : '<span class="none">not called from the front end</span> ' + fixButton('ai-unused', f.feature);
       /* What one use of this feature could cost at most. Never a bill — the
          assumption behind it is printed under the table. */
       var c = costFor(f.feature);
@@ -645,7 +645,7 @@
       return '<div class="gap"><span class="dot ' + cls + '" title="' + esc(title) + '"></span><div>' +
         '<div class="t">' + esc(x.title) + (x.marker ? '<span class="flag">' + esc(x.marker) + '</span>' : '') + '</div>' +
         (x.detail ? '<div class="d">' + esc(x.detail) + '</div>' : '') +
-        '<div class="src">' + esc(x.source) + '</div></div></div>';
+        '<div class="src">' + esc(x.source) + ' ' + fixButton('gap', x.title) + '</div></div></div>';
     }).join('') + '</div>';
 
     /* How the list has moved lately — the one thing on this panel that comes
@@ -863,7 +863,8 @@
 
     var html = '<div class="bars">' + w.files.map(function (f) {
       var big = f.bytes > w.threshold;
-      return '<div class="bar' + (big ? ' big' : '') + '"><span class="f" title="' + esc(f.path) + '">' + esc(f.path.replace(/^js\//, '')) + '</span>' +
+      return '<div class="bar' + (big ? ' big' : '') + '"><span class="f" title="' + esc(f.path) + '">' + esc(f.path.replace(/^js\//, '')) +
+        (big ? ' ' + fixButton('file-size', f.path) : '') + '</span>' +
         '<span class="track"><span class="fill" style="width:' + ((f.bytes / max) * 100).toFixed(1) + '%"></span></span>' +
         '<span class="s">' + kb(f.bytes) + '</span></div>';
     }).join('') +
@@ -890,7 +891,9 @@
     $('orphanBody').innerHTML = '<table><thead><tr><th style="width:220px">Exported from</th><th>Never referenced anywhere else</th></tr></thead><tbody>' +
       Object.keys(byFile).map(function (f) {
         return '<tr><td class="path">' + esc(f) + '</td><td>' +
-          byFile[f].map(function (n) { return '<span class="path">' + esc(n) + '</span>'; }).join(', ') + '</td></tr>';
+          byFile[f].map(function (n) {
+            return '<span class="path">' + esc(n) + '</span>' + fixButton('orphan', n);
+          }).join(' ') + '</td></tr>';
       }).join('') +
       '</tbody></table><div class="blast-note">' + w.orphans.length + ' of ' + w.exportCount +
       ' exported names. Each appears exactly once outside the export blocks — its own declaration — so nothing calls it. ' +
@@ -1286,6 +1289,11 @@
       html += '<div class="msg bot' + (m.error ? ' err' : '') + '"><div class="body">' + md(m.content);
       if (m.watchOut) html += '<div class="watch">' + esc(m.watchOut) + '</div>';
       html += '</div>';
+      /* A drafted prompt exists to be pasted somewhere else, so the only thing
+         that matters is getting it out of here intact. */
+      if (m.copyable) {
+        html += '<div class="srcs"><button class="copy" data-copy="' + esc(m.content) + '">Copy this prompt</button></div>';
+      }
       if (m.sources && m.sources.length) {
         html += '<div class="srcs">' + m.sources.map(function (s) {
           return '<button data-tab="' + esc(s.tab) + '" title="' + esc(s.note || '') + '">See “' + esc(s.label) + '”</button>';
@@ -1345,6 +1353,53 @@
       });
   }
 
+  /* ---- draft a fix prompt ----
+
+     The dashboard is good at showing what is wrong and was useless at helping
+     do anything about it: the next step is always describing the finding
+     accurately to an overnight session, and that means naming files and
+     identifiers nobody should be expected to remember. The server builds the
+     instruction from the scan, so the paths in it are the ones that were
+     actually scanned. */
+
+  function fixButton(kind, id, label) {
+    return '<button class="fixbtn" data-fix="' + esc(kind) + '" data-id="' + esc(id) + '"' +
+      ' title="Write a prompt I can paste into a Claude Code session">' +
+      'Draft a fix prompt' + (label ? '<span class="sr">' + esc(label) + '</span>' : '') + '</button>';
+  }
+
+  function draftFix(kind, id) {
+    if (chat.busy) return;
+    askOpen(true);
+    chat.busy = true;
+    chat.history.push({ role: 'user', content: 'Draft a fix prompt for this.' });
+    renderFeed(true);
+    $('askSend').disabled = true;
+
+    send('POST', '/api/chat', { draft: { kind: kind, id: id } })
+      .then(function (b) {
+        chat.history.push({ role: 'assistant', content: b.answer, sources: b.sources, watchOut: b.watchOut, copyable: true });
+        if (b.budget) refreshBrain();
+      })
+      .catch(function (e) {
+        chat.history.push({ role: 'assistant', content: e.message, error: true });
+        if (e.body && e.body.needsKey) refreshBrain();
+      })
+      .then(function () {
+        chat.busy = false;
+        $('askSend').disabled = false;
+        renderFeed(false);
+      });
+  }
+
+  /* One listener for every panel — the buttons are rendered inside markup that
+     is replaced on each scan, so binding them individually would leak. */
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest && e.target.closest('button[data-fix]');
+    if (!b) return;
+    draftFix(b.getAttribute('data-fix'), b.getAttribute('data-id'));
+  });
+
   /* --- wiring --- */
   $('askLaunch').addEventListener('click', function () { askOpen(true); });
   $('askClose').addEventListener('click', function () { askOpen(false); });
@@ -1382,6 +1437,17 @@
   /* "See <panel>" jumps to that tab, so an answer always has somewhere to
      land rather than being the end of the conversation. */
   $('askFeed').addEventListener('click', function (e) {
+    var c = e.target.closest('button[data-copy]');
+    if (c) {
+      var text = c.getAttribute('data-copy');
+      var done = function () { toast('Prompt copied — paste it into a session'); };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done, function () { toast('Could not copy — select the text and copy it by hand'); });
+      } else {
+        toast('This browser will not let the page copy for you — select the text and copy it by hand');
+      }
+      return;
+    }
     var b = e.target.closest('button[data-tab]');
     if (!b) return;
     var tab = document.querySelector('.nav button[data-p="' + b.getAttribute('data-tab') + '"]');
@@ -1509,7 +1575,7 @@
       return '<div class="trip">' + TRIP_ICON + '<div class="body">' +
         '<h4>' + esc(t.title) + '</h4>' +
         '<p>' + esc(t.text) + '</p>' +
-        '<div class="when">noticed ' + esc(fmtDate(t.at, true)) + '</div>' +
+        '<div class="when">noticed ' + esc(fmtDate(t.at, true)) + ' ' + fixButton('tripped', t.key) + '</div>' +
         '</div><button type="button" data-key="' + esc(t.key) + '">Dismiss</button></div>';
     }).join('');
 

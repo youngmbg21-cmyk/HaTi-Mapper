@@ -411,6 +411,32 @@ try {
   check('It is graded, so a bad score looks bad',
     /\b(good|fair|poor)\b/.test(health.cls), health.cls);
 
+  /* ---- draft a fix prompt ----
+     The button has to be on the findings themselves, where the owner is
+     looking when they decide something needs doing. The endpoint behind it is
+     driven end to end in test/chat-loop.mjs, against a stand-in model. */
+  console.log('\nDraft a fix prompt');
+  const fixButtons = {};
+  for (const [tab, kind] of [['cost', 'ai-unused'], ['gaps', 'gap'], ['weight', 'file-size'], ['weight', 'orphan']]) {
+    await page.click(`.nav button[data-p="${tab}"]`);
+    await page.waitForTimeout(120);
+    fixButtons[kind] = await page.$$eval(`button[data-fix="${kind}"]`, els =>
+      els.map(e => e.getAttribute('data-id')).filter(Boolean));
+  }
+  check('A paid endpoint nothing calls offers to draft one',
+    fixButtons['ai-unused'].length >= 1, fixButtons['ai-unused'].join(', ') || 'none');
+  check('So does every gap the documents admit to',
+    fixButtons.gap.length >= scan.gaps.gaps.length, `${fixButtons.gap.length} of ${scan.gaps.gaps.length}`);
+  check('So does every name published and never used',
+    fixButtons.orphan.length === scan.weight.orphans.length,
+    `${fixButtons.orphan.length} of ${scan.weight.orphans.length}`);
+  check('And the button carries the real identifier, not a row number',
+    scan.weight.orphans.every(o => fixButtons.orphan.includes(o.name)),
+    fixButtons.orphan.slice(0, 3).join(', '));
+  check('A file under the line is not offered one — there is nothing to fix',
+    fixButtons['file-size'].length === scan.weight.overThreshold,
+    `${fixButtons['file-size'].length} buttons, ${scan.weight.overThreshold} files over the line`);
+
   /* ---- which way things are moving ----
      This Mapper has only ever scanned once, which is the state a brand-new
      install is in. Drawing a line through one point would be a lie, so the
