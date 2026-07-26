@@ -43,7 +43,9 @@ import { History, MAX_HISTORY_HOURS } from './lib/history.mjs';
 import { CHAT_TOOLS, buildSystem, runTool, normalizeAnswer } from './lib/chat.mjs';
 import { messages as anthropicMessages, friendlyError, DEFAULT_MODEL } from './lib/anthropic.mjs';
 import { Accounts, validEmail, normaliseEmail, SESSION_DAYS } from './lib/accounts.mjs';
-import { sendResetEmail, emailConfigured } from './lib/mail.mjs';
+import { sendResetEmail, sendDigestEmail, emailConfigured } from './lib/mail.mjs';
+import { Prefs } from './lib/prefs.mjs';
+import { buildDigest, digestText } from './lib/digest.mjs';
 import { readFixture, FIXTURE_WARNING } from './lib/fixture.mjs';
 import { driftVerdict } from './lib/drift.mjs';
 
@@ -55,6 +57,9 @@ const REF = process.env.HATI_REF || 'main';
 const GITHUB_TOKEN = (process.env.GITHUB_TOKEN || '').trim();
 const HATI_URL = (process.env.HATI_URL || '').trim().replace(/\/+$/, '');
 const MAPPER_TOKEN = (process.env.MAPPER_TOKEN || '').trim();
+/* Optional. Only ever used to put a link to this dashboard at the bottom of an
+   email the owner asked for. */
+const PUBLIC_URL = (process.env.MAPPER_URL || '').trim().replace(/\/+$/, '');
 
 /* Read HaTi's source from a directory instead of downloading it. Unset in
    normal running; the verification suite sets it when the real repository
@@ -79,6 +84,7 @@ const COMMIT_COUNT = Number(process.env.COMMIT_COUNT || 20);
    while clearing the other. */
 const DATA_DIR = process.env.MAPPER_DATA || path.join(__dirname, '.mapper-state');
 const history = new History(DATA_DIR);
+const prefs = new Prefs(DATA_DIR);
 
 /* -------------------------------------------------------------- accounts */
 
@@ -470,6 +476,10 @@ app.get('/api/scan', requireAuth, rateLimit('scan', 60, 15 * 60 * 1000), async (
     }
     const payload = await inFlight;
     cache = { at: Date.now(), payload };
+    /* The morning summary rides on the first scan of the day rather than on a
+       timer, because a scan is when there is something new to summarise. It
+       never blocks the response. */
+    maybeEmailDigest().catch(e => console.warn('[digest] could not be sent:', e.message));
     res.json({ ...payload, cached: false, cacheAgeMs: 0 });
   } catch (e) {
     console.error('[scan] failed:', e.message);
@@ -535,6 +545,73 @@ app.get('/api/changes', requireAuth, rateLimit('changes', 120, 15 * 60 * 1000), 
   const hours = Math.min(Math.max(Number(req.query.hours) || 72, 1), MAX_HISTORY_HOURS);
   res.json({ ...history.status(), hours, rounds: history.changes(hours) });
 });
+
+/* -------------------------------------------------------- /api/preferences */
+
+/* The handful of choices the owner makes on the Settings tab. Nothing secret
+   crosses this route — no key, no address, no token. */
+app.get('/api/preferences', requireAuth, rateLimit('prefs', 120, 15 * 60 * 1000), (req, res) => {
+  const all = prefs.all();
+  res.json({
+    digestEmail: all.digestEmail,
+    lastDigestDate: all.lastDigestDate,
+    canEmail: emailConfigured(),
+    durable: prefs.durable,
+  });
+});
+
+app.put('/api/preferences', requireAuth, rateLimit('prefsw', 40, 15 * 60 * 1000), (req, res) => {
+  const body = req.body || {};
+  const patch = {};
+  if (typeof body.digestEmail === 'boolean') patch.digestEmail = body.digestEmail;
+  if (!Object.keys(patch).length) return res.status(400).json({ error: 'Nothing to change.' });
+  prefs.update(patch);
+  console.log(`[prefs] morning summaries are now ${prefs.get('digestEmail') ? 'on' : 'off'}.`);
+  res.json({ digestEmail: prefs.get('digestEmail'), canEmail: emailConfigured(), durable: prefs.durable });
+});
+
+/* ------------------------------------------------------------- /api/digest */
+
+/* "What did last night's session do?" — the change log grouped into one report
+   instead of a stream of individual events. Derived entirely from the log and
+   the cached scan; it reads nothing new. */
+app.get('/api/digest', requireAuth, rateLimit('digest', 120, 15 * 60 * 1000), (req, res) => {
+  const period = ['midnight', '24h', '72h'].includes(req.query.period) ? req.query.period : 'midnight';
+  res.json(currentDigest(period));
+});
+
+function currentDigest(period = 'midnight') {
+  return buildDigest({
+    rounds: history.changes(72),
+    points: history.points(72),
+    scan: cache?.payload || null,
+    period,
+  });
+}
+
+/* The email path. Once a day, on the first scan after 06:00 local time, if the
+   owner asked for it and a provider is configured. Everything about it is
+   optional: with no key, or the preference off, the same report is simply on
+   the dashboard and nothing is sent. */
+async function maybeEmailDigest() {
+  if (!prefs.get('digestEmail') || !emailConfigured()) return { sent: false, reason: 'not-configured' };
+  if (!accounts.ownerEmail) return { sent: false, reason: 'no-owner' };
+
+  const now = new Date();
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  if (now.getHours() < 6) return { sent: false, reason: 'too-early' };
+  if (prefs.get('lastDigestDate') === today) return { sent: false, reason: 'already-sent-today' };
+
+  const digest = currentDigest('midnight');
+  // Marked as sent before the attempt, so a provider that is refusing cannot
+  // turn into one email per scan for the rest of the day.
+  prefs.update({ lastDigestDate: today });
+  const result = await sendDigestEmail(
+    accounts.ownerEmail,
+    digest.quiet ? 'HaTi — nothing moved overnight' : 'HaTi — what changed overnight',
+    digestText(digest, { link: PUBLIC_URL || undefined }));
+  return result;
+}
 
 /* --------------------------------------------------------- /api/ai/config */
 

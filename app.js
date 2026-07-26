@@ -286,7 +286,7 @@
 
   function setLoading() {
     $('glance').innerHTML = '';
-    ['screensBody', 'costBody', 'dataBody', 'blastBody', 'gapsBody', 'publicBody', 'changesBody', 'weightBody', 'orphanBody', 'watchBody']
+    ['screensBody', 'costBody', 'dataBody', 'blastBody', 'gapsBody', 'publicBody', 'changesBody', 'weightBody', 'orphanBody', 'watchBody', 'digestBody']
       .forEach(function (id) { $(id).innerHTML = skeleton(5); });
     $('capsBody').innerHTML = skeleton(4);
     $('screensBody').innerHTML = skeleton(6) +
@@ -674,6 +674,60 @@
     body.innerHTML = html;
   }
 
+  /* ---- 7c. last night ---- */
+
+  /* The question the owner actually asks each morning. The same events the log
+     below lists, grouped into one report so it reads as an answer rather than
+     as a feed. */
+  function renderDigest(d) {
+    var body = $('digestBody');
+    if (!d) { body.innerHTML = skeleton(3); return; }
+
+    $('digestLede').textContent = 'Everything that moved ' + d.label + ', in one place.';
+
+    if (d.quiet) {
+      body.innerHTML = '<div class="notice" style="background:var(--a100);border-color:var(--a300);color:var(--a800)"><div>' +
+        '<b>Nothing moved ' + esc(d.label) + '.</b> No screens, no addresses, no tables, no commits. ' +
+        'If a session was supposed to run, that is worth knowing too.</div></div>';
+      return;
+    }
+
+    var html = '<div class="digest"><div class="head-line">' + esc(d.headline) + '</div>';
+
+    html += d.sections.map(function (s) {
+      return '<div class="sect"><h5>' + esc(s.title) + '</h5>' +
+        s.events.map(function (e) {
+          return '<p' + ((e.weight || 1) >= 3 ? ' class="big"' : '') + '>' + esc(e.text) + '</p>';
+        }).join('') + '</div>';
+    }).join('');
+
+    if (d.commits.length) {
+      html += '<div class="sect"><h5>Commits</h5>' + d.commits.map(function (c) {
+        return '<p>' + esc(c.subject) + ' <span class="path">' + esc(c.sha) + '</span></p>';
+      }).join('') + '</div>';
+    }
+
+    var foot = [];
+    if (d.health) {
+      foot.push(d.health.delta == null
+        ? 'The scanner could read ' + d.health.to + '% of what it looks for.'
+        : 'The scanner could read ' + d.health.to + '% of what it looks for, against ' + d.health.from + '% at the start of the window.');
+    }
+    if (d.bytesGrown != null && Math.abs(d.bytesGrown) >= 1024) {
+      foot.push('The whole thing ' + (d.bytesGrown > 0 ? 'grew' : 'shrank') + ' by about ' + kb(Math.abs(d.bytesGrown)) + '.');
+    }
+    foot.push('Put together from ' + d.scanCount + ' scan' + (d.scanCount === 1 ? '' : 's') + ' in that window.');
+    html += '<div class="foot">' + esc(foot.join(' ')) + '</div></div>';
+
+    body.innerHTML = html;
+  }
+
+  function loadDigest() {
+    return apiGet('/api/digest').then(renderDigest, function () {
+      $('digestBody').innerHTML = '<div class="notice"><div>The summary could not be put together just now.</div></div>';
+    });
+  }
+
   function loadWatch() {
     return apiGet('/api/changes?hours=' + watchHours).then(renderWatch, function () {
       $('watchBody').innerHTML = '<div class="notice"><div>The change log could not be read just now.</div></div>';
@@ -847,8 +901,10 @@
       .then(function (r) {
         scan = r[0];
         renderAll();
-        // A rescan may have noticed something new, so refresh the watch log.
+        // A rescan may have noticed something new, so refresh both the
+        // summary and the log below it.
         loadWatch();
+        loadDigest();
         $('rescan').disabled = false;
         $('rescan').textContent = 'Rescan';
       })
@@ -1221,6 +1277,51 @@
       .then(function () { btn.disabled = false; });
   });
 
+  /* ---- being told about things ---- */
+
+  var prefs = null;
+
+  function renderPrefs(p) {
+    if (!p) return;
+    prefs = p;
+    var b = $('setDigest');
+    b.textContent = p.digestEmail ? 'On' : 'Off';
+    b.setAttribute('aria-pressed', String(!!p.digestEmail));
+    b.className = 'btn' + (p.digestEmail ? ' btn-primary' : '');
+
+    var state = $('setDigestState');
+    if (!p.canEmail) {
+      state.className = 'state';
+      state.textContent = p.digestEmail
+        ? 'Switched on, but no email provider is set up on this service, so nothing will be sent. The same summary is on the “What changed” tab.'
+        : 'No email provider is set up on this service. Add RESEND_API_KEY in your hosting dashboard to switch this on.';
+      return;
+    }
+    state.className = 'state' + (p.digestEmail ? ' good' : '');
+    state.textContent = p.digestEmail
+      ? 'On. Sent once a day, on the first scan after 6am.' +
+        (p.lastDigestDate ? ' Last sent ' + p.lastDigestDate + '.' : '')
+      : 'Off. The summary is still on the “What changed” tab.';
+  }
+
+  function loadPrefs() {
+    return apiGet('/api/preferences').then(renderPrefs, function () {});
+  }
+
+  $('setDigest').addEventListener('click', function () {
+    var btn = this;
+    btn.disabled = true;
+    send('PUT', '/api/preferences', { digestEmail: !(prefs && prefs.digestEmail) })
+      .then(function (p) {
+        // The write route answers with what it changed; keep the rest.
+        var merged = { digestEmail: p.digestEmail, canEmail: p.canEmail, durable: p.durable };
+        merged.lastDigestDate = prefs ? prefs.lastDigestDate : null;
+        renderPrefs(merged);
+      })
+      .catch(function (e) { settingsState('setDigestState', 'bad', e.message); })
+      .then(function () { btn.disabled = false; });
+  });
+
   $('setSignOut').addEventListener('click', function () { signOut(false); });
   $('setSignOutAll').addEventListener('click', function () { signOut(true); });
 
@@ -1243,7 +1344,9 @@
         showApp(authInfo);
         load(false);
         loadWatch();
+        loadDigest();
         refreshBrain().then(renderSettings, function () {});
+        loadPrefs();
       })
       .catch(function () {
         showAuth('login');

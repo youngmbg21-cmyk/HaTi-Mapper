@@ -118,7 +118,8 @@ Set these in the Render dashboard. None belongs in git.
 | `HATI_URL` | Base URL of the running HaTi, e.g. `https://hati-clm.onrender.com`. Unset → the spend panel shows code defaults and says so; the other seven panels are unaffected. |
 | `MAPPER_TOKEN` | Must match the `MAPPER_TOKEN` set on **HaTi**. This is the bearer credential the Mapper presents to HaTi's `/api/pulse`. |
 | `MAPPER_OWNER_EMAIL` | **Recommended.** The only email allowed to claim the account. Without it, whoever reaches the URL first can claim it — so set this before the first visit, or set up your account immediately. |
-| `RESEND_API_KEY` | **Needed for password resets by email.** Without it the reset link is written to the service log instead, which still works but means anyone with dashboard access could read it while it is valid. |
+| `RESEND_API_KEY` | **Needed for password resets by email**, and for the optional morning summary. Without it the reset link is written to the service log instead, which still works but means anyone with dashboard access could read it while it is valid; the morning summary simply is not sent, and the Settings tab says so. |
+| `MAPPER_URL` | Optional. This dashboard's own address, used only to put a link at the bottom of emails you asked for. |
 | `EMAIL_FROM` | Optional. From-address on the reset email. Defaults to Resend's shared sender. |
 | `ANTHROPIC_API_KEY` | **Optional and not the normal route** — the assistant's key is set inside the platform, on the Settings tab. This exists only as a fallback; a key set in the page takes precedence. |
 
@@ -169,6 +170,26 @@ a writable state directory the count falls back to memory and the service log
 says so.
 
 ---
+
+## "What did last night's session do?"
+
+The question the owner asks every morning, answered as one card at the top of
+the **What changed** tab. The same events the log below holds, but grouped —
+doors that need no login first, then cost, storage, screens, gaps, file sizes —
+with the git commits from the same window, how far the scanner's grip slipped,
+and how much the whole thing grew. A quiet night says so plainly, because "no
+session ran last night" is worth knowing too.
+
+`GET /api/digest` serves it, `?period=midnight` (the default), `24h` or `72h`.
+
+**By email, if you want it.** Settings → *Email me each morning*. With
+`RESEND_API_KEY` set, the same report goes to the owner's address once a day,
+on the first scan after 6am local time. It is plain text, and it carries
+nothing beyond what the change log already holds — names, paths, counts and
+byte sizes. Without a provider the switch still works and the Settings tab says
+plainly that nothing will be sent; the card on the dashboard is unaffected
+either way. Set `MAPPER_URL` if you want the email to link back to the
+dashboard.
 
 ## The change log
 

@@ -18,6 +18,7 @@ import { driftVerdict } from '../lib/drift.mjs';
 import { History, snapshot } from '../lib/history.mjs';
 import { buildScan } from '../lib/scan.mjs';
 import { readFixture } from '../lib/fixture.mjs';
+import { buildDigest, digestText } from '../lib/digest.mjs';
 import { FIXTURE_DIR } from './source.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -455,6 +456,72 @@ try {
 
   check('The score goes into the snapshot, so it can be watched over time',
     snapshot(full).health === full.health.percent, `${snapshot(full).health}`);
+
+  /* ---- what did last night's session do? ----
+     The same events the log holds, grouped into one report. Seeded here with a
+     known set of rounds so the grouping can be asserted exactly. */
+  console.log('\nWhat did last night\'s session do?');
+  const hoursAgo = n => new Date(Date.now() - n * 60 * 60 * 1000).toISOString();
+  const seeded = [
+    { at: hoursAgo(2), commit: 'aaa1111', events: [
+      { weight: 3, kind: 'public', text: 'A new address works without logging in: GET /api/notes.' },
+      { weight: 2, kind: 'data', text: 'A new place to store things was added: the “notes” table, with 4 columns.' },
+    ] },
+    { at: hoursAgo(4), commit: 'bbb2222', events: [
+      { weight: 1, kind: 'weight', text: 'js/views/notes.js grew from 12 KB to 31 KB.' },
+    ] },
+    { at: hoursAgo(80), commit: 'ccc3333', events: [
+      { weight: 3, kind: 'ai', text: 'A new AI feature was added: Note summariser.' },
+    ] },
+  ];
+  const seededPoints = [
+    { at: hoursAgo(6), health: 98, bytes: 400000 },
+    { at: hoursAgo(1), health: 91, bytes: 460000 },
+  ];
+  const seededScan = { changes: [
+    { sha: 'aaa1111', subject: 'Add the notes table and its endpoint', date: hoursAgo(3), areas: ['server'] },
+    { sha: 'zzz9999', subject: 'Something from last week', date: hoursAgo(200), areas: ['server'] },
+  ] };
+
+  const dg = buildDigest({ rounds: seeded, points: seededPoints, scan: seededScan, period: '24h' });
+  check('Only what happened in the window is counted', dg.eventCount === 3, `${dg.eventCount} events`);
+  check('The open door is the first area listed', dg.sections[0].kind === 'public', dg.sections.map(s => s.kind).join(','));
+  check('Each area is grouped once, not repeated per scan',
+    new Set(dg.sections.map(s => s.kind)).size === dg.sections.length, dg.sections.map(s => s.kind).join(','));
+  check('The headline says how much moved, in words',
+    /3 changes across 3 areas and 1 commit in the last 24 hours\./.test(dg.headline), dg.headline);
+  check('And flags the ones worth looking at first',
+    dg.seriousCount === 1 && /One of them is worth looking at first\./.test(dg.headline), dg.headline);
+  check('The scanner\'s slip over the window is carried',
+    dg.health && dg.health.from === 98 && dg.health.to === 91 && dg.health.delta === -7, JSON.stringify(dg.health));
+  check('So is the growth in bytes', dg.bytesGrown === 60000, `${dg.bytesGrown}`);
+  check('Only commits from the window come with it',
+    dg.commits.length === 1 && dg.commits[0].sha === 'aaa1111', JSON.stringify(dg.commits));
+
+  const quiet = buildDigest({ rounds: [], points: [], scan: { changes: [] }, period: 'midnight' });
+  check('A quiet night says so rather than showing an empty page',
+    quiet.quiet === true && /Nothing has moved in HaTi since midnight\./.test(quiet.headline), quiet.headline);
+
+  const asText = digestText(dg, { link: 'https://example.invalid/' });
+  check('The email version is plain text with no markup', !/[<>]/.test(asText), asText.slice(0, 80));
+  check('It carries the events themselves', /A new address works without logging in/.test(asText));
+  check('And says how to stop receiving it', /Turn them off there\./.test(asText));
+
+  /* The route itself, on a real server with a real (empty) log. */
+  const digestRes = await get('/api/digest');
+  check('/api/digest answers with a session', digestRes.status === 200, `got ${digestRes.status}`);
+  check('It defaults to since-midnight', digestRes.body.period === 'midnight', digestRes.body.period);
+  check('And a fresh Mapper reports a quiet night rather than failing', digestRes.body.quiet === true, JSON.stringify(digestRes.body).slice(0, 120));
+
+  /* The preference, and the fact that it degrades without a provider. */
+  const prefs0 = await get('/api/preferences');
+  check('Morning summaries are off until asked for', prefs0.body.digestEmail === false, JSON.stringify(prefs0.body));
+  check('And the page is told no email provider is configured', prefs0.body.canEmail === false);
+  const prefsOn = await call('PUT', '/api/preferences', { digestEmail: true });
+  check('The preference can be switched on', prefsOn.status === 200 && prefsOn.body.digestEmail === true, JSON.stringify(prefsOn.body));
+  check('It is written to disk', JSON.parse(fs.readFileSync(path.join(DATA, 'prefs.json'), 'utf8')).digestEmail === true);
+  const digestAnon = await fetch(BASE + '/api/digest');
+  check('Nobody without a session can read the summary', digestAnon.status === 401, `got ${digestAnon.status}`);
 
   /* ---- the documents describe the code as it is ----
      Documentation drift is the disease this whole tool exists to cure, so the

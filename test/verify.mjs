@@ -390,6 +390,33 @@ try {
   check('It is graded, so a bad score looks bad',
     /\b(good|fair|poor)\b/.test(health.cls), health.cls);
 
+  /* ---- last night ---- */
+  console.log('\nLast night');
+  await page.click('.nav button[data-p="changes"]');
+  await page.waitForFunction(() => !document.querySelector('#digestBody .skel'), null, { timeout: 20000 });
+  const digestCard = (await page.textContent('#digestBody')).trim();
+  check('The "Last night" card renders', digestCard.length > 40, `${digestCard.length} chars`);
+  check('A fresh Mapper says nothing moved rather than showing a blank card',
+    /Nothing moved since midnight/.test(digestCard), digestCard.slice(0, 120));
+  check('And it is not an error', !(await page.$('#digestBody .notice.bad')));
+
+  console.log('\nBeing told about things');
+  await page.click('.nav button[data-p="settings"]');
+  await page.waitForSelector('#setDigest');
+  check('Morning summaries start switched off',
+    (await page.textContent('#setDigest')).trim() === 'Off', await page.textContent('#setDigest'));
+  check('And the page says why it cannot send any, with no provider configured',
+    /no email provider is set up/i.test(await page.textContent('#setDigestState')),
+    await page.textContent('#setDigestState'));
+  await page.click('#setDigest');
+  await page.waitForFunction(() => document.getElementById('setDigest').textContent.trim() === 'On', null, { timeout: 15000 });
+  check('The toggle switches on through the real button', true, 'button now reads On');
+  check('Switched on without a provider, it says so rather than pretending',
+    /nothing will be sent/i.test(await page.textContent('#setDigestState')),
+    await page.textContent('#setDigestState'));
+  await page.click('#setDigest');
+  await page.waitForFunction(() => document.getElementById('setDigest').textContent.trim() === 'Off', null, { timeout: 15000 });
+
   /* ---- how far back the change log will look ---- */
   console.log('\nLooking further back than 72 hours');
   await page.click('.nav button[data-p="changes"]');
