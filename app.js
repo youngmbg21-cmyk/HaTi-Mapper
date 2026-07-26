@@ -708,6 +708,97 @@
     $('publicBody').innerHTML = html;
   }
 
+  /* ---- 6b. knocking on those doors for real ---- */
+
+  /* The list above is what HaTi's source says. This is what the running site
+     answers. Nothing here happens unless the owner presses the button, and the
+     server never sends back a response body — only a status and a size band —
+     so there is nothing here that could carry HaTi's data onto this page. */
+  var VERDICT = {
+    'as-expected':      { cls: 'ok',       label: 'as written' },
+    'needs-login':      { cls: 'surprise', label: 'wants login' },
+    'unexpected-data':  { cls: 'surprise', label: 'gave data' },
+    'missing':          { cls: 'surprise', label: 'not there' },
+    'error':            { cls: 'surprise', label: 'errored' },
+    'unreachable':      { cls: 'unknown',  label: 'no answer' },
+  };
+
+  function renderDoors(state) {
+    var body = $('doorsBody');
+    var bar = $('doorsState');
+    var go = $('doorsGo');
+
+    if (!state) { body.innerHTML = ''; bar.textContent = ''; return; }
+
+    if (!state.available) {
+      go.disabled = true;
+      bar.textContent = state.reason || 'The Mapper does not know where the live HaTi is, so it cannot knock on anything.';
+      body.innerHTML = '';
+      return;
+    }
+
+    go.disabled = false;
+    var last = state.last;
+    if (!last) {
+      bar.textContent = 'Not asked yet. Pressing this sends one plain request to each door above — at most ' +
+        state.cap + ', half a second apart — and reports what came back.';
+      body.innerHTML = '';
+      return;
+    }
+
+    bar.textContent = 'Last asked ' + fmtDate(last.at, true) + '.';
+
+    var html = '<div class="blast-note"><b>' + esc(last.summary) + '</b></div>';
+
+    html += last.results.map(function (r) {
+      var v = VERDICT[r.verdict] || { cls: 'unknown', label: r.verdict };
+      return '<div class="knock ' + v.cls + '"><span class="v">' + esc(v.label) + '</span><div>' +
+        '<span class="u">' + esc(r.address) + '</span>' +
+        '<div class="d">' + esc(r.says) + '</div>' +
+        '<div class="d">The code led us to expect it ' + esc(r.expected) + '.</div></div></div>';
+    }).join('');
+
+    if (last.skipped.length) {
+      html += last.skipped.map(function (s) {
+        return '<div class="knock"><span class="v">left alone</span><div>' +
+          '<span class="u">' + esc(s.address) + '</span>' +
+          '<div class="d">' + esc(s.reason) + '.</div></div></div>';
+      }).join('');
+    }
+
+    html += '<div class="doors-note"><b>What this did:</b> ' + last.requests +
+      ' plain request' + (last.requests === 1 ? '' : 's') + ' to ' + esc(last.site) +
+      ', one at a time, ' + (last.throttleMs / 1000) + ' seconds apart, giving each ' +
+      (last.timeoutMs / 1000) + ' seconds to answer, stopping at ' + last.cap +
+      '. It took ' + Math.round(last.tookMs / 1000) + ' seconds. ' +
+      'Anything that would have written data was left alone. ' +
+      'Only the status code and a rough size came back — no page, no record, nothing of HaTi’s is on this screen.</div>';
+
+    body.innerHTML = html;
+  }
+
+  function loadDoors() {
+    return apiGet('/api/public-check').then(renderDoors, function () {});
+  }
+
+  $('doorsGo').addEventListener('click', function () {
+    var btn = this;
+    btn.disabled = true;
+    var was = btn.textContent;
+    btn.textContent = 'Knocking…';
+    $('doorsState').textContent = 'Asking the live site now. This is deliberately slow — one door at a time.';
+    $('doorsBody').innerHTML = skeleton(4);
+    post('/api/public-check', {})
+      .then(function (last) {
+        renderDoors({ available: true, cap: last.cap, throttleMs: last.throttleMs, timeoutMs: last.timeoutMs, last: last });
+      })
+      .catch(function (e) {
+        $('doorsBody').innerHTML = '';
+        $('doorsState').textContent = e.message;
+      })
+      .then(function () { btn.textContent = was; btn.disabled = false; });
+  });
+
   /* ---- 7a. what the Mapper has watched change (72 hours) ---- */
   var KIND_LABEL = {
     screens: 'screens', ai: 'AI cost', data: 'storage',
@@ -1716,6 +1807,8 @@
         refreshBrain().then(renderSettings, function () {});
         loadPrefs();
         loadWatchRules();
+        // Only what the last check found; knocking needs the button.
+        loadDoors();
       })
       .catch(function () {
         showAuth('login');

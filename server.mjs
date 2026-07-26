@@ -50,6 +50,7 @@ import { evaluateWatch, describeRules, RULES } from './lib/watch.mjs';
 import { readFixture, FIXTURE_WARNING } from './lib/fixture.mjs';
 import { driftVerdict } from './lib/drift.mjs';
 import { describeFinding, draftInstruction } from './lib/draft.mjs';
+import { planCheck, verdictFor, summarise, CHECK_CAP, THROTTLE_MS, TIMEOUT_MS } from './lib/doors.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -670,6 +671,88 @@ app.get('/api/pulse', requireAuth, rateLimit('pulse', 120, 15 * 60 * 1000), asyn
 app.get('/api/changes', requireAuth, rateLimit('changes', 120, 15 * 60 * 1000), (req, res) => {
   const hours = Math.min(Math.max(Number(req.query.hours) || 72, 1), MAX_HISTORY_HOURS);
   res.json({ ...history.status(), hours, rounds: history.changes(hours) });
+});
+
+/* ------------------------------------------------------ /api/public-check */
+
+/* The one thing in the Mapper that deliberately touches the live site, and the
+   only one the owner has to press a button for. See lib/doors.mjs for why each
+   limit is what it is. */
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+async function knock(url) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
+  try {
+    const r = await fetch(url, {
+      method: 'GET',
+      redirect: 'manual',
+      headers: { Accept: '*/*', 'User-Agent': 'HaTi-Mapper door check' },
+      signal: ctrl.signal,
+    });
+    /* The body is drained without being kept, so its size is knowable and its
+       contents are not. Nothing downstream of here has a body to leak. */
+    const buf = await r.arrayBuffer().catch(() => null);
+    return { status: r.status, bytes: buf ? buf.byteLength : null };
+  } catch (e) {
+    return { unreachable: true, reason: e.name === 'AbortError' ? `no answer within ${TIMEOUT_MS / 1000} seconds` : e.message };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+let lastDoorCheck = null;
+
+app.post('/api/public-check', requireAuth, rateLimit('doors', 2, 15 * 60 * 1000), async (req, res) => {
+  if (!HATI_URL) {
+    return res.status(409).json({
+      error: 'There is no live site to knock on: HATI_URL is not set on this service, so the Mapper does not know where HaTi is.',
+      disabled: true,
+    });
+  }
+  if (!cache) {
+    return res.status(409).json({ error: 'HaTi has not been scanned yet, so there is no list of doors to check. Let the page finish loading first.' });
+  }
+
+  const routes = cache.payload.public?.routes || [];
+  const { plan, skipped } = planCheck(routes);
+
+  const started = Date.now();
+  const results = [];
+  for (let i = 0; i < plan.length; i++) {
+    if (i) await sleep(THROTTLE_MS);          // one at a time, half a second apart
+    const route = plan[i];
+    // A route with a parameter left in it is never on the plan, so the path
+    // goes through as written.
+    results.push(verdictFor(route, await knock(HATI_URL + route.path)));
+  }
+
+  lastDoorCheck = {
+    at: new Date().toISOString(),
+    site: HATI_URL,
+    requests: results.length,
+    cap: CHECK_CAP,
+    throttleMs: THROTTLE_MS,
+    timeoutMs: TIMEOUT_MS,
+    tookMs: Date.now() - started,
+    results,
+    skipped,
+    summary: summarise(results, skipped),
+  };
+  console.log(`[doors] knocked on ${results.length} of ${routes.length} open routes; ${results.filter(r => r.verdict !== 'as-expected').length} surprise(s).`);
+  res.json(lastDoorCheck);
+});
+
+/* What the last check found, so the page can show it again without knocking. */
+app.get('/api/public-check', requireAuth, rateLimit('doorsread', 120, 15 * 60 * 1000), (req, res) => {
+  res.json({
+    available: !!HATI_URL,
+    reason: HATI_URL ? null : 'HATI_URL is not set on this service, so the Mapper does not know where HaTi is.',
+    cap: CHECK_CAP,
+    throttleMs: THROTTLE_MS,
+    timeoutMs: TIMEOUT_MS,
+    last: lastDoorCheck,
+  });
 });
 
 /* ------------------------------------------------------------- /api/trends */

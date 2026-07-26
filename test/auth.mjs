@@ -21,6 +21,7 @@ import { readFixture } from '../lib/fixture.mjs';
 import { buildDigest, digestText } from '../lib/digest.mjs';
 import { evaluateWatch } from '../lib/watch.mjs';
 import { WATCH_DEFAULTS } from '../lib/prefs.mjs';
+import { planCheck, CHECK_CAP, THROTTLE_MS } from '../lib/doors.mjs';
 import { FIXTURE_DIR } from './source.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -90,6 +91,13 @@ const TROUBLE_PORT = PORT + 3;
 const TROUBLE_DATA = path.join(ROOT, '.tmp-trouble-data');
 const TROUBLE_SOURCE = path.join(ROOT, '.tmp-trouble-source');
 let troubleServer = null;
+
+/* A fourth Mapper, pointed at a stand-in HaTi that answers each of the
+   fixture's open doors differently, so every verdict can be seen. */
+const DOORS_PORT = PORT + 4;
+const STUB_PORT = PORT + 5;
+const DOORS_DATA = path.join(ROOT, '.tmp-doors-data');
+let doorsServer = null, stubHati = null;
 
 /* ---------------------------------------------------------------- a proxy */
 
@@ -785,6 +793,139 @@ try {
     gh.gapMovement(5).opened === 1 && gh.gapMovement(5).closed === 1, JSON.stringify(gh.gapMovement(5)));
   fs.rmSync(GDATA, { recursive: true, force: true });
 
+  /* ---- knocking on the doors ----
+     "Open to the public" is a claim about HaTi's source. This is the one place
+     the Mapper checks that claim against a running site, so the stand-in HaTi
+     below answers each open door differently and every verdict is asserted —
+     including the two that matter most: a door the code says is open that the
+     live site guards, and a door the code says is guarded that hands data to
+     anyone. */
+  console.log('\nKnocking on the doors');
+
+  /* Nothing here is exercised without a plan, so the plan is checked first,
+     with no network involved at all. */
+  const many = [];
+  for (let i = 0; i < 40; i++) many.push({ method: 'GET', path: `/api/thing/${i}`, line: i });
+  many.push({ method: 'POST', path: '/api/pay', line: 99 });
+  many.push({ method: 'GET', path: '/api/share/:token', line: 100, tokenInPath: true });
+  const planned = planCheck(many);
+  check('The plan stops at the cap however many doors there are',
+    planned.plan.length === CHECK_CAP, `${planned.plan.length} planned`);
+  check('Everything past the cap is listed as skipped, not dropped',
+    planned.plan.length + planned.skipped.length === many.length,
+    `${planned.plan.length} + ${planned.skipped.length} of ${many.length}`);
+  check('A door that would write data is never knocked on',
+    planned.skipped.some(s => s.address === 'POST /api/pay' && s.reason === 'not checked: checking would write data'),
+    JSON.stringify(planned.skipped.find(s => /pay/.test(s.address))));
+  check('And a door needing a private code is left alone too',
+    planned.skipped.some(s => /share/.test(s.address) && /unguessable code/.test(s.reason)),
+    JSON.stringify(planned.skipped.find(s => /share/.test(s.address))));
+  check('Each skipped door says why in plain English',
+    planned.skipped.every(s => /^not checked: /.test(s.reason)));
+
+  /* The stand-in HaTi. One answer per door, chosen to produce one of each
+     verdict against the fixture's own list of open routes. */
+  stubHati = await new Promise((resolve, reject) => {
+    const srv = http.createServer((req, res) => {
+      const url = req.url.split('?')[0];
+      if (url === '/') return res.writeHead(200, { 'Content-Type': 'text/html' }).end('<!doctype html><title>HaTi</title>');
+      if (url === '/health') return res.writeHead(200, { 'Content-Type': 'application/json' }).end('{"ok":true}');
+      // The code says no login is needed; something in front of it disagrees.
+      if (url === '/api/status') return res.writeHead(401).end('{"error":"sign in"}');
+      // The code says this one checks its own bearer token. It does not.
+      if (url === '/api/pulse') return res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ secret: 'x'.repeat(200) }));
+      // Nothing answers at all.
+      if (url === '/api/advice/rates') return req.socket.destroy();
+      res.writeHead(404).end('{}');
+    });
+    srv.listen(STUB_PORT, () => resolve(srv)).on('error', reject);
+  });
+
+  doorsServer = startMapper(DOORS_PORT, DOORS_DATA, { HATI_URL: `http://127.0.0.1:${STUB_PORT}` });
+  const doorsBase = `http://127.0.0.1:${DOORS_PORT}`;
+  check('A Mapper pointed at a running HaTi started', await waitFor(doorsBase));
+
+  let doorsCookie = '';
+  const doorsCall = async (method, p, body) => {
+    const r = await fetch(doorsBase + p, {
+      method,
+      headers: { 'Content-Type': 'application/json', ...(doorsCookie ? { Cookie: doorsCookie } : {}) },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    const c = r.headers.get('set-cookie');
+    if (c) doorsCookie = c.split(';')[0];
+    return { status: r.status, body: await r.json().catch(() => null) };
+  };
+
+  const doorsAnon = await fetch(doorsBase + '/api/public-check', { method: 'POST' });
+  check('Nobody without a session can make the Mapper knock', doorsAnon.status === 401, `got ${doorsAnon.status}`);
+
+  await doorsCall('POST', '/api/auth/setup', { email: 'doors@example.com', password: 'doorway12' });
+  const before = await doorsCall('GET', '/api/public-check');
+  check('Before the button is pressed, nothing has been knocked on',
+    before.body.available === true && before.body.last === null, JSON.stringify(before.body));
+  check('And the limits are stated up front, not after the fact',
+    before.body.cap === CHECK_CAP && before.body.throttleMs === THROTTLE_MS, JSON.stringify(before.body));
+
+  await doorsCall('GET', '/api/scan');           // there must be a list of doors first
+  const knocked = await doorsCall('POST', '/api/public-check');
+  check('The check runs when the owner asks for it', knocked.status === 200, JSON.stringify(knocked.body));
+
+  const said = Object.fromEntries((knocked.body.results || []).map(r => [r.address, r]));
+  check('A door the code says is open, and is: as written',
+    said['GET /health'] && said['GET /health'].verdict === 'as-expected', JSON.stringify(said['GET /health']));
+  check('A door the code says is open but the live site guards: flagged',
+    said['GET /api/status'] && said['GET /api/status'].verdict === 'needs-login', JSON.stringify(said['GET /api/status']));
+  check('A door the code says checks its own secret but hands over data: flagged',
+    said['GET /api/pulse'] && said['GET /api/pulse'].verdict === 'unexpected-data', JSON.stringify(said['GET /api/pulse']));
+  check('A door that does not answer at all: said so, not guessed at',
+    said['GET /api/advice/rates'] && said['GET /api/advice/rates'].verdict === 'unreachable',
+    JSON.stringify(said['GET /api/advice/rates']));
+  check('Every result says in plain English what happened',
+    knocked.body.results.every(r => typeof r.says === 'string' && r.says.length > 20));
+
+  check('The routes that would write data were skipped with the reason given',
+    knocked.body.skipped.filter(s => s.reason === 'not checked: checking would write data').length === 2,
+    JSON.stringify(knocked.body.skipped));
+  check('No POST was ever sent to the live site',
+    knocked.body.results.every(r => r.address.startsWith('GET ')), JSON.stringify(knocked.body.results.map(r => r.address)));
+
+  /* Five doors knocked on means four waits between them. The throttle is the
+     difference between a person knocking and a scanner sweeping, so it is
+     asserted rather than assumed. */
+  check('The knocking is throttled, not fired off all at once',
+    knocked.body.requests === 5 && knocked.body.tookMs >= 4 * THROTTLE_MS,
+    `${knocked.body.requests} requests in ${knocked.body.tookMs}ms`);
+  check('And never more than the cap in one press',
+    knocked.body.requests <= knocked.body.cap && knocked.body.cap === CHECK_CAP);
+
+  check('Nothing HaTi sent back comes through the Mapper',
+    !JSON.stringify(knocked.body).includes('xxxxxxxxxx'), 'a response body reached the page');
+  check('Only a size band is reported, never the content',
+    said['GET /api/pulse'].size === 'tiny' && !('body' in said['GET /api/pulse']),
+    JSON.stringify(said['GET /api/pulse']));
+  check('The panel gets one sentence it can lead with',
+    /doors are open/.test(knocked.body.summary || ''), knocked.body.summary);
+
+  const after = await doorsCall('GET', '/api/public-check');
+  check('The result is kept, so the page can show it again without knocking',
+    after.body.last && after.body.last.requests === 5, JSON.stringify(after.body.last && after.body.last.requests));
+
+  const again = await doorsCall('POST', '/api/public-check');
+  const thrice = await doorsCall('POST', '/api/public-check');
+  check('A third press inside the window is refused',
+    again.status === 200 && thrice.status === 429, `${again.status} then ${thrice.status}`);
+
+  /* A Mapper that does not know where HaTi is says so, rather than offering a
+     button that cannot work. */
+  const noSite = await get('/api/public-check');
+  check('With no live site configured, the check says so plainly',
+    noSite.body.available === false && /HATI_URL is not set/.test(noSite.body.reason || ''),
+    JSON.stringify(noSite.body));
+  const noSitePress = await post('/api/public-check');
+  check('And pressing it anyway is refused with the reason',
+    noSitePress.status === 409 && noSitePress.body.disabled === true, JSON.stringify(noSitePress.body));
+
   /* ---- the documents describe the code as it is ----
      Documentation drift is the disease this whole tool exists to cure, so the
      statements that were once true and are now false are asserted gone. Each
@@ -812,11 +953,14 @@ try {
   server.kill();
   if (spoofServer) spoofServer.kill();
   if (troubleServer) troubleServer.kill();
+  if (doorsServer) doorsServer.kill();
   if (spoofProxy) spoofProxy.close();
+  if (stubHati) stubHati.close();
   fs.rmSync(DATA, { recursive: true, force: true });
   fs.rmSync(SPOOF_DATA, { recursive: true, force: true });
   fs.rmSync(TROUBLE_DATA, { recursive: true, force: true });
   fs.rmSync(TROUBLE_SOURCE, { recursive: true, force: true });
+  fs.rmSync(DOORS_DATA, { recursive: true, force: true });
 }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

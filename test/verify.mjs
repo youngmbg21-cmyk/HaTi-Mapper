@@ -12,6 +12,7 @@
 
 import { chromium } from 'playwright';
 import { spawn } from 'node:child_process';
+import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -134,6 +135,14 @@ const OWNER_PW = 'verifypass1';
 const TRENDS_PORT = PORT + 1;
 const TRENDS_DATA = path.join(ROOT, '.tmp-trends-data');
 let trendServer = null;
+
+/* A third Mapper, pointed at a stand-in HaTi that answers each of its open
+   doors differently, so the door check can be driven through the real button
+   and every verdict seen on screen. */
+const DOORS_PORT = PORT + 2;
+const STUB_PORT = PORT + 3;
+const DOORS_DATA = path.join(ROOT, '.tmp-verify-doors');
+let doorsServer = null, stubHati = null;
 
 const source = await hatiSource();
 announce(source);
@@ -728,6 +737,101 @@ try {
   check('Drawing them raises no console errors', trendErrors.length === 0, trendErrors.slice(0, 3).join(' | '));
   check('And no policy violations', trendCsp.length === 0, trendCsp.slice(0, 2).join(' | '));
   await page2.close();
+
+  /* ---- knocking on the doors, through the real button ----
+     Everywhere else on this page the answer is "what the code says". This is
+     the one place it is "what the live site does", so it is driven the way the
+     owner drives it: press the button, wait, read what came back. The
+     stand-in HaTi below answers each open door differently so all four
+     verdicts appear on screen at once. */
+  console.log('\nKnocking on the doors');
+  stubHati = await new Promise((resolve, reject) => {
+    const srv = http.createServer((req, res) => {
+      const url = req.url.split('?')[0];
+      if (url === '/') return res.writeHead(200, { 'Content-Type': 'text/html' }).end('<!doctype html><title>HaTi</title>');
+      if (url === '/health') return res.writeHead(200, { 'Content-Type': 'application/json' }).end('{"ok":true}');
+      if (url === '/api/status') return res.writeHead(401).end('{"error":"sign in"}');           // guarded, though the code says otherwise
+      if (url === '/api/pulse') return res.writeHead(200).end('{"leak":true}');                  // hands data over, though the code says it checks a secret
+      if (url === '/api/advice/rates') return req.socket.destroy();                              // answers nothing at all
+      res.writeHead(404).end('{}');
+    });
+    srv.listen(STUB_PORT, () => resolve(srv)).on('error', reject);
+  });
+
+  fs.rmSync(DOORS_DATA, { recursive: true, force: true });
+  doorsServer = startServer({
+    MAPPER_DATA: DOORS_DATA, MAPPER_OWNER_EMAIL: OWNER_EMAIL,
+    HATI_URL: `http://127.0.0.1:${STUB_PORT}`, MAPPER_TOKEN: '', ...source.env,
+  }, DOORS_PORT);
+  const doorsBase = `http://127.0.0.1:${DOORS_PORT}`;
+  let doorsUp = false;
+  for (let i = 0; i < 60; i++) {
+    try { if ((await fetch(`${doorsBase}/api/health`)).ok) { doorsUp = true; break; } } catch (_) {}
+    await new Promise(r => setTimeout(r, 250));
+  }
+  check('A third Mapper started, pointed at a running HaTi', doorsUp);
+
+  const page3 = await ctx.newPage();
+  const doorErrors = [], doorExternal = [], doorCsp = [];
+  attachConsole(page3, doorErrors, doorExternal, doorCsp);
+  await page3.goto(doorsBase, { waitUntil: 'domcontentloaded' });
+  await page3.waitForSelector('#auth:not([hidden])', { timeout: 20000 });
+  await page3.fill('#authEmail', OWNER_EMAIL);
+  await page3.fill('#authPassword', OWNER_PW);
+  await page3.fill('#authConfirm', OWNER_PW);
+  await page3.click('#authGo');
+  await page3.waitForSelector('#app:not([hidden])', { timeout: 180000 });
+  await page3.click('.nav button[data-p="public"]');
+  await page3.waitForSelector('#doorsGo:not([disabled])', { timeout: 30000 });
+
+  const beforePress = await page3.$eval('#doorsState', el => el.textContent.trim());
+  check('The button says what pressing it will do, before it is pressed',
+    /Not asked yet/.test(beforePress) && /at most 30/.test(beforePress) && /half a second apart/.test(beforePress),
+    beforePress);
+  check('And nothing has been sent to the live site yet',
+    (await page3.$eval('#doorsBody', el => el.innerHTML)) === '');
+
+  await page3.click('#doorsGo');
+  await page3.waitForSelector('#doorsBody .knock', { timeout: 60000 });
+  /* The throttle means the last row lands seconds after the first, so wait for
+     the run to finish rather than for the first row to appear. */
+  await page3.waitForFunction(() => !document.getElementById('doorsGo').disabled, null, { timeout: 60000 });
+
+  const knocked = await page3.evaluate(() => {
+    const rows = [...document.querySelectorAll('#doorsBody .knock')].map(el => ({
+      verdict: el.querySelector('.v').textContent.trim(),
+      cls: el.className,
+      address: el.querySelector('.u').textContent.trim(),
+      says: [...el.querySelectorAll('.d')].map(d => d.textContent.trim()).join(' '),
+    }));
+    return { rows, text: document.getElementById('doorsBody').innerText.trim() };
+  });
+
+  const verdictOf = a => (knocked.rows.find(r => r.address === a) || {}).verdict;
+  check('A door the code says is open, and is, shows as written',
+    verdictOf('GET /health') === 'as written', verdictOf('GET /health'));
+  check('A door the live site guards shows as wanting a login',
+    verdictOf('GET /api/status') === 'wants login', verdictOf('GET /api/status'));
+  check('A door that hands data over shows as having done so',
+    verdictOf('GET /api/pulse') === 'gave data', verdictOf('GET /api/pulse'));
+  check('A door that never answered shows as unanswered, not as fine',
+    verdictOf('GET /api/advice/rates') === 'no answer', verdictOf('GET /api/advice/rates'));
+  check('The two surprises are drawn as surprises, not as ordinary rows',
+    ['GET /api/status', 'GET /api/pulse'].every(a =>
+      /surprise/.test((knocked.rows.find(r => r.address === a) || {}).cls || '')),
+    knocked.rows.map(r => `${r.address}=${r.cls}`).join(' | '));
+  check('Anything that would have written data is shown as left alone, with the reason',
+    knocked.rows.some(r => r.address === 'POST /api/advice/request' &&
+      r.verdict === 'left alone' && /would write data/.test(r.says)),
+    JSON.stringify(knocked.rows.find(r => /advice\/request/.test(r.address))));
+  check('And the panel says what it did, in plain English',
+    /plain request/.test(knocked.text) && /nothing of HaTi’s is on this screen/.test(knocked.text),
+    knocked.text.slice(-220));
+  check('No response body from the live site reaches the page',
+    !knocked.text.includes('leak'), knocked.text.slice(0, 200));
+  check('Knocking raises no console errors', doorErrors.length === 0, doorErrors.slice(0, 3).join(' | '));
+  check('And no policy violations', doorCsp.length === 0, doorCsp.slice(0, 2).join(' | '));
+  await page3.close();
 } catch (e) {
   check('The verification run itself completed', false, e.stack || String(e));
   console.error(server.getLog());
@@ -735,8 +839,11 @@ try {
   if (browser) await browser.close().catch(() => {});
   server.kill();
   if (trendServer) trendServer.kill();
+  if (doorsServer) doorsServer.kill();
+  if (stubHati) stubHati.close();
   fs.rmSync(DATA, { recursive: true, force: true });
   fs.rmSync(TRENDS_DATA, { recursive: true, force: true });
+  fs.rmSync(DOORS_DATA, { recursive: true, force: true });
 }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

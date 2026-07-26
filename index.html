@@ -174,6 +174,21 @@ tbody tr:hover{background:#fcfcfb;}
 .pub .u{font-family:var(--mono);font-size:11px;color:var(--a800);background:var(--a100);padding:2px 7px;border-radius:3px;flex:none;}
 .pub .d{font-size:11.5px;color:var(--n600);line-height:1.5;}
 
+/* ---------- knocking on the doors ---------- */
+.doors{display:flex;align-items:center;gap:11px;flex-wrap:wrap;margin:0 0 13px;padding-bottom:12px;border-bottom:1px solid var(--divider);}
+.doors .state{font-size:11.5px;color:var(--n600);line-height:1.5;}
+.knock{display:flex;gap:11px;align-items:flex-start;padding:9px 0;border-bottom:1px solid var(--divider);}
+.knock:last-child{border-bottom:0;}
+.knock .v{flex:none;font-family:var(--mono);font-size:8.5px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;padding:2px 7px;border-radius:3px;margin-top:2px;min-width:74px;text-align:center;background:var(--n100);color:var(--n600);}
+.knock.ok .v{background:#eef7f2;color:var(--emerald-d);}
+.knock.surprise .v{background:#fdf1f0;color:#8f322b;}
+.knock.unknown .v{background:#fdf6e7;color:#8a6a2e;}
+.knock .u{font-family:var(--mono);font-size:11px;color:var(--a800);}
+.knock .d{font-size:11.5px;color:var(--n600);line-height:1.5;margin-top:2px;}
+.knock.surprise .d{color:#8f322b;}
+.doors-note{margin:11px 0 0;font-size:11.5px;color:var(--n600);line-height:1.55;}
+.doors-note b{color:var(--text);font-weight:600;}
+
 /* ---------- changes ---------- */
 .chg{display:flex;gap:13px;padding:11px 0;border-bottom:1px solid var(--divider);}
 .chg:last-child{border-bottom:0;}
@@ -524,6 +539,13 @@ tbody tr:hover{background:#fcfcfb;}
     <div class="card">
       <h2>Open to the public</h2>
       <p class="lede" id="publicLede">Everything that works without logging in. Worth knowing exactly what they are.</p>
+      <!-- The list above is what the code says. This asks the live site.
+           Owner-triggered only — nothing here ever runs on its own. -->
+      <div class="doors" id="doorsBar">
+        <button class="btn" id="doorsGo">Check the live site</button>
+        <span class="state" id="doorsState"></span>
+      </div>
+      <div id="doorsBody"></div>
       <div id="publicBody"></div>
     </div>
   </section>

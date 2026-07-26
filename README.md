@@ -48,11 +48,15 @@ log and can be watched.
 
 The Mapper is a new door into information about HaTi, so three rules shape it:
 
-**1. Numbers only, never content.** The one endpoint that touches a running
-HaTi returns caps, a request count, a boolean, a mode and a commit hash. No
-contract text, counterparty, party email, monetary value, file name, user
-name, session token, share token or API key can cross it — where the dashboard
-shows that a key is configured, HaTi returns a boolean, never the key.
+**1. Numbers only, never content.** Two things here touch a running HaTi, and
+neither can carry its data. HaTi's `/api/pulse` returns caps, a request count,
+a boolean, a mode and a commit hash — no contract text, counterparty, party
+email, monetary value, file name, user name, session token, share token or API
+key can cross it, and where the dashboard shows that a key is configured, HaTi
+returns a boolean rather than the key. The door check ([Knocking on the
+doors](#knocking-on-the-doors)) sends plain `GET` requests to routes the code
+already describes as public, and keeps only the status code and a size band;
+the response body is discarded unread, so there is nothing for it to leak.
 
 **2. HaTi's endpoint is off by default, one direction, read-only.** It exists
 only when `MAPPER_TOKEN` is set in HaTi's environment; unset, the route returns
@@ -115,7 +119,7 @@ Set these in the Render dashboard. None belongs in git.
 | Variable | Purpose |
 |---|---|
 | `GITHUB_TOKEN` | A **fine-grained** personal access token with **read-only Contents** permission on `youngmbg21-cmyk/mkataba-clm` **and nothing else**. Without it GitHub allows 60 requests an hour, which a handful of scans exhausts; with it, 5,000. |
-| `HATI_URL` | Base URL of the running HaTi, e.g. `https://hati-clm.onrender.com`. Unset → the spend panel shows code defaults and says so; the other seven panels are unaffected. |
+| `HATI_URL` | Base URL of the running HaTi, e.g. `https://hati-clm.onrender.com`. Unset → the spend panel shows code defaults and says so, and "Check the live site" on the open-doors panel is switched off with that reason on screen; the other seven panels are unaffected. |
 | `MAPPER_TOKEN` | Must match the `MAPPER_TOKEN` set on **HaTi**. This is the bearer credential the Mapper presents to HaTi's `/api/pulse`. |
 | `MAPPER_OWNER_EMAIL` | **Recommended.** The only email allowed to claim the account. Without it, whoever reaches the URL first can claim it — so set this before the first visit, or set up your account immediately. |
 | `RESEND_API_KEY` | **Needed for password resets by email**, and for the optional morning summary. Without it the reset link is written to the service log instead, which still works but means anyone with dashboard access could read it while it is valid; the morning summary simply is not sent, and the Settings tab says so. |
@@ -193,6 +197,41 @@ the research, and is told to add nothing. A finding that no longer exists is
 refused rather than drafted around. It goes through the same key, the same
 daily budget and the same rate limit — there is no second way to reach
 Anthropic.
+
+## Knocking on the doors
+
+Everything else in the Mapper answers *what does HaTi's code say*. The "Open to
+the public" list is a claim of that kind: a route with no login check in its
+middleware chain. Reality can differ — a proxy rule in front of it, a deploy
+that never landed, a guard added inside the handler where the scan cannot see
+it. **Check the live site** on that panel asks the running HaTi and reports
+what actually came back.
+
+Each door gets one of five answers, in plain words: *as written*, *wants login*
+(the code says no login is needed; the live site disagrees), *gave data* (the
+code says it checks its own secret; it handed something over anyway), *not
+there*, or *no answer*. The two in the middle are the ones worth acting on, and
+they are coloured as surprises rather than listed alongside the rest.
+
+It is the only thing in the Mapper that deliberately touches the live site, so
+every limit is fixed in the code and none of them can be changed at runtime:
+
+- **GET only.** A route declared `POST`, `PUT`, `PATCH` or `DELETE` is never
+  called, because calling it would write data. It is listed as left alone, with
+  that reason on screen. So is anything needing an unguessable code in its URL.
+- **Never automatic.** Nothing knocks unless you press the button. No scan, no
+  schedule and no tripwire can start a check.
+- **One at a time, half a second apart, eight seconds each, thirty at most.**
+  That is a person knocking, not a scanner sweeping. The panel states those
+  limits before you press, and repeats what it actually did afterwards.
+- **Status codes and a size band only.** No response body is read, stored or
+  shown. This must not become a way of pulling HaTi's data through the Mapper,
+  and the surest guarantee of that is never to look.
+
+The button needs `HATI_URL` set. Without it the panel says so plainly instead
+of offering a control that cannot work. The check itself is rate limited to two
+presses per quarter hour, and the last result is kept so the page can show it
+again without knocking a second time.
 
 ## Which way things are moving
 
