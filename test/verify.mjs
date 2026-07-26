@@ -526,9 +526,38 @@ try {
   await page.waitForFunction(() => !document.querySelector('#digestBody .skel'), null, { timeout: 20000 });
   const digestCard = (await page.textContent('#digestBody')).trim();
   check('The "Last night" card renders', digestCard.length > 40, `${digestCard.length} chars`);
-  check('A fresh Mapper says nothing moved rather than showing a blank card',
-    /Nothing moved since midnight/.test(digestCard), digestCard.slice(0, 120));
   check('And it is not an error', !(await page.$('#digestBody .notice.bad')));
+
+  /* The night's changes are numbered in the order the work happened, so the
+     card reads as a story rather than a pile. Story order is the assertion
+     that matters: number 1 has to be the oldest, not the newest. */
+  const numbered = await page.evaluate(() => [...document.querySelectorAll('#digestBody .commit')]
+    .map(el => ({
+      n: el.querySelector('.n').textContent.trim(),
+      text: el.querySelector('.t').textContent.trim(),
+      sha: el.querySelector('.h').textContent.trim(),
+    })));
+  check('Every change in the night is numbered', numbered.length >= 3, `${numbered.length} rows`);
+  check('Numbered from one, with no gaps',
+    numbered.every((r, i) => r.n === String(i + 1)), numbered.map(r => r.n).join(','));
+  check('Numbered in the order the work happened, oldest first',
+    numbered[0].text === 'Add the clause deviation summary to reports' &&
+    numbered[numbered.length - 1].text === 'Speed up the register table on large portfolios',
+    `${numbered[0].text} → ${numbered[numbered.length - 1].text}`);
+  check('Each carries its reference number without it crowding the sentence',
+    numbered.every(r => /^[0-9a-f]{7}$/.test(r.sha)), numbered.map(r => r.sha).join(','));
+  check('And the day they happened is stated, not just "since midnight"',
+    /\d{1,2} \w{3}/.test(await page.textContent('#digestBody .commits .day')),
+    await page.textContent('#digestBody .commits .day'));
+
+  /* "0 scans" printed under a list of changes reads as broken. The footer has
+     to separate GitHub's record from the Mapper's own observations. */
+  const digestFoot = (await page.textContent('#digestBody .foot')).trim();
+  check('A count of zero is explained rather than printed bare',
+    !/\b0 (scans|looks)\b/.test(digestFoot), digestFoot);
+  check('The footer says which half came from where',
+    /straight from GitHub’s record/.test(digestFoot) && /not taken a look yet/.test(digestFoot),
+    digestFoot);
 
   console.log('\nBeing told about things');
   await page.click('.nav button[data-p="settings"]');

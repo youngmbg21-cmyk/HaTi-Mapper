@@ -342,6 +342,21 @@ with the git commits from the same window, how far the scanner's grip slipped,
 and how much the whole thing grew. A quiet night says so plainly, because "no
 session ran last night" is worth knowing too.
 
+**The night's changes are numbered.** Git hands its commits over newest-first,
+which is the wrong way round for a report about a night's work. They are turned
+into the order the work actually happened and numbered from one, so number 1 is
+where the session started and the last number is where it left off. The date
+sits above the list — "since midnight" is relative, a date is not — and each
+line keeps its short reference code in a chip on the right, out of the way of
+the sentence. The numbering is worked out once, on the server, so the card and
+the email tell the same story with the same numbers.
+
+**A count of nothing is explained, not printed bare.** The footer used to say
+*"put together from 0 scans"* directly beneath a list of commits, which reads
+as a fault. Both halves were true and the wording now carries the difference:
+the commits come from GitHub's record, and the Mapper's own observations only
+exist once it has looked. Before its first scan of the day it says so.
+
 `GET /api/digest` serves it, `?period=midnight` (the default), `24h` or `72h`.
 
 **By email, if you want it.** Settings → *Email me each morning*. With
@@ -429,6 +444,12 @@ scan that read it marks itself `fixture: true` and carries a warning saying so,
 so a stand-in can never be mistaken for the live product. Set `HATI_FIXTURE` to
 a directory to force it by hand. Leave it unset in production, which is the
 default — then the tarball download is the only way source reaches the scanner.
+
+A commit in the stand-in's `_commits.json` may write its date as
+`midnight+90m`, meaning ninety minutes after today's midnight. Some of what the
+dashboard shows is about *last night* — the morning summary above all — and a
+stand-in with only fixed dates in it could never reach that state. Only the
+fixture reader understands the form; nothing coming from GitHub can produce one.
 
 ## Checks on every push
 

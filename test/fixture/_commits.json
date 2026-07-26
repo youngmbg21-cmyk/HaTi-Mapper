@@ -4,7 +4,7 @@
     "commit": {
       "message": "Speed up the register table on large portfolios",
       "author": {
-        "date": "2026-07-24T09:00:00.000Z"
+        "date": "midnight+142m"
       }
     },
     "_files": [
@@ -17,7 +17,7 @@
     "commit": {
       "message": "Read obligations off scanned pages more reliably",
       "author": {
-        "date": "2026-07-23T09:00:00.000Z"
+        "date": "midnight+71m"
       }
     },
     "_files": [
@@ -30,7 +30,7 @@
     "commit": {
       "message": "Add the clause deviation summary to reports",
       "author": {
-        "date": "2026-07-22T09:00:00.000Z"
+        "date": "midnight+13m"
       }
     },
     "_files": [

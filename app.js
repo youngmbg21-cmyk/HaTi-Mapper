@@ -884,10 +884,18 @@
         }).join('') + '</div>';
     }).join('');
 
+    /* Numbered in the order the work happened, so the list reads as the story
+       of the session rather than as an undifferentiated pile. The date sits
+       above them because "since midnight" is relative and a date is not. */
     if (d.commits.length) {
-      html += '<div class="sect"><h5>Commits</h5>' + d.commits.map(function (c) {
-        return '<p>' + esc(c.subject) + ' <span class="path">' + esc(c.sha) + '</span></p>';
-      }).join('') + '</div>';
+      html += '<div class="sect commits"><h5>The ' + d.commits.length +
+        (d.commits.length === 1 ? ' change' : ' changes') + ', in the order they happened</h5>' +
+        '<div class="day">' + esc(fmtDate(d.commits[0].date)) + '</div>' +
+        d.commits.map(function (c) {
+          return '<div class="commit"><span class="n">' + c.n + '</span>' +
+            '<span class="t">' + esc(c.subject) + '</span>' +
+            '<span class="h" title="The reference number for this change">' + esc(c.sha) + '</span></div>';
+        }).join('') + '</div>';
     }
 
     var foot = [];
@@ -899,7 +907,18 @@
     if (d.bytesGrown != null && Math.abs(d.bytesGrown) >= 1024) {
       foot.push('The whole thing ' + (d.bytesGrown > 0 ? 'grew' : 'shrank') + ' by about ' + kb(Math.abs(d.bytesGrown)) + '.');
     }
-    foot.push('Put together from ' + d.scanCount + ' scan' + (d.scanCount === 1 ? '' : 's') + ' in that window.');
+    /* "0 scans" printed under a list of 16 commits reads as broken, though both
+       halves are true: the commits come from GitHub's record, and the Mapper's
+       own observations only exist once it has looked. Say which is which. */
+    if (d.scanCount === 0) {
+      foot.push(d.commits.length
+        ? 'The changes above come straight from GitHub’s record. The Mapper itself has not taken a look yet ' +
+          d.label + ' — anything it notices of its own will appear here after the next scan.'
+        : 'The Mapper has not taken a look yet ' + d.label + '.');
+    } else {
+      foot.push('Put together from ' + d.scanCount + ' look' + (d.scanCount === 1 ? '' : 's') +
+        ' the Mapper took ' + d.label + '.');
+    }
     html += '<div class="foot">' + esc(foot.join(' ')) + '</div></div>';
 
     body.innerHTML = html;

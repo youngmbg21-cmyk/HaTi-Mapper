@@ -603,6 +603,36 @@ try {
   check('Only commits from the window come with it',
     dg.commits.length === 1 && dg.commits[0].sha === 'aaa1111', JSON.stringify(dg.commits));
 
+  /* Numbering, in the order the work happened. GitHub hands them over newest
+     first, which is the wrong way round for a report about a night's work. */
+  const ordered = buildDigest({
+    rounds: [], points: [], period: '24h',
+    scan: { changes: [
+      { sha: 'ccc3333', subject: 'The last thing the session did', date: hoursAgo(1) },
+      { sha: 'aaa1111', subject: 'The first thing the session did', date: hoursAgo(9) },
+      { sha: 'bbb2222', subject: 'The middle thing', date: hoursAgo(5) },
+    ] },
+  });
+  check('The night\'s changes are numbered from one',
+    ordered.commits.map(c => c.n).join(',') === '1,2,3', ordered.commits.map(c => c.n).join(','));
+  check('And numbered in the order they happened, not the order GitHub lists them',
+    ordered.commits[0].sha === 'aaa1111' && ordered.commits[2].sha === 'ccc3333',
+    ordered.commits.map(c => `${c.n}:${c.sha}`).join(' '));
+  const orderedText = digestText(ordered);
+  check('The email numbers them the same way, so both tell one story',
+    /1\. The first thing the session did \(aaa1111\)/.test(orderedText) &&
+    /3\. The last thing the session did \(ccc3333\)/.test(orderedText),
+    orderedText.split('\n').slice(4, 9).join(' | '));
+
+  /* A count of zero looks like a fault when it sits under a list of changes.
+     Both halves are true — the commits are GitHub's record, the scans are the
+     Mapper's own — and the wording has to carry that difference itself. */
+  check('A report built before the first scan does not claim "0 scans"',
+    ordered.scanCount === 0 && !/\b0 scans?\b/.test(orderedText), orderedText);
+  check('It says the changes came from GitHub and the Mapper has not looked yet',
+    /straight from GitHub's record/.test(orderedText) && /not taken a look yet/.test(orderedText),
+    orderedText.split('\n').filter(l => /GitHub/.test(l)).join(' '));
+
   const quiet = buildDigest({ rounds: [], points: [], scan: { changes: [] }, period: 'midnight' });
   check('A quiet night says so rather than showing an empty page',
     quiet.quiet === true && /Nothing has moved in HaTi since midnight\./.test(quiet.headline), quiet.headline);
@@ -616,7 +646,15 @@ try {
   const digestRes = await get('/api/digest');
   check('/api/digest answers with a session', digestRes.status === 200, `got ${digestRes.status}`);
   check('It defaults to since-midnight', digestRes.body.period === 'midnight', digestRes.body.period);
-  check('And a fresh Mapper reports a quiet night rather than failing', digestRes.body.quiet === true, JSON.stringify(digestRes.body).slice(0, 120));
+  /* A Mapper that has only just started has nothing of its own to report, but
+     GitHub's commits are there from the first scan. That combination used to
+     print "0 scans" under a list of changes, which reads as a fault. */
+  check('A fresh Mapper answers rather than failing', digestRes.body.eventCount === 0,
+    JSON.stringify(digestRes.body).slice(0, 140));
+  check('It has commits to show before it has watched anything itself',
+    digestRes.body.commits.length > 0 && digestRes.body.scanCount === 0,
+    `${digestRes.body.commits.length} commits, ${digestRes.body.scanCount} scans`);
+  check('So it is not called a quiet night', digestRes.body.quiet === false, `quiet=${digestRes.body.quiet}`);
 
   /* The preference, and the fact that it degrades without a provider. */
   const prefs0 = await get('/api/preferences');
