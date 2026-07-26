@@ -24,7 +24,340 @@ because they need a hosting dashboard or a change to HaTi itself:
   degrades rather than breaking, and the Settings tab says which.
 - **Set `MAPPER_URL`** (optional) to this dashboard's own address, so emails
   you asked for can link back to it.
+- **Add a repository secret named `HATI_SCAN_TOKEN`** if you want the checks
+  that now run on every push (W17) to read the real HaTi rather than the
+  stand-in. A fine-grained token with read-only Contents permission on
+  `mkataba-clm` and nothing else. Without it the workflow still runs every
+  check and still passes or fails honestly — it simply says at the top of each
+  run that the numbers describe the stand-in. This one is new: it was not in
+  the brief, and it comes out of what the build run ran into (W0).
 
+
+## The July 2026 build run — all seventeen work items
+
+All seventeen items in the build brief were completed, in the order given, one
+commit each. **Nothing was abandoned and nothing was left unattempted.**
+`npm run verify` passed before every commit; the per-item figures below were
+re-measured afterwards by running the suite again at each commit, so they are
+readings rather than recollections.
+
+Problems hit along the way — including the ones that were my own mistakes — are
+written up in `BUGLOG.md`.
+
+### W0 — The suite could not run at all (unplanned, before W1)
+
+**Shipped.** The build sandbox cannot reach HaTi's repository: its network
+policy allows this repository only, and the token in its environment is not a
+GitHub credential. Every test file needs a successful scan before it can assert
+anything, so rule 4 was unsatisfiable on the first line of the run.
+`lib/fixture.mjs` lets the scanner read HaTi's source from a directory instead
+of a tarball; `test/fixture/` is a 33-file stand-in shaped like HaTi with no
+real content in it; `test/source.mjs` asks GitHub once per run and falls back
+only if the answer is no, printing the choice at the top of every run. A scan
+that read a fixture marks itself and warns, so a stand-in can never pass for
+the live product.
+
+**Deviation.** The brief did not ask for this, and hard rule 3 forbade the
+obvious alternative of adding HaTi's repository to the session. The cost is
+real and worth naming: **no work item in this run was verified against the live
+HaTi.** The checks prove the Mapper's own behaviour — parsers, routes, login,
+limits, panels, degradation — against a repository shaped like HaTi. Anything
+depending on HaTi's *current* source has not been re-confirmed. Any machine
+with a token that can read `mkataba-clm` takes the live path automatically,
+with no flag to set. Full write-up in `BUGLOG.md`.
+
+**Verification.** `npm run verify` at `eba02b9`: **215 checks, 0 failures** (131 + 34 + 50).
+
+### W1 — Make the documentation stop lying
+
+**Shipped.** `SUMMARY.md` still described a version with no login and claimed
+the environment AI key beat the pasted one; both were false. Those sections
+were rewritten, the stale comment in `server.mjs` next to the chat budget that
+still denied the login existed went with them, and both documents plus the code
+comments were swept for anything else
+contradicting observed behaviour. The sweep is now a permanent check rather
+than a one-off read: seven sentences that were once true and are now false are
+asserted absent from `README.md`, `SUMMARY.md`, `server.mjs`, `app.js` and
+three library files, so the same rot cannot set in silently again.
+
+**Deviation.** None.
+
+**Verification.** `npm run verify` at `54b0ff3`: **224 checks, 0 failures** (131 + 36 + 57).
+
+### W2 — Fix rate-limiter identity
+
+**Shipped.** The limiter keyed on the first entry of `x-forwarded-for`, which
+any caller can write, so rotating that header bought a fresh bucket and the
+login limit was bypassable. `app.set('trust proxy', 1)` plus keying every
+limiter and `clientIp()` on Express's derived `req.ip`.
+
+**Deviation.** None, but the test needed more than the brief implies. There is
+no way to tell a forged header from a real one without something in front of
+the service, so the test starts a stand-in reverse proxy that appends its own
+view of the caller the way a real edge does, and drives the Mapper through it.
+A caller writing whatever it likes into the header lands in the same bucket as
+its real source.
+
+**Verification.** `npm run verify` at `3fb460d`: **229 checks, 0 failures** (131 + 36 + 62).
+
+### W3 — Account-level login backoff
+
+**Shipped.** Ten consecutive wrong passwords on the account close it for
+fifteen minutes, wherever the attempts came from, with a plain message naming
+the minutes left. A correct password clears the counter, and so does a
+completed password reset. The counter lives in `account.json`, so a restart
+does not hand an attacker a fresh ten.
+
+**Deviation.** One addition: `LOGIN_LOCK_MINUTES` makes the window
+configurable, purely so the test can prove a lock survives a real kill and
+restart without a fifteen-minute wait. It defaults to 15 and is not documented
+as an owner-facing setting.
+
+**Verification.** `npm run verify` at `cb454b9`: **238 checks, 0 failures** (131 + 36 + 71).
+
+### W4 — Content-Security-Policy header
+
+**Shipped.** `default-src 'none'` and everything opened deliberately from
+there: scripts and connections from this origin only, styles from here and
+Google Fonts with `'unsafe-inline'` for the `style=""` attributes the existing
+markup uses, fonts from `fonts.gstatic.com`, and `frame-ancestors 'none'`. No
+external scripts, no images from anywhere. The headless run counts CSP
+violations separately from ordinary console errors and asserts zero of both,
+on every page it drives.
+
+**Deviation.** None.
+
+**Verification.** `npm run verify` at `11f7a0d`: **243 checks, 0 failures** (136 + 36 + 71).
+
+### W5 — Durable, fair chat budget
+
+**Shipped.** The day's question count is written to `MAPPER_DATA` and read on
+boot, degrading to memory with a console warning where the directory is not
+writable — the same pattern `Accounts` uses. A question counts against the
+budget only after Anthropic answers, so a failure no longer charges the owner
+for nothing.
+
+**Deviation.** None.
+
+**Verification.** `npm run verify` at `65b5e29`: **249 checks, 0 failures** (136 + 42 + 71).
+
+### W6 — "Is this what's live?" drift badge
+
+**Shipped.** `lib/drift.mjs` compares the commit the scan read with the commit
+HaTi's pulse says is running, and the header carries one line in plain English:
+looking at the live code, a different version (with how many commits behind
+where the scanned commit list can say), or can't tell because HaTi is not
+reachable. The unreachable state is the one the headless run sees, and it is
+asserted there; the other two are asserted directly against `driftVerdict`.
+
+**Deviation.** None.
+
+**Verification.** `npm run verify` at `ee17770`: **260 checks, 0 failures** (140 + 42 + 78).
+
+### W7 — Keep history beyond 72 hours
+
+**Shipped.** Events and measurements older than the 72-hour working window are
+appended to an archive file in `MAPPER_DATA` rather than dropped, capped at
+10,000 events with the oldest going first. `GET /api/changes` accepts ranges up
+to 90 days and merges the archive with the live window; the "What changed" tab
+gained a 72 hours / 7 days / 30 days / 90 days control, still 72 hours by
+default. Nothing beyond the existing snapshot fields is archived — names,
+paths, counts and byte sizes only.
+
+**Deviation.** None.
+
+**Verification.** `npm run verify` at `8d5b619`: **276 checks, 0 failures** (144 + 42 + 90).
+
+### W8 — Scan health score
+
+**Shipped.** One number on the overview — *"The scanner could read 96% of what
+it looks for"* — counting every fact the scan tries to derive against those
+that came back "not detected" or raised a warning. It is deliberately
+pessimistic: a warning counts against the score as well as the fact it is
+about, because an alarm that flatters is worse than none. It goes into every
+snapshot, so a drop is a change-log event and a watchable rule.
+
+**Deviation.** None.
+
+**Verification.** `npm run verify` at `5b5253f`: **286 checks, 0 failures** (148 + 42 + 96).
+
+### W9 — Morning-after session digest
+
+**Shipped.** `lib/digest.mjs` groups the change log and archive into one report
+for a window — screens, storage, open doors, gaps, file sizes, the map, spend,
+plus the commits from that window and the scan-health delta — and a "Last
+night" card at the top of "What changed" renders it in sentences. With
+`RESEND_API_KEY` set and the Settings toggle on, the same report is emailed
+once a day on the first scan after 6am, carrying nothing beyond
+snapshot-class information. Without the key the toggle explains itself and the
+card still works.
+
+**Deviation.** None.
+
+**Verification.** `npm run verify` at `946a02b`: **313 checks, 0 failures** (155 + 42 + 116).
+
+### W10 — Watch rules ("tell me if…")
+
+**Shipped.** Five tripwires in `lib/watch.mjs`, each with a plain-English
+sentence, a reason, an on/off toggle and where relevant a threshold, stored in
+`MAPPER_DATA`: a door opening that needs no login (on by default), a new public
+link route (on by default), a file crossing N KB, live AI requests past N, and
+scan health dropping below N%. A trip pins a red banner to the top of the
+dashboard until dismissed, writes a high-weight event to the change log, and
+joins the next digest email — immediately for the open-door rule, which does
+not wait for morning. The AI-requests rule says on screen when it cannot be
+checked because HaTi is unreachable, rather than sitting there looking active.
+
+**Deviation.** None.
+
+**Verification.** `npm run verify` at `f96bd1c`: **338 checks, 0 failures** (164 + 42 + 132).
+
+### W11 — Alert on repeated scan failure
+
+**Shipped.** Three consecutive failed scans raise exactly one alert — emailed
+where `RESEND_API_KEY` is set, and a persistent banner either way — naming when
+the Mapper last managed to read HaTi and why it now cannot. Further failures
+raise nothing more. A successful scan clears the count, the flag and the
+banner, so the next outage alerts again.
+
+**Deviation.** None. The test needed a fourth Mapper pointed at a source
+directory that does not exist, with the directory created underneath it
+afterwards to prove recovery; nothing was simulated.
+
+**Verification.** `npm run verify` at `e993749`: **350 checks, 0 failures** (164 + 42 + 144).
+
+### W12 — Estimated cost, not just counts
+
+**Shipped.** `data/pricing.js` is a hand-maintained model → price map with an
+`asOf` date, validated on every scan exactly as `data/copy.js` is: a model in
+use with no entry renders "price not on file" and never a guess, and prices
+older than 90 days raise a visible note. Token counts are not available from
+the pulse and the pulse was not widened, so each feature's cost is estimated
+from its own `max_tokens` cap with the assumption stated on screen and the
+label kept honest — a rough ceiling, not a bill. Per-feature, per-window and
+per-day figures, with the daily estimate in every snapshot.
+
+**Deviation.** The pricing file deliberately omits models whose price was not
+to hand rather than filling them in. That is the file working as designed:
+"price not on file" is a visible gap, and a made-up number is not.
+
+**Verification.** `npm run verify` at `cb59860`: **368 checks, 0 failures** (169 + 42 + 157).
+
+### W13 — Gaps: severity and a scoreboard
+
+**Shipped.** `scanGaps` recognises an optional `[high]` / `[medium]` / `[low]`
+prefix on a bullet in HaTi's README or `SECURITY.md`, ranks and colours the
+panel where one is present, and keeps today's neutral source-order behaviour
+and its explanatory note where none is. The tag never appears in the text, and
+nothing is ever inferred from wording. Using the W7 archive, the panel also
+says how the list has moved — *"3 closed, 1 opened in the last 30 days"* —
+counted from tagged change-log events rather than from sentence-matching.
+
+**Deviation.** None. The convention now needs adopting in HaTi's own documents,
+which is in the owner list at the top of this file.
+
+**Verification.** `npm run verify` at `ffce70f`: **379 checks, 0 failures** (169 + 42 + 168).
+
+### W14 — Trend lines
+
+**Shipped.** A strip of six sparklines on the overview, drawn from the archive:
+everything all together, the biggest single file, doors that need no login,
+things not finished, how much the scanner can read, and a day at the caps in
+money. Each carries the value it stands at now and one sentence of direction —
+*"33% bigger than 90 days ago"* — with movement in the unwelcome direction
+coloured as such. Below three readings it says "not enough history yet" and
+draws nothing, because a line through one point is a lie. Plain SVG built in
+`app.js`; no chart library, and Express is still the only runtime dependency.
+
+**Deviation.** None.
+
+**Verification.** `npm run verify` at `fab3262`: **392 checks, 0 failures** (182 + 42 + 168).
+
+### W15 — "Draft a fix prompt" on findings
+
+**Shipped.** A button on every actionable finding — an unused AI endpoint, an
+orphaned `window` name, a file over the threshold, a known gap, a tripped
+tripwire — turns it into a bounded instruction for a Claude Code session on
+HaTi, carrying the real file paths and identifiers from the scan and the
+owner's standing boundaries verbatim, including "Do not build or modify the
+mobile/WhatsApp counterparty portal", running the project's verification before
+finishing, and producing `BUGLOG.md` and `SUMMARY.md` updates. It renders in
+the assistant panel with a copy button. The facts come from the scan on the
+server; the model writes the wording, not the research, and a finding that no
+longer exists is refused rather than drafted around. Same key, same daily
+budget, same rate limit — there is no second path to Anthropic.
+
+**Deviation.** None.
+
+**Verification.** `npm run verify` at `2ed15db`: **416 checks, 0 failures** (187 + 61 + 168).
+
+### W16 — Knock on the doors for real
+
+**Shipped.** A "Check the live site" button on the open-doors panel asks the
+running HaTi whether the doors the code calls open really are, and reports one
+of five plain answers per door: as written, wants login, gave data, not there,
+no answer. Every limit is fixed in `lib/doors.mjs` and cannot be changed at
+runtime — GET only, so nothing that would write data is ever called; owner
+triggered only, so nothing knocks on its own; one request at a time, half a
+second apart, eight seconds each, thirty at most; and the whole check limited
+to twice a quarter hour. Only the status code and a size band are kept; the
+response body is discarded unread, so there is nothing for it to leak. Unset
+`HATI_URL` disables the button and says why.
+
+**Deviation.** One addition, and it is the important one: the brief lists four
+verdicts and the code has five. "Not there" (a 404 — the code describes a door
+the live site does not have) was split out from the generic surprise, because
+it means something different and the fix is different.
+
+**Verification.** `npm run verify` at `f8a8dee`: **455 checks, 0 failures** (200 + 61 + 194).
+
+### W17 — CI: verify on every push
+
+**Shipped.** `.github/workflows/verify.yml` runs the same `npm run verify` a
+person runs locally, on every push and every pull request: Node 22, `npm
+install`, the Playwright Chromium the suite drives, then the suite. Read-only
+permissions. Nothing live is needed — the suite starts its own server and the
+panels that need a running HaTi assert the "cannot reach it" wording instead.
+The run's own token cannot read HaTi's repository, so CI falls back to the
+stand-in and says so at the top of the run; a repository secret
+`HATI_SCAN_TOKEN` takes over when set, which is also the answer if the default
+token's rate limit ever proves too tight.
+
+**Deviation.** The workflow's YAML is checked by a small structural reader
+written into `test/auth.mjs` rather than by a YAML library, because rule 2 says
+no new dependencies and that rule is worth more than a tidier test. It asserts
+the triggers, the read-only permission, the Node version, the commands, and
+that the command it runs is the one `package.json` defines. It does not claim
+to validate YAML in general. The browser-install step was not executed on this
+machine — Chromium is pre-installed here and the environment blocks the
+download — so the suite was run locally under `npm install` then `npm run
+verify`, which is the rest of what the workflow does.
+
+**Verification.** `npm run verify` at `7b07f62`: **470 checks, 0 failures** (200 + 61 + 209).
+
+### Where the run finished
+
+**`npm run verify` on the completed codebase: 470 checks, 0 failures** — 200 in
+the browser run, 61 in the assistant's tool loop, 209 in the login, limits and
+library checks. The run started at 215 and added 255 checks across seventeen
+items, which is roughly what rule 5 asks for: every feature carrying at least
+one new check, and most of them carrying several.
+
+Read that number with W0 in mind. It is proof that the Mapper behaves as
+described, measured against a stand-in shaped like HaTi. It is not a statement
+about HaTi's current source, because nothing in this sandbox could reach it.
+
+Nothing was abandoned, nothing was left unattempted, and no item was left
+half-finished at a boundary.
+
+---
+
+## Before this run — what the platform already was
+
+Everything from here down describes the rounds that came before the July 2026
+build run: the dashboard itself, the login, the assistant and the change log.
+It is kept because it is still an accurate description of the platform those
+rounds produced, and the seventeen items above were built on top of it.
 
 The mockup is now an application. Every number on the page is read from HaTi
 on each scan; none of the hardcoded values survived.
@@ -132,7 +465,16 @@ hash — nothing else. Nothing else in HaTi was touched.
 ## Verification
 
 `npm run verify` drives the real front end with the pre-installed Chromium
-against a real server. **97 checks, 0 failures**, covering all eight points:
+against a real server, and runs three suites in one command:
+
+| Suite | What it covers | Checks |
+|---|---|---|
+| `test/verify.mjs` | The eight points below, through the real browser | 200 |
+| `test/chat-loop.mjs` | The assistant's tool loop, its budget and its key precedence | 61 |
+| `test/auth.mjs` | The login, the limits, the history, and the libraries directly | 209 |
+| **Total** | | **470 checks, 0 failures** |
+
+The eight points the browser run exists for:
 
 | | Result |
 |---|---|
@@ -145,8 +487,15 @@ against a real server. **97 checks, 0 failures**, covering all eight points:
 | 7. Nothing sensitive in either payload | 9 patterns: emails, keys, tokens, money, names |
 | 8. Cold scan cost | One tarball download, well under the request ceiling |
 
-Two notes on how those were run:
+Three notes on how those were run:
 
+- **Which copy of HaTi's source was read.** Every suite asks GitHub once
+  whether HaTi's repository is readable and prints the answer before its first
+  check. In the July 2026 build sandbox it was not, so all three ran against
+  the stand-in in `test/fixture/` — see W0 below. The counts above are
+  therefore proof of the Mapper's own behaviour, not of any statement about
+  HaTi's current source. On a machine with a token that can read
+  `mkataba-clm`, the same command reads the real thing with nothing to change.
 - **The one console error the test does not count** is the Google Fonts
   stylesheet, which this sandbox cannot reach. It is classified as an external
   asset failure and printed separately rather than silently dropped. The page
@@ -171,11 +520,15 @@ them. The panel shows the six built-in streams and states why that is the whole
 list. The mockup's "Logistics · custom" chip could not be reproduced honestly
 and was not faked.
 
-**Severity on the "Not finished" panel.** The brief said to use severity where
-a source states it. None of the sources does — not the README, not
-`SECURITY.md`, not the code. So no severity is shown, the dots are neutral, and
-the panel says the ordering is source order, not a ranking. This is the most
-visible difference from the mockup, which had confident red/amber/grey dots.
+**Severity on the "Not finished" panel.** Severity is used where a source
+states it, and none of HaTi's sources did at the last live reading — not the
+README, not `SECURITY.md`, not the code. So the dots are neutral and the panel
+says the ordering is source order, not a ranking. This is the most visible
+difference from the mockup, which had confident red/amber/grey dots. W13 built
+the other half: a bullet in HaTi's README or `SECURITY.md` beginning `[high]`,
+`[medium]` or `[low]` is ranked and coloured from the next scan onwards, and
+one that says nothing still gets nothing. The convention has to be adopted in
+HaTi's own documents first — it is in the owner list at the top of this file.
 
 **A commit's areas**, when GitHub's per-commit file list cannot be fetched.
 Best-effort by design: a commits failure never takes the scan down, and the
@@ -203,6 +556,13 @@ the source on every scan, with stale entries surfaced as warnings on the page:
 ## What the scan turned up about HaTi
 
 Worth knowing. All of these are derived, not asserted, and visible on the page.
+
+**Read the date on these.** They come from the last scan of the *live* HaTi,
+before the July 2026 build run. That run could not reach HaTi's repository at
+all (W0), so none of them was re-confirmed by it — the numbers below describe
+HaTi as it was, and the next scan from a machine that can read the repository
+will say whether they still hold. Nothing here was carried forward on faith;
+it is simply not fresh.
 
 **1. `/api/ai/search` is unreachable from the front end.** The endpoint exists,
 is rate limited, tagged for spend, and calls Anthropic on the fast tier — but

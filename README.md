@@ -11,8 +11,8 @@ the product, written for someone who does not read code:
 | **Where things are kept** | Every database table and what is inside it |
 | **What breaks what** | Pick a piece of data, see everything that depends on it — and what changing it can break that is already signed |
 | **Not finished** | Known gaps, gathered from the code and the written documents |
-| **Open to the public** | Everything that works without logging in |
-| **What changed** | What the Mapper itself has watched move over the last 72 hours, plus recent commits |
+| **Open to the public** | Everything that works without logging in — and, on request, whether the live site really behaves that way |
+| **What changed** | What the Mapper itself has watched move, over 72 hours or up to 90 days, plus recent commits |
 | **Getting bulky** | File sizes, and the names published on `window` that nothing references |
 
 There is also an **assistant** — a chat panel that can explain any of it in plain

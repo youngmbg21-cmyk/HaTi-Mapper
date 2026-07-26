@@ -64,3 +64,199 @@ Running `npm run verify` anywhere with a GitHub token that can read
 
 **Evidence.** `npm run verify` after this change: 131 + 34 + 50 = 215 checks,
 0 failures.
+
+---
+
+## W0b — Building the stand-in broke twice on its own quoting
+
+**What broke.** `test/fixture/server/server.js` has to be parseable by the
+Mapper's own route scanner, and that scanner only recognises single-quoted
+route paths — `app.get('/api/thing', …)`. The generator that wrote the fixture
+emitted double quotes, so a scan of it found zero routes and the "open to the
+public" panel came out empty.
+
+**What was tried.** A regex pass over the generated file turning double-quoted
+route paths into single-quoted ones. That fixed the routes and broke the file:
+some of those lines contain JavaScript string literals of their own, which were
+now single quotes inside a single-quoted string.
+
+    SyntaxError: Unexpected string
+
+**How it ended.** Fixed, by switching the affected generator lines to
+double-quoted outer strings so the emitted code carries single quotes without
+escaping. The lesson is recorded rather than the workaround: the fixture must
+be shaped like HaTi *as the scanner reads it*, not merely as a human reads it,
+so anything the scanner is fussy about has to be reproduced exactly.
+
+---
+
+## W1 — A new sentence in the README tripped the check it shipped with
+
+**What broke.** W1 added a sweep asserting that no document still claims things
+the code has since contradicted, one of which is any mention of
+`MAPPER_ACCESS_TOKEN` — the shared token that was removed when the login went
+in. The sweep immediately failed on the README sentence W1 itself had just
+written, which explained that `MAPPER_ACCESS_TOKEN` no longer exists.
+
+    FAIL  Nothing still mentions MAPPER_ACCESS_TOKEN as if it existed
+
+**What was tried.** The obvious fix — narrowing the pattern so a sentence that
+says the variable is gone does not count — was rejected. A check that can be
+talked around by wording is not a check.
+
+**How it ended.** Fixed by rewriting the sentence so it names what replaced the
+token instead of naming the token. The check stayed exactly as strict as it was
+written to be.
+
+---
+
+## W6 — Two variables named `stranger` in one test file
+
+**What broke.** W6 added drift assertions to `test/auth.mjs`, which already had
+a `stranger` further up (an address that is not the owner's, used in the
+password-reset checks).
+
+    SyntaxError: Identifier 'stranger' has already been declared
+
+**How it ended.** Fixed in seconds by renaming the new one to `unknownCommit`,
+which is also what it actually is. Recorded because it is the kind of thing a
+single long test file invites, and the file is now long.
+
+---
+
+## W7 — Four scans do not make four archived rounds
+
+**What broke.** The archive test scanned four times and asserted four rounds
+came back over a 30-day window. Three did, and the assertion that read the
+fourth then threw.
+
+    FAIL  Asking for 30 days finds the older ones too
+          3 rounds
+    FAIL  The login test itself completed
+          TypeError: Cannot read properties of undefined (reading 'at')
+
+**What was tried.** Nothing in the archive: the code was right and the
+expectation was wrong. The first scan of a fresh Mapper is a baseline — there
+is no previous snapshot to compare it against, so it produces a measurement
+point and no events, and a round is a set of events. Four scans therefore give
+four points and three rounds.
+
+**How it ended.** Fixed by correcting the expectation to 3 rounds and 4 points,
+with a comment in the test saying why, so the next person to read it does not
+"fix" the archive.
+
+---
+
+## W9 — The morning summary wrote "1 one worth looking at first"
+
+**What broke.** Two failures in the digest checks. The headline assertion
+expected a sentence about commits that the headline was not building, and a
+pluralising helper called as `plural(serious, 'one', 'of them')` produced the
+sentence above when exactly one thing was serious.
+
+    FAIL  The headline says how much moved, in words
+
+**How it ended.** Both fixed. The headline now includes the commits clause it
+was always supposed to, and the sentence is constructed rather than assembled
+from a plural helper that was never meant to carry a noun phrase. Worth
+recording because the output was grammatical nonsense on the one path nobody
+looks at — a single serious finding — and only a test caught it.
+
+---
+
+## W11 — A commit that changed behaviour without changing the README
+
+**What broke.** Not code: process. Rule 6 of the brief says every change that
+alters behaviour must be reflected in `README.md` **in the same commit**. W11's
+commit went in with the scan-failure alerting built and tested and no README
+section describing it.
+
+**How it ended.** Fixed by writing the section and amending the commit, so the
+history satisfies the rule rather than merely ending up satisfying it. No other
+commit in the run needed the same correction.
+
+---
+
+## W13 — A fifteen-day window that contained everything
+
+**What broke.** The gap-movement check seeded two change rounds and asserted
+that a fifteen-day window saw fewer of them than a thirty-day one. It saw both,
+because both seeded rounds fell inside fifteen days.
+
+    FAIL  A shorter window sees less
+          {"days":15,"opened":2,"closed":2}
+
+**How it ended.** Fixed by asserting against a five-day window instead, which
+genuinely excludes the older round. The counting code was never wrong; the test
+was asserting something the fixture did not set up.
+
+---
+
+## W14 — Two wrong assumptions about the trend strip
+
+**What broke.** The seeded-archive checks expected six points per sparkline and
+expected six of the six series to be drawn as unwelcome growth. Both were
+wrong.
+
+    FAIL  Each is drawn from every reading in the archive
+          7,7,7,7,7,7
+    FAIL  Growth in the wrong direction is not drawn as good news
+
+The first: the server takes its own scan on start-up, so a six-reading archive
+becomes seven points by the time the page draws it. The second: three of the
+six series are byte counts, and the stand-in's real byte totals are far below
+the seeded values, so those three are drawn as *shrinking* — correctly.
+
+**How it ended.** Both fixed by asserting what is actually true and stable:
+that every line is drawn from the same number of readings and that there are at
+least six of them, and that the three series which genuinely rise across the
+window — open doors, gaps, money — are the ones coloured as unwelcome. Neither
+change weakens the check; the original expectations were simply describing a
+run that never happens.
+
+---
+
+## W16 — Waiting for a button that was never going to appear
+
+**What broke.** The new browser check for the door panel waited for the
+navigation button before clicking it, and timed out after three minutes.
+
+    waiting for locator('.nav button[data-p="public"]') to be visible
+    360 × locator resolved to hidden <button role="tab" data-p="public">
+
+**What was tried.** Nothing else — the log said exactly what was wrong. The
+button exists from the first byte of HTML but lives inside `#app`, which stays
+hidden until the server confirms a session, so it is *attached* and never
+*visible* until then.
+
+**How it ended.** Fixed by waiting for `#app:not([hidden])` — the state that
+actually means "signed in and rendering" — and clicking the tab after that. The
+same page had been driven this way elsewhere in the file; this check simply
+waited on the wrong thing.
+
+---
+
+---
+
+## Final outputs — the W1 sweep caught me a second time
+
+**What broke.** Writing up W1 in `SUMMARY.md` at the end of the run meant
+describing the stale comment that W1 deleted, and the tidiest way to describe a
+sentence is to quote it. Quoting it put the sentence back into a document the
+W1 sweep reads, so the last verification run of the whole build failed on it.
+
+    FAIL  Nothing claims the Mapper has no login
+
+**How it ended.** Fixed the same way it was fixed in W1: the write-up now says
+what the comment denied rather than repeating its words, and the check was left
+exactly as strict as it is. Recorded because it is the second time in one run
+that this check caught its own author, which is the strongest argument for
+keeping it that could be made.
+
+## Nothing was abandoned
+
+Rule 4 of the brief covers the case where an item breaks verification and
+cannot be fixed inside that item: revert it in full, log it here as abandoned
+with the reason, and carry on. That case did not arise. All seventeen work
+items were completed, and `npm run verify` passed before every one of the
+seventeen commits.
