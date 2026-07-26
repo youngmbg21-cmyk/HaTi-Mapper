@@ -57,6 +57,15 @@ to that header, so its last entry is the truthful one and anything a caller
 puts in front of it is ignored. Sign-in is capped at 12 attempts per 15 minutes
 from one address.
 
+**Ten wrong passwords close the account.** A per-address limit cannot see a
+guess spread across many addresses, so the account keeps its own count as well:
+after ten wrong passwords in a row, from anywhere at all, sign-in stops
+answering for 15 minutes and says so — *"Too many wrong passwords. Try again in
+N minutes."* Signing in correctly clears the count, and so does completing a
+password reset, since that already proves you can read the owner's email. The
+count is written to `account.json`, so restarting the service is not a way to
+wipe it.
+
 **Forgotten password** sends a single-use link that expires in 30 minutes. Only
 a hash of the token is stored, so a copy of the account file cannot be used to
 reset. Completing a reset signs every device out. The route answers identically
@@ -87,7 +96,9 @@ Set these in the Render dashboard. None belongs in git.
 Optional: `HATI_REPO` (default `youngmbg21-cmyk/mkataba-clm`), `HATI_REF`
 (default `main`), `COMMIT_COUNT` (default `20`), `PORT` (default `3000`),
 `ANTHROPIC_MODEL` (default `claude-sonnet-5`), `CHAT_DAILY_LIMIT`
-(default `200`), `MAPPER_DATA` (default `./.mapper-state`).
+(default `200`), `MAPPER_DATA` (default `./.mapper-state`),
+`LOGIN_LOCK_MINUTES` (default `15` — how long sign-in stops answering after ten
+wrong passwords; there is no reason to change it outside a test).
 
 ---
 

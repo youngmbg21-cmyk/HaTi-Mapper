@@ -262,10 +262,22 @@ app.post('/api/auth/setup', rateLimit('authsetup', 10, 15 * 60 * 1000), (req, re
 app.post('/api/auth/login', rateLimit('authlogin', 12, 15 * 60 * 1000), (req, res) => {
   const { email, password } = req.body || {};
   if (!accounts.claimed) return res.status(400).json({ error: 'This Mapper has no account yet.' });
+
+  /* The per-address limit above stops one machine guessing fast. This stops
+     the same guessing spread across many addresses, because the count belongs
+     to the account rather than to the caller. */
+  const blocked = accounts.loginBlock();
+  if (blocked) {
+    console.warn(`[auth] sign-in refused from ${clientIp(req) || 'unknown'}: the account is locked after ${accounts.loginFailures} wrong passwords.`);
+    return res.status(429).json({ error: blocked, lockedOut: true });
+  }
+
   if (!accounts.verify(email, password)) {
-    console.warn(`[auth] failed sign-in attempt from ${clientIp(req) || 'unknown'}.`);
+    const left = accounts.noteFailedLogin();
+    console.warn(`[auth] failed sign-in attempt from ${clientIp(req) || 'unknown'}; ${left} left before the account locks.`);
     return res.status(401).json({ error: 'That email and password do not match.' });
   }
+  accounts.noteSuccessfulLogin();
   const token = accounts.createSession({ ip: clientIp(req), agent: req.get('user-agent') });
   setSessionCookie(req, res, token);
   console.log(`[auth] signed in from ${clientIp(req) || 'unknown'}.`);

@@ -101,8 +101,8 @@ function startProxy(port, upstreamPort) {
   return new Promise((resolve, reject) => srv.listen(port, () => resolve(srv)).on('error', reject));
 }
 
-function startMapper(port, dataDir, extra) {
-  fs.rmSync(dataDir, { recursive: true, force: true });
+function startMapper(port, dataDir, extra, keepState) {
+  if (!keepState) fs.rmSync(dataDir, { recursive: true, force: true });
   return spawn(process.execPath, ['server.mjs'], {
     cwd: ROOT,
     env: {
@@ -256,7 +256,9 @@ try {
      hop. Proved through a stand-in proxy, because without one in front there
      is no honest way to tell a forged header from a real one. */
   console.log('\nA forged x-forwarded-for cannot reset the limit');
-  spoofServer = startMapper(SPOOF_PORT, SPOOF_DATA);
+  /* A short lock window, so the "and it lets you back in afterwards" half of
+     the account-backoff check below can actually be waited out. */
+  spoofServer = startMapper(SPOOF_PORT, SPOOF_DATA, { LOGIN_LOCK_MINUTES: '0.2' });
   spoofProxy = await startProxy(PROXY_PORT, SPOOF_PORT);
   const proxyBase = `http://127.0.0.1:${PROXY_PORT}`;
   check('A second Mapper started behind a stand-in proxy', await waitFor(proxyBase));
@@ -288,6 +290,65 @@ try {
     body: JSON.stringify({ token: 'r_zzzzzz.deadbeef', password: 'nevermind1' }),
   });
   check('A genuinely different source still gets its own bucket', otherSource.status === 400, `got ${otherSource.status}`);
+
+  /* ---- ten wrong passwords close the account, wherever they came from ----
+     A per-address limit cannot see a guess spread over many addresses: each
+     one arrives with a fresh bucket. So the account keeps its own count. Each
+     attempt below comes from a different source as far as the proxy is
+     concerned, which is exactly the case the address limit misses. */
+  console.log('\nTen wrong passwords close the account');
+  const LOCK_OWNER = 'locked@example.com';
+  const LOCK_PW = 'lockedpass1';
+  const fromSource = (path, body, srcN) => fetch(proxyBase + path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Test-Source': `203.0.113.${srcN}` },
+    body: JSON.stringify(body),
+  });
+
+  const claimed = await fromSource('/api/auth/setup', { email: LOCK_OWNER, password: LOCK_PW }, 1);
+  check('An account exists to lock', claimed.status === 200, `got ${claimed.status}`);
+
+  const wrong = [];
+  for (let i = 0; i < 10; i++) {
+    const r = await fromSource('/api/auth/login', { email: LOCK_OWNER, password: 'wrongpass9' }, 20 + i);
+    wrong.push(r.status);
+  }
+  check('Ten wrong passwords, each from a different address, are each refused on their merits',
+    wrong.every(s => s === 401), wrong.join(','));
+
+  const onDiskLock = JSON.parse(fs.readFileSync(path.join(SPOOF_DATA, 'account.json'), 'utf8'));
+  check('The count is written to disk, so a restart cannot wipe it',
+    onDiskLock.login && onDiskLock.login.failures === 10 && onDiskLock.login.until > Date.now(),
+    JSON.stringify(onDiskLock.login));
+
+  /* Restart it. The eleventh attempt still has to be refused, which is the
+     whole point of persisting the counter. */
+  spoofServer.kill();
+  await new Promise(r => setTimeout(r, 400));
+  spoofServer = startMapper(SPOOF_PORT, SPOOF_DATA, { LOGIN_LOCK_MINUTES: '0.2' }, true);
+  check('The Mapper came back up', await waitFor(proxyBase));
+
+  const eleventh = await fromSource('/api/auth/login', { email: LOCK_OWNER, password: 'wrongpass9' }, 90);
+  const eleventhBody = await eleventh.json().catch(() => ({}));
+  check('The eleventh is refused even from an address that has never been seen',
+    eleventh.status === 429, `got ${eleventh.status}`);
+  check('And it says so in plain English',
+    /Too many wrong passwords\. Try again in \d+ minutes?\./.test(eleventhBody.error || ''), eleventhBody.error);
+
+  const rightButLocked = await fromSource('/api/auth/login', { email: LOCK_OWNER, password: LOCK_PW }, 91);
+  check('Even the right password is refused while the account is closed',
+    rightButLocked.status === 429, `got ${rightButLocked.status}`);
+
+  /* Wait the window out. 0.2 minutes is 12 seconds; the failures above took
+     some of it already, so this waits from when the lock was set. */
+  const waitMs = Math.max(0, onDiskLock.login.until - Date.now()) + 500;
+  await new Promise(r => setTimeout(r, waitMs));
+  const afterWindow = await fromSource('/api/auth/login', { email: LOCK_OWNER, password: LOCK_PW }, 92);
+  check('The right password works once the window has passed', afterWindow.status === 200, `got ${afterWindow.status}`);
+
+  const clearedLock = JSON.parse(fs.readFileSync(path.join(SPOOF_DATA, 'account.json'), 'utf8'));
+  check('And signing in resets the count to nothing',
+    clearedLock.login.failures === 0 && clearedLock.login.until === 0, JSON.stringify(clearedLock.login));
 
   /* ---- the documents describe the code as it is ----
      Documentation drift is the disease this whole tool exists to cure, so the
