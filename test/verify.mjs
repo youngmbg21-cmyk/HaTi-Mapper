@@ -374,6 +374,22 @@ try {
   check('The other seven panels rendered with no HaTi running', true,
     'checks under "2. Every panel" all ran against a server with HATI_URL unset');
 
+  /* ---- how much the scanner could read ---- */
+  console.log('\nHow much the scanner could read');
+  await page.click('.nav button[data-p="screens"]');
+  const health = await page.evaluate(() => {
+    const el = document.getElementById('health');
+    return { hidden: el.hidden, text: (el.innerText || '').trim(), cls: el.className };
+  });
+  check('The score is on the overview', !health.hidden);
+  check('It is one plain sentence with a number in it',
+    /The scanner could read \d+% of what it looks for\./.test(health.text), health.text.slice(0, 120));
+  check('The number matches the payload',
+    health.text.indexOf(scan.health.percent + '% of what it looks for') > -1,
+    `payload says ${scan.health.percent}%`);
+  check('It is graded, so a bad score looks bad',
+    /\b(good|fair|poor)\b/.test(health.cls), health.cls);
+
   /* ---- how far back the change log will look ---- */
   console.log('\nLooking further back than 72 hours');
   await page.click('.nav button[data-p="changes"]');

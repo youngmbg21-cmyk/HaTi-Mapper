@@ -70,6 +70,14 @@ body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font);fon
 .g .l{font-size:10.5px;color:var(--n600);margin-top:3px;}
 .g.warn .n{color:var(--amber);}
 
+/* ---------- how much the scanner could read ---------- */
+.health{display:flex;align-items:center;gap:10px;margin:-6px 0 14px;font-size:11.5px;color:var(--n600);line-height:1.5;}
+.health .pct{flex:none;font-family:var(--mono);font-size:12px;font-weight:600;padding:3px 9px;border-radius:999px;background:var(--n100);color:var(--n700);}
+.health.good .pct{background:#eef7f2;color:var(--emerald-d);}
+.health.fair .pct{background:#fdf6e7;color:#8a6a2e;}
+.health.poor .pct{background:#fdf1f0;color:#8f322b;}
+.health b{color:var(--text);font-weight:600;}
+
 /* ---------- tables ---------- */
 table{width:100%;border-collapse:collapse;font-size:12px;}
 th{text-align:left;font-family:var(--mono);font-size:9px;font-weight:600;letter-spacing:.11em;text-transform:uppercase;color:var(--n500);padding:0 10px 7px 0;border-bottom:1px solid var(--divider);}
@@ -380,6 +388,11 @@ tbody tr:hover{background:#fcfcfb;}
   </div>
 
   <div class="glance" id="glance"></div>
+
+  <!-- How much of what the scanner looks for it could actually read. A falling
+       number is the early warning that HaTi moved and the panels above are
+       filling up with "not detected". -->
+  <div class="health" id="health" hidden></div>
 
   <nav class="nav" role="tablist">
     <button role="tab" aria-selected="true" data-p="screens">Screens</button>

@@ -786,9 +786,38 @@
     el.hidden = false;
   }
 
+  /* ---- how much of HaTi the scanner could read ---- */
+
+  /* Every panel is built by matching patterns against source somebody else is
+     free to change. When that changes shape nothing breaks loudly — the panels
+     just fill up with "not detected". This is the number that makes that
+     visible before it matters. */
+  function renderHealth() {
+    var el = $('health');
+    var h = scan.health;
+    if (!h || h.percent == null) { el.hidden = true; return; }
+
+    var grade = h.percent >= 95 ? 'good' : h.percent >= 85 ? 'fair' : 'poor';
+    var missed = h.attempts - h.resolved;
+    var tail = h.percent === 100
+      ? 'Everything it looks for, it found.'
+      : missed + ' of the ' + num(h.attempts) + ' things it looks for came back as “not detected” or with a warning. ' +
+        (grade === 'poor'
+          ? '<b>That is low enough to be worth a look</b> — usually it means HaTi moved and the patterns here need updating.'
+          : 'Usually that means HaTi has moved slightly since these patterns were written.');
+
+    el.className = 'health ' + grade;
+    el.innerHTML = '<span class="pct">' + h.percent + '%</span><span>' +
+      '<b>The scanner could read ' + h.percent + '% of what it looks for.</b> ' + tail + '</span>';
+    el.title = h.resolved + ' of ' + h.attempts + ' facts resolved · ' + h.warnings +
+      ' warning' + (h.warnings === 1 ? '' : 's');
+    el.hidden = false;
+  }
+
   function renderAll() {
     renderDrift();
     renderGlance();
+    renderHealth();
     renderScreens();
     renderCost();
     renderData();

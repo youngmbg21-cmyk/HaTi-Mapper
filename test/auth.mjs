@@ -15,7 +15,10 @@ import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { hatiSource, announce } from './source.mjs';
 import { driftVerdict } from '../lib/drift.mjs';
-import { History } from '../lib/history.mjs';
+import { History, snapshot } from '../lib/history.mjs';
+import { buildScan } from '../lib/scan.mjs';
+import { readFixture } from '../lib/fixture.mjs';
+import { FIXTURE_DIR } from './source.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, '..');
@@ -427,6 +430,31 @@ try {
   check('The status says how far back the log goes',
     !!h.status().keptSince && h.status().archivedEvents >= 3, JSON.stringify(h.status()));
   fs.rmSync(HDATA, { recursive: true, force: true });
+
+  /* ---- how much of HaTi the scanner could read ----
+     The number that turns silent decay into something visible: when HaTi
+     changes shape, panels do not break, they just fill with "not detected".
+     Proved by taking a whole repository away from the scanner and watching the
+     score fall. */
+  console.log('\nHow much the scanner could read');
+  const whole = readFixture(FIXTURE_DIR);
+  const full = buildScan({ files: whole.files, commits: whole.commits, repo: 'fixture', ref: 'main', requestCount: 0 });
+  check('The score is a percentage', typeof full.health.percent === 'number' && full.health.percent >= 0 && full.health.percent <= 100,
+    JSON.stringify(full.health));
+  check('It counts a real number of facts, not a handful', full.health.attempts >= 40, `${full.health.attempts} attempts`);
+  check('A clean read scores highly', full.health.percent >= 95, `${full.health.percent}%`);
+
+  const damaged = readFixture(FIXTURE_DIR);
+  damaged.files.delete('SECURITY.md');
+  damaged.files.delete('js/views/portal.js');
+  const hurt = buildScan({ files: damaged.files, commits: damaged.commits, repo: 'fixture', ref: 'main', requestCount: 0 });
+  check('Taking two files away lowers it', hurt.health.percent < full.health.percent,
+    `${full.health.percent}% → ${hurt.health.percent}%`);
+  check('And the reason is visible as warnings, not just a smaller number',
+    hurt.warnings.length > full.warnings.length, `${full.warnings.length} → ${hurt.warnings.length} warnings`);
+
+  check('The score goes into the snapshot, so it can be watched over time',
+    snapshot(full).health === full.health.percent, `${snapshot(full).health}`);
 
   /* ---- the documents describe the code as it is ----
      Documentation drift is the disease this whole tool exists to cure, so the

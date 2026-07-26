@@ -31,6 +31,17 @@ Seven of the eight panels are read from HaTi's **source code**. Only "Where the
 money goes" needs anything from a running HaTi, and all it asks for is caps and
 a count.
 
+**"The scanner could read 96% of what it looks for."** One line under the
+headline numbers. Every panel is built by matching patterns against source that
+someone else is free to change, and when it changes shape nothing breaks
+loudly — the panels quietly fill up with "not detected" and still look fine.
+This counts the facts the scan set out to establish against the ones it
+actually got, so that decay is visible as a falling number. A warning counts
+against the score as well as the fact it is about, which makes the number
+deliberately pessimistic: this is an alarm, and an alarm that flatters is worse
+than none. The score goes into every snapshot, so a drop shows up in the change
+log and can be watched.
+
 ---
 
 ## Security
