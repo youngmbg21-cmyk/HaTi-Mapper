@@ -15,6 +15,7 @@ import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { hatiSource, announce } from './source.mjs';
 import { driftVerdict } from '../lib/drift.mjs';
+import { History } from '../lib/history.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, '..');
@@ -375,6 +376,57 @@ try {
   const cannotTell = driftVerdict(scanned, { available: false, reason: 'nope' });
   check('An unreachable HaTi is "can\'t tell", never "probably fine"',
     cannotTell.state === 'unknown' && cannotTell.liveCommit === null, JSON.stringify(cannotTell));
+
+  /* ---- history older than 72 hours survives ----
+     The working set is still 72 hours and the default view is unchanged. What
+     changed is that nothing is thrown away: every round is archived when it
+     happens, so a question about last month has something to answer from. */
+  console.log('\nHistory older than 72 hours');
+  const HDATA = path.join(ROOT, '.tmp-history-data');
+  fs.rmSync(HDATA, { recursive: true, force: true });
+
+  /* Four scans, spread over three weeks, each one moving something. The dates
+     are made up; everything else goes through the real recorder. */
+  const daysAgo = n => new Date(Date.now() - n * 24 * 60 * 60 * 1000).toISOString();
+  const fakeScan = (at, tables, files) => ({
+    scannedAt: at, commit: 'c' + tables,
+    screens: [], ai: { features: [] },
+    storage: { tables: tables.map(n => ({ name: n, columns: ['id'] })) },
+    public: { routes: [], hashes: [] }, gaps: { gaps: [], markerCount: 0 },
+    weight: { files, orphans: [] }, streams: [], dependencies: { warnings: [] },
+  });
+
+  let h = new History(HDATA);
+  h.record(fakeScan(daysAgo(21), ['contracts'], [{ path: 'a.js', bytes: 1000 }]));
+  h.record(fakeScan(daysAgo(14), ['contracts', 'versions'], [{ path: 'a.js', bytes: 1000 }]));
+  h.record(fakeScan(daysAgo(7), ['contracts', 'versions', 'shares'], [{ path: 'a.js', bytes: 40000 }]));
+  h.record(fakeScan(new Date().toISOString(), ['contracts', 'versions', 'shares', 'audit'], [{ path: 'a.js', bytes: 40000 }]));
+
+  check('Only today\'s change is inside the 72-hour window', h.changes(72).length === 1, `${h.changes(72).length} rounds`);
+  /* The first scan is the baseline — there is nothing to compare it against —
+     so four scans produce three rounds of changes. */
+  check('Asking for 30 days finds the older ones too', h.changes(720).length === 3, `${h.changes(720).length} rounds`);
+  check('Newest first, whichever range is asked for',
+    new Date(h.changes(720)[0].at).getTime() > new Date(h.changes(720)[2].at).getTime());
+  check('A three-week-old event is still readable in full',
+    /A new place to store things was added: the “versions” table/.test(JSON.stringify(h.changes(720))),
+    JSON.stringify(h.changes(720)[2] || {}).slice(0, 120));
+
+  check('The archive was written to disk', fs.existsSync(path.join(HDATA, 'history-archive.json')));
+  const archived = JSON.parse(fs.readFileSync(path.join(HDATA, 'history-archive.json'), 'utf8'));
+  check('It holds one round per change', archived.rounds.length === 3, `${archived.rounds.length}`);
+  check('And a measurement per scan for drawing trends', archived.points.length === 4, `${archived.points.length}`);
+  check('Measurements are numbers only — no names, no paths',
+    !/"path"|"name"|\.js/.test(JSON.stringify(archived.points)), JSON.stringify(archived.points[0]));
+
+  /* Reopened from disk, with nothing in memory, the long view still answers. */
+  h = new History(HDATA);
+  check('Reopening from disk gives the same long view', h.changes(720).length === 3, `${h.changes(720).length} rounds`);
+  check('And the default view is still just the working set', h.changes().length === 1, `${h.changes().length} rounds`);
+  check('The measurement series survives too', h.points().length === 4, `${h.points().length} points`);
+  check('The status says how far back the log goes',
+    !!h.status().keptSince && h.status().archivedEvents >= 3, JSON.stringify(h.status()));
+  fs.rmSync(HDATA, { recursive: true, force: true });
 
   /* ---- the documents describe the code as it is ----
      Documentation drift is the disease this whole tool exists to cure, so the

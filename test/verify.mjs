@@ -374,6 +374,24 @@ try {
   check('The other seven panels rendered with no HaTi running', true,
     'checks under "2. Every panel" all ran against a server with HATI_URL unset');
 
+  /* ---- how far back the change log will look ---- */
+  console.log('\nLooking further back than 72 hours');
+  await page.click('.nav button[data-p="changes"]');
+  await page.waitForSelector('#watchRange button');
+  const rangeAsks = [];
+  page.on('request', r => { if (r.url().includes('/api/changes')) rangeAsks.push(r.url()); });
+  await page.click('#watchRange button[data-h="720"]');
+  await page.waitForFunction(() => !document.querySelector('#watchBody .skel'), null, { timeout: 20000 });
+  check('Choosing 30 days asks the server for 30 days', rangeAsks.some(u => /hours=720/.test(u)), rangeAsks.join(' '));
+  check('And the chosen range is the one shown as chosen',
+    await page.$eval('#watchRange button[data-h="720"]', b => b.getAttribute('aria-pressed')) === 'true');
+  check('The panel says which window it is describing',
+    /last 30 days/.test(await page.textContent('#watchLede')), await page.textContent('#watchLede'));
+  await page.click('#watchRange button[data-h="72"]');
+  await page.waitForFunction(() => !document.querySelector('#watchBody .skel'), null, { timeout: 20000 });
+  check('And it goes back to 72 hours', /last 72 hours/.test(await page.textContent('#watchLede')),
+    await page.textContent('#watchLede'));
+
   /* ---- is this what's live? ----
      This run has no HaTi, so the only state reachable here is the honest "I
      can't tell". The other two are asserted against lib/drift.mjs in

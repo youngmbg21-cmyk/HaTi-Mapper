@@ -623,13 +623,19 @@
     public: 'open door', gaps: 'gaps', weight: 'file size', map: 'the map',
   };
 
+  /* How far back the panel is looking. 72 hours is the working set; the longer
+     ranges are served from the archive. */
+  var watchHours = 72;
+  var RANGE_LABEL = { 72: 'the last 72 hours', 168: 'the last 7 days', 720: 'the last 30 days', 2160: 'the last 90 days' };
+  function rangeLabel() { return RANGE_LABEL[watchHours] || ('the last ' + watchHours + ' hours'); }
+
   function renderWatch(watch) {
     var lede = $('watchLede');
     var body = $('watchBody');
     if (!watch) { body.innerHTML = skeleton(4); return; }
 
     if (!watch.watching) {
-      lede.textContent = 'Every scan is compared with the one before, and anything that moved is kept here for 72 hours.';
+      lede.textContent = 'Every scan is compared with the one before, and anything that moved is kept here.';
       body.innerHTML = '<div class="notice" style="background:var(--a100);border-color:var(--a300);color:var(--a800)"><div>' +
         '<b>Just started watching.</b> This is the first scan, so there is nothing to compare it against yet. ' +
         'Come back after the next one and anything that has moved will be listed here.</div></div>';
@@ -638,13 +644,14 @@
 
     var total = watch.rounds.reduce(function (n, r) { return n + r.events.length; }, 0);
     lede.textContent = total === 0
-      ? 'Nothing has changed in HaTi in the last 72 hours. Watching since ' + fmtDate(watch.since, true) + '.'
-      : total + (total === 1 ? ' change' : ' changes') + ' in the last 72 hours, newest first. Watching since ' + fmtDate(watch.since, true) + '.';
+      ? 'Nothing has changed in HaTi in ' + rangeLabel() + '. Watching since ' + fmtDate(watch.since, true) + '.'
+      : total + (total === 1 ? ' change' : ' changes') + ' in ' + rangeLabel() + ', newest first. Watching since ' + fmtDate(watch.since, true) + '.';
 
     var html = '';
     if (total === 0) {
       html += '<div class="notice" style="background:var(--a100);border-color:var(--a300);color:var(--a800)"><div>' +
-        '<b>Nothing has moved.</b> The Mapper has looked ' + watch.snapshots + ' time' + (watch.snapshots === 1 ? '' : 's') +
+        '<b>Nothing has moved' + (watchHours > 72 ? ' in ' + rangeLabel() : '') + '.</b> The Mapper has looked ' +
+        watch.snapshots + ' time' + (watch.snapshots === 1 ? '' : 's') +
         ' and found HaTi unchanged each time. That is a good sign, not a broken page.</div></div>';
     } else {
       html += watch.rounds.map(function (r) {
@@ -657,17 +664,32 @@
       }).join('');
     }
 
-    html += '<div class="blast-note" style="color:var(--n500)">Kept for 72 hours, then dropped. A scan that finds nothing changed adds nothing here, so this stays a list of real events rather than a list of look-ups.' +
-      (watch.durable ? '' : ' <b>This log is being held in memory only</b> — it will be lost if the service restarts.') + '</div>';
+    html += '<div class="blast-note" style="color:var(--n500)">A scan that finds nothing changed adds nothing here, so this stays a list of real events rather than a list of look-ups. ' +
+      'Everything noticed is kept for up to 90 days' +
+      (watch.keptSince ? ' — this log goes back to ' + esc(fmtDate(watch.keptSince, true)) : '') + '.' +
+      (watch.durable ? '' : ' <b>This log is being held in memory only</b> — it will be lost if the service restarts.') +
+      (watch.durable && !watch.archiveDurable ? ' <b>Nothing older than 72 hours can be kept</b> — the archive file cannot be written.' : '') +
+      '</div>';
 
     body.innerHTML = html;
   }
 
   function loadWatch() {
-    return apiGet('/api/changes?hours=72').then(renderWatch, function () {
+    return apiGet('/api/changes?hours=' + watchHours).then(renderWatch, function () {
       $('watchBody').innerHTML = '<div class="notice"><div>The change log could not be read just now.</div></div>';
     });
   }
+
+  $('watchRange').addEventListener('click', function (e) {
+    var b = e.target.closest('button[data-h]');
+    if (!b) return;
+    watchHours = Number(b.getAttribute('data-h'));
+    $('watchRange').querySelectorAll('button').forEach(function (x) {
+      x.setAttribute('aria-pressed', String(x === b));
+    });
+    $('watchBody').innerHTML = skeleton(4);
+    loadWatch();
+  });
 
   /* ---- 7b. what changed in the code ---- */
   function renderChanges() {
@@ -1124,7 +1146,7 @@
     }
     $('setEmail').textContent = (authInfo && authInfo.email) || '—';
     $('setStorageNote').innerHTML = cfg.storageIsDurable
-      ? 'Your account, your key and the 72-hour change log are written to this service’s disk.'
+      ? 'Your account, your key, the day’s question count and the change log are written to this service’s disk.'
       : '<b>This service has no permanent disk.</b> Your account, your key and the change log are held in memory, so they will be lost when it restarts or redeploys. Attach a disk in your hosting dashboard and point <code style="font-family:var(--mono)">MAPPER_DATA</code> at it to make them permanent.';
   }
 

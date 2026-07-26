@@ -159,19 +159,32 @@ says so.
 
 ---
 
-## The 72-hour change log
+## The change log
 
 Every scan is compared with the one before it. Anything that moved becomes a
 plain-English entry — a new screen, an AI feature that changed model, an
 address that started working without a login, a file that crossed 60 KB, a gap
-that was closed. Entries are kept for 72 hours and then dropped.
+that was closed.
 
 A scan that finds nothing changed adds nothing, so the log stays a list of real
 events rather than a list of look-ups. It holds names, paths, counts and byte
 sizes only — the same class of information the dashboard already shows.
 
+**72 hours is the default view; nothing is thrown away.** The "What changed"
+tab has a range control — 72 hours, 7 days, 30 days, 90 days. The first is the
+working set the next scan is compared against; the rest come from an archive
+file that every round is written to as it happens. Alongside each round the
+archive keeps a handful of measurements — total bytes, largest file, how many
+open addresses, how many gaps — which are numbers only, with no names or paths
+in them, and which is what makes the trend lines on the overview possible.
+
+The archive is capped at 10,000 events and 5,000 measurements, oldest dropped
+first, so it cannot grow without bound. Ten thousand events is years of
+ordinary use.
+
 It is written to `MAPPER_DATA` (default `./.mapper-state`), alongside your
-account and the AI key, so all three survive restarts.
+account, the AI key and the day's question count, so all of them survive
+restarts.
 
 **They do not survive a redeploy unless a persistent disk is attached** — and a
 redeploy happens every time this repository changes. Without a disk you would

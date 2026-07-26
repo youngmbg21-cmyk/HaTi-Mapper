@@ -46,7 +46,7 @@ limiter, which bounds how hard the routes in front of the login can be hit and
 how many repository downloads one session can trigger; and the two-file serving
 allow-list, so no secret reaches the browser.
 
-**An assistant and a 72-hour change log were added in a later round**, both
+**An assistant and a change log were added in a later round**, both
 requested after the dashboard shipped.
 
 The assistant is HaTi's Copilot pattern applied to the Mapper's own data: a
@@ -73,8 +73,10 @@ runaway loop can spend.
 The change log (`lib/history.mjs`) fingerprints each scan and diffs it against
 the last, turning differences into sentences: a new screen, a feature that
 changed model, an address that started answering without a login, a file that
-crossed 60 KB. Kept 72 hours. A scan that finds nothing changed adds nothing,
-so the log is a list of events rather than a list of look-ups.
+crossed 60 KB. Seventy-two hours is the default view; everything is also
+archived, so the panel can be asked about the last 7, 30 or 90 days. A scan
+that finds nothing changed adds nothing, so the log is a list of events rather
+than a list of look-ups.
 
 **The front end** is `index.html` plus `app.js`. The single-file version passed
 60 KB once the rendering was in it, so the JavaScript was split out as the

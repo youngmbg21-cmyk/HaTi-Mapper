@@ -39,7 +39,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { makeClient, fetchRepoFiles, fetchCommits } from './lib/github.mjs';
 import { buildScan } from './lib/scan.mjs';
-import { History } from './lib/history.mjs';
+import { History, MAX_HISTORY_HOURS } from './lib/history.mjs';
 import { CHAT_TOOLS, buildSystem, runTool, normalizeAnswer } from './lib/chat.mjs';
 import { messages as anthropicMessages, friendlyError, DEFAULT_MODEL } from './lib/anthropic.mjs';
 import { Accounts, validEmail, normaliseEmail, SESSION_DAYS } from './lib/accounts.mjs';
@@ -68,9 +68,10 @@ const CACHE_MS = 10 * 60 * 1000;   // the code does not change minute to minute
    ten-minute cache holds it to roughly 130 an hour at worst. */
 const COMMIT_COUNT = Number(process.env.COMMIT_COUNT || 20);
 
-/* Where the 72-hour change log and any pasted AI key are kept. On Render this
-   survives restarts but not a redeploy unless a disk is attached — the README
-   says so, and both degrade to memory rather than failing.
+/* Where the change log, its archive, the day's question count and any pasted
+   AI key are kept. On Render this survives restarts but not a redeploy unless a
+   disk is attached — the README says so, and every one of them degrades to
+   memory rather than failing.
 
    Deliberately NOT `data/`: that directory holds the hand-maintained
    dependency map and phrasebook, which are source, not runtime state. Mixing
@@ -527,10 +528,11 @@ app.get('/api/pulse', requireAuth, rateLimit('pulse', 120, 15 * 60 * 1000), asyn
 
 /* ------------------------------------------------------------ /api/changes */
 
-/* The Mapper's own watch log: what has actually moved in the last 72 hours,
-   already written in plain English by lib/history.mjs. */
+/* The Mapper's own watch log: what has actually moved, already written in
+   plain English by lib/history.mjs. Seventy-two hours is the default view;
+   anything longer is served from the archive, up to 90 days. */
 app.get('/api/changes', requireAuth, rateLimit('changes', 120, 15 * 60 * 1000), (req, res) => {
-  const hours = Math.min(Math.max(Number(req.query.hours) || 72, 1), 72);
+  const hours = Math.min(Math.max(Number(req.query.hours) || 72, 1), MAX_HISTORY_HOURS);
   res.json({ ...history.status(), hours, rounds: history.changes(hours) });
 });
 
