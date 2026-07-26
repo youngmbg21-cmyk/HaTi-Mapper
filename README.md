@@ -208,19 +208,38 @@ match — with the card padding and table rows raised alongside it, so the effec
 is more room rather than more crowding. Nothing moved and nothing changed
 meaning.
 
-**Switching tabs keeps your place.** The tab row is pinned to the top of the
-window, so it is one click away from wherever you have read to. Each tab
-remembers where you left it and puts you back there when you return; a tab you
-have not opened before starts at its own beginning, just under the pinned row,
-rather than at the top of the document. If you were reading *above* the tabs
-when you switched, nothing scrolls at all.
+**Switching tabs does not move the page.** The tab row is pinned to the top of
+the window, and every panel begins on the same line directly beneath it, so
+holding the scroll position exactly where it is puts the new panel's heading
+where the old one's was. Your eye stays level and the tabs stay under the
+cursor.
+
+That is the whole rule, and it is deliberately dumber than what came before it.
+Sending you to the top of the new panel moves you when you were reading further
+down; restoring a position the tab remembers from last time moves you when you
+were not. Both were tried, and both are jumps — the only behaviour that never
+surprises is not moving.
+
+Two things make it possible:
+
+- **Every panel reserves a screenful** (`min-height`). A panel too short to
+  fill the window would shrink the document when it opened, and the browser
+  would drag the scroll position — and the reader — up with it.
+- **Scroll anchoring is off** on the page body. Chrome shifts the scroll
+  position by itself when content above the viewport changes height, which is
+  exactly what swapping panels does. That guesswork suits a feed and not a page
+  of independent panels.
+
+The one case that cannot be honoured is scrolling deeper than a panel reaches —
+from the bottom of the long file list to a short panel, say. There is no
+content down there to hold, so you land at the end of the new panel. The suite
+asserts that too, so it can never quietly become "back to the top".
 
 One trap worth writing down, because it cost a debugging round: while a sticky
 element is pinned, **both** its `getBoundingClientRect()` and its `offsetTop`
-report where it is being painted, which is the top of the window. Measuring the
-tab row's resting line from the row itself therefore hands back wherever you
-already were, and the page silently never moves. The measurement is taken off
-the panel instead, which is an ordinary element and honest at any scroll
+report where it is being painted, which is the top of the window. Any
+measurement taken off the tab row therefore hands back wherever you already
+were. Measure from a panel instead — an ordinary element, honest at any scroll
 position.
 
 ## "Getting bulky" says what each file is

@@ -367,7 +367,7 @@ one, under the date they happened, with each reference code moved into a chip
 out of the way of the sentence. The numbering is worked out on the server, so
 the card and the morning email tell the same story with the same numbers.
 
-**Verification.** `npm run verify`: **511 checks, 0 failures** (224 + 61 + 226).
+**Verification.** `npm run verify`: **513 checks, 0 failures** (226 + 61 + 226).
 
 ### 2. "Getting bulky" says what each file is
 
@@ -392,13 +392,20 @@ crowding. The tab row is pinned to the top of the window, each tab remembers
 where you left it, and a tab opened for the first time starts at its own
 beginning instead of at the top of the document.
 
-**One real bug, and a worse test.** The browser check for this passed while
-asserting nothing — all three scroll positions it compared had been clamped to
-the same number. Made discriminating, it went red at once and exposed a genuine
-fault: while a sticky element is pinned, both its bounding rect and its
-`offsetTop` report the top of the window, so measuring the tab row's resting
-line from the row itself hands back wherever you already were and the page
-never moves. Measured off the panel instead. Written up in `BUGLOG.md`.
+**This took two attempts, and the second correction came from the owner.** The
+first version kept a remembered position per tab and opened an unvisited tab at
+its start. The owner used it and reported the original complaint unchanged —
+both of those are movements. The mechanism was deleted: switching tabs now
+holds the scroll position exactly, full stop. Every panel reserves a screenful
+so a short one cannot collapse the document and drag the reader up with it, and
+Chrome's scroll anchoring is switched off for the page. The check now clicks
+all nine tabs in a circuit and requires each to hold the position to within two
+pixels; the one case that cannot be honoured — scrolling deeper than a short
+panel reaches — is asserted to land at that panel's end rather than at the top.
+
+Both rounds are written up in `BUGLOG.md`, including a browser check that
+passed while asserting nothing, and the more useful lesson: twice on this
+feature the tests agreed with the code and the code was still wrong.
 
 ### 4. "0 scans" no longer printed bare
 

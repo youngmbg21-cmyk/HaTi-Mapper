@@ -300,6 +300,45 @@ whose inputs coincide reports success for a codebase that does nothing at all,
 and the only way to notice is to read the numbers it prints rather than the
 word in front of them.
 
+---
+
+## The tab fix was still wrong, and the owner said so
+
+**What broke.** Nothing, by the suite's account: the checks above were green
+and the code did what they described. The owner then used the page and reported
+the original complaint unchanged — *"when I click on the different tabs the
+page jumps to a different location so I am never on the same eye view level."*
+
+They were right, and the checks had been written to the wrong requirement. The
+design sent you to the top of a panel you had not opened before and to a
+remembered position on one you had. Both of those are movements. Asked for
+stillness, I had built cleverness, then written checks that faithfully asserted
+the cleverness.
+
+**How it ended.** The whole mechanism was deleted — the per-tab memory, the
+first-visit rule and the measurement it needed. Switching tabs now holds the
+scroll position exactly where it is, and that is all it does. Every panel
+begins on the same line beneath the pinned tab row, so the new heading lands
+where the old one was.
+
+Two supports were needed to make holding possible rather than merely intended.
+A panel too short to fill the window shrank the document when it opened, and
+the browser dragged the scroll up with it, so every panel now reserves a
+screenful. And Chrome's scroll anchoring moves the position on its own when
+content above the viewport changes height, which is exactly what swapping
+panels does, so it is switched off for this page.
+
+The replacement check clicks all nine tabs in a circuit from one parked
+position and requires every one of them to hold it to within two pixels. The
+first attempt at that failed on seven tabs, which is what surfaced the
+document-height problem underneath.
+
+**Worth keeping.** Twice on the same feature the tests agreed with the code and
+the code was wrong. A check can only ever hold the implementation to the
+requirement it was written from, so a requirement misread at the start stays
+misread all the way through a green suite. The user saying "it still jumps" was
+worth more than any of it.
+
 ## Nothing was abandoned
 
 Rule 4 of the brief covers the case where an item breaks verification and

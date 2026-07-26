@@ -456,44 +456,94 @@ try {
 
   /* Where the open panel begins, with room for the pinned tab row above it.
      Measured off the panel rather than the row: while the row is pinned, both
-     its rect and its offsetTop report the top of the window, which is how the
-     first version of this silently asserted nothing at all. */
+     its rect and its offsetTop report the top of the window, which is how an
+     earlier version of this silently asserted nothing at all. */
   const navLine = () => page.evaluate(() => {
     const panel = document.querySelector('.panel:not([hidden])');
     const nav = document.querySelector('.nav');
     return Math.max(0, panel.getBoundingClientRect().top + window.scrollY - nav.getBoundingClientRect().height);
   });
 
-  /* Park a good way *below* the nav line, and not at the very bottom, so the
-     three positions this asserts are genuinely different numbers. A test where
-     they all coincide would pass without proving anything. */
+  /* The requirement is stillness: clicking a tab must leave the page exactly
+     where it was, so the new panel's heading lands where the old one's was and
+     the eye stays level.
+
+     How far down that can be honoured is a property of the shortest panel — no
+     page can hold a position its content cannot reach. So the reach of every
+     panel is measured first, and the test parks inside all of them. The
+     position that matters most is comfortably inside that: the tab row pinned
+     to the top of the window, which is where this is actually read. */
   const anchor = await navLine();
-  const target = await page.evaluate(top => {
-    const max = document.documentElement.scrollHeight - window.innerHeight;
-    const to = Math.min(top + 420, max - 40);
+  const reach = await page.evaluate(() => {
+    const out = {};
+    const panels = [...document.querySelectorAll('.panel')];
+    const open = panels.find(p => !p.hidden);
+    for (const p of panels) {
+      panels.forEach(x => { x.hidden = x !== p; });
+      out[p.getAttribute('data-panel')] = document.documentElement.scrollHeight - window.innerHeight;
+    }
+    panels.forEach(x => { x.hidden = x !== open; });
+    return out;
+  });
+  const shortestReach = Math.min(...Object.values(reach));
+  check('Every panel can be scrolled at least as far as the pinned tab row',
+    shortestReach >= anchor, `shortest reach ${Math.round(shortestReach)}, tab row rests at ${Math.round(anchor)}`);
+
+  const parked = await page.evaluate(async to => {
     window.scrollTo(0, to);
-    return { to, max };
-  }, anchor);
+    return window.scrollY;
+  }, Math.min(anchor + 200, shortestReach - 20));
   await page.waitForTimeout(80);
-  const parked = await page.evaluate(() => window.scrollY);
-  check('There is enough page below the tabs for this to mean anything',
-    parked > anchor + 100, `parked at ${parked}, nav line ${anchor}, furthest ${target.max}`);
+  check('And the test is parked well below the top, so this proves something',
+    parked > anchor + 50, `parked at ${Math.round(parked)}, tab row rests at ${Math.round(anchor)}`);
 
-  await page.click('.nav button[data-p="weight"]');
-  await page.waitForTimeout(120);
-  const onFirstVisit = await page.evaluate(() => window.scrollY);
-  check('Switching tabs no longer flings you back to the top of the page',
-    onFirstVisit > 0, `landed at ${onFirstVisit} having been at ${parked}`);
-  check('A tab opened for the first time starts at its own beginning, under the tabs',
-    Math.abs(onFirstVisit - anchor) < 4 && onFirstVisit < parked - 100,
-    `${onFirstVisit} against a nav line of ${anchor}`);
+  /* Every tab, a full circuit, from that one position. A single tab that moves
+     the page fails this. */
+  const moved = [];
+  for (const tab of ['weight', 'cost', 'data', 'blast', 'gaps', 'public', 'changes', 'settings', 'screens']) {
+    await page.click(`.nav button[data-p="${tab}"]`);
+    await page.waitForTimeout(90);
+    const at = await page.evaluate(() => window.scrollY);
+    if (Math.abs(at - parked) > 2) moved.push(`${tab} → ${Math.round(at)}`);
+  }
+  check('Clicking any tab leaves the page exactly where it was',
+    moved.length === 0, moved.length ? `moved on ${moved.join(', ')} from ${Math.round(parked)}` : `all nine held ${Math.round(parked)}`);
 
-  await page.click('.nav button[data-p="screens"]');
-  await page.waitForTimeout(120);
-  const backOnScreens = await page.evaluate(() => window.scrollY);
-  check('And coming back to one puts you where you left it, not at its start',
-    Math.abs(backOnScreens - parked) < 4 && backOnScreens > anchor + 100,
-    `left at ${parked}, returned to ${backOnScreens}, start would be ${anchor}`);
+  /* Every panel reserving a screenful is what makes the above possible: a
+     short panel that collapsed the document would drag the reader up with it. */
+  const shortestPanel = await page.evaluate(() => {
+    const panels = [...document.querySelectorAll('.panel')];
+    const open = panels.find(p => !p.hidden);
+    let min = Infinity;
+    for (const p of panels) {
+      panels.forEach(x => { x.hidden = x !== p; });
+      min = Math.min(min, p.getBoundingClientRect().height);
+    }
+    panels.forEach(x => { x.hidden = x !== open; });
+    return { min, viewport: window.innerHeight };
+  });
+  check('No panel is short enough to collapse the page under you',
+    shortestPanel.min >= shortestPanel.viewport - 140,
+    `shortest panel ${Math.round(shortestPanel.min)}px against a ${shortestPanel.viewport}px window`);
+
+  /* The one case that cannot be honoured, asserted rather than hidden: from
+     deep inside the longest panel, a shorter one simply has no content down
+     there. The reader must land at the end of it — never back at the top. */
+  const longest = Object.entries(reach).sort((a, b) => b[1] - a[1])[0][0];
+  const shortest = Object.entries(reach).sort((a, b) => a[1] - b[1])[0][0];
+  await page.click(`.nav button[data-p="${longest}"]`);
+  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  await page.waitForTimeout(90);
+  const deep = await page.evaluate(() => window.scrollY);
+  await page.click(`.nav button[data-p="${shortest}"]`);
+  await page.waitForTimeout(90);
+  const landed = await page.evaluate(() => window.scrollY);
+  check('From deeper than a panel reaches, you land at its end — never back at the top',
+    deep > reach[shortest] && Math.abs(landed - reach[shortest]) < 4,
+    `${Math.round(deep)} in "${longest}" → ${Math.round(landed)} in "${shortest}", which reaches ${Math.round(reach[shortest])}`);
+
+  check('And the page still scrolls to the very top when asked',
+    await page.evaluate(() => { window.scrollTo(0, 0); return window.scrollY === 0; }));
 
   /* ---- what each bulky file actually is ----
      A path is an address, not an answer: it tells a developer where to look

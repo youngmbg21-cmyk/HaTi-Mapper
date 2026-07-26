@@ -204,6 +204,16 @@ tbody tr:hover{background:#fcfcfb;}
 
 /* ---------- states added when the mockup became an app ---------- */
 .panel[hidden]{display:none;}
+/* Switching tabs must not move the page, and the page can only hold its
+   position if the document stays tall enough to reach it. A short panel that
+   collapsed the document would drag the scroll — and the reader — up with it,
+   so every panel reserves a screenful. The cost is some white space under the
+   shortest ones, which is worth it. */
+.panel{min-height:calc(100vh - 130px);}
+/* Chrome shifts the scroll position on its own when content above the viewport
+   changes height, which is exactly what swapping panels does. This is a page
+   of independent panels, not a feed, so that guesswork is unwanted. */
+.wrap{overflow-anchor:none;}
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:3px;}
 @media(prefers-reduced-motion:reduce){*{transition:none!important;}}
 
