@@ -671,6 +671,23 @@ app.get('/api/changes', requireAuth, rateLimit('changes', 120, 15 * 60 * 1000), 
   res.json({ ...history.status(), hours, rounds: history.changes(hours) });
 });
 
+/* ------------------------------------------------------------- /api/trends */
+
+/* The measurement series behind the sparklines: numbers only, no names and no
+   paths, straight out of the archive. */
+app.get('/api/trends', requireAuth, rateLimit('trends', 120, 15 * 60 * 1000), (req, res) => {
+  const days = Math.min(Math.max(Number(req.query.days) || 90, 1), Math.floor(MAX_HISTORY_HOURS / 24));
+  const points = history.points(days * 24);
+  res.json({
+    days,
+    points,
+    // Below three readings a line says more than it knows, so the page draws
+    // nothing and says why instead.
+    enough: points.length >= 3,
+    watchedSince: history.status().since,
+  });
+});
+
 /* -------------------------------------------------------- /api/preferences */
 
 /* The handful of choices the owner makes on the Settings tab. Nothing secret

@@ -78,6 +78,23 @@ body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font);fon
 .health.poor .pct{background:#fdf1f0;color:#8f322b;}
 .health b{color:var(--text);font-weight:600;}
 
+/* ---------- which way things are moving ---------- */
+.trends{background:var(--surface);border:1px solid var(--divider);border-radius:var(--r-md);box-shadow:var(--shadow);padding:15px 18px 13px;margin-bottom:14px;}
+.trends h3{margin:0 0 2px;font-size:13px;font-weight:600;}
+.trends .lede{margin:0 0 13px;font-size:11.5px;color:var(--n600);line-height:1.5;}
+.spark-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:14px 18px;}
+.spark .t{font-size:10.5px;color:var(--n600);}
+.spark .v{font-family:var(--mono);font-size:16px;font-weight:600;letter-spacing:-0.02em;line-height:1.2;margin-top:1px;}
+.spark svg{display:block;margin:4px 0 3px;overflow:visible;}
+.spark .line{fill:none;stroke:var(--accent);stroke-width:1.6;stroke-linejoin:round;stroke-linecap:round;}
+.spark .area{fill:var(--a100);stroke:none;}
+.spark .dot{fill:var(--accent);}
+.spark.up .line{stroke:var(--amber);} .spark.up .area{fill:#fdf6e7;} .spark.up .dot{fill:var(--amber);}
+.spark.down .line{stroke:var(--emerald);} .spark.down .area{fill:#eef7f2;} .spark.down .dot{fill:var(--emerald);}
+.spark .d{font-size:10.5px;color:var(--n600);line-height:1.45;}
+.spark.up .d{color:#8a6a2e;} .spark.down .d{color:var(--emerald-d);}
+.trends .foot{margin-top:12px;padding-top:10px;border-top:1px solid var(--divider);font-size:11px;color:var(--n500);line-height:1.5;}
+
 /* ---------- tables ---------- */
 table{width:100%;border-collapse:collapse;font-size:12px;}
 th{text-align:left;font-family:var(--mono);font-size:9px;font-weight:600;letter-spacing:.11em;text-transform:uppercase;color:var(--n500);padding:0 10px 7px 0;border-bottom:1px solid var(--divider);}
@@ -427,6 +444,10 @@ tbody tr:hover{background:#fcfcfb;}
        number is the early warning that HaTi moved and the panels above are
        filling up with "not detected". -->
   <div class="health" id="health" hidden></div>
+
+  <!-- Which way things are moving. Drawn from the archive's measurements, so
+       it needs a few scans' worth of history before it says anything. -->
+  <div class="trends" id="trends" hidden></div>
 
   <nav class="nav" role="tablist">
     <button role="tab" aria-selected="true" data-p="screens">Screens</button>

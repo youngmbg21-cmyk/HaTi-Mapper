@@ -960,6 +960,107 @@
     el.hidden = false;
   }
 
+  /* ==================================================================== */
+  /*  Which way things are moving                                          */
+  /*                                                                       */
+  /*  Six lines, drawn by hand in SVG — no chart library, because this      */
+  /*  service has one runtime dependency and it is going to stay that way.  */
+  /*  The insight is the direction, not the axes, so there are no axes.     */
+  /* ==================================================================== */
+
+  var SPARK_W = 150, SPARK_H = 34;
+
+  function sparkline(values) {
+    var min = Math.min.apply(null, values);
+    var max = Math.max.apply(null, values);
+    var span = (max - min) || 1;
+    var pad = 3;
+    var step = values.length > 1 ? (SPARK_W - pad * 2) / (values.length - 1) : 0;
+
+    var pts = values.map(function (v, i) {
+      var x = pad + i * step;
+      var y = SPARK_H - pad - ((v - min) / span) * (SPARK_H - pad * 2);
+      return { x: x, y: y };
+    });
+    var line = pts.map(function (p) { return p.x.toFixed(1) + ',' + p.y.toFixed(1); }).join(' ');
+    var area = pts[0].x.toFixed(1) + ',' + (SPARK_H - pad) + ' ' + line + ' ' +
+      pts[pts.length - 1].x.toFixed(1) + ',' + (SPARK_H - pad);
+    var last = pts[pts.length - 1];
+
+    return '<svg width="' + SPARK_W + '" height="' + SPARK_H + '" viewBox="0 0 ' + SPARK_W + ' ' + SPARK_H +
+      '" role="img" aria-hidden="true" focusable="false">' +
+      '<polygon class="area" points="' + area + '"></polygon>' +
+      '<polyline class="line" points="' + line + '"></polyline>' +
+      '<circle class="dot" cx="' + last.x.toFixed(1) + '" cy="' + last.y.toFixed(1) + '" r="2.2"></circle>' +
+      '</svg>';
+  }
+
+  /* Which way, and how much, in words. "Up 4%" is a fact; "a fifth bigger
+     than a month ago" is the thing worth knowing. */
+  function direction(values, days, opts) {
+    var first = values[0], last = values[values.length - 1];
+    if (first === last) return { klass: '', text: 'Unchanged over the last ' + days + ' days.' };
+    var up = last > first;
+    var pct = first === 0 ? null : Math.round(Math.abs(last - first) / Math.abs(first) * 100);
+    var word = up ? (opts.upIsBad ? 'bigger' : 'higher') : (opts.upIsBad ? 'smaller' : 'lower');
+    var body = pct == null
+      ? 'Moved ' + (up ? 'up' : 'down') + ' from nothing over the last ' + days + ' days.'
+      : pct + '% ' + word + ' than ' + days + ' days ago.';
+    // Colour by whether the movement is the direction the owner would want.
+    var bad = opts.upIsBad ? up : !up;
+    return { klass: bad ? 'up' : 'down', text: body };
+  }
+
+  var TREND_SERIES = [
+    { key: 'bytes', label: 'Everything, all together', upIsBad: true, fmt: function (v) { return kb(v); } },
+    { key: 'largest', label: 'The biggest single file', upIsBad: true, fmt: function (v) { return kb(v); } },
+    { key: 'openRoutes', label: 'Doors that need no login', upIsBad: true, fmt: function (v) { return String(v); } },
+    { key: 'gaps', label: 'Things not finished', upIsBad: true, fmt: function (v) { return String(v); } },
+    { key: 'health', label: 'How much the scanner can read', upIsBad: false, fmt: function (v) { return v + '%'; } },
+    { key: 'dailyCostUsd', label: 'A day at the caps, in money', upIsBad: true, fmt: function (v) { return usd(v); } },
+  ];
+
+  function renderTrends(t) {
+    var el = $('trends');
+    if (!t) { el.hidden = true; return; }
+
+    if (!t.enough) {
+      el.innerHTML = '<h3>Which way things are moving</h3>' +
+        '<p class="lede">Not enough history yet. Lines need at least three scans that found something different; ' +
+        'the Mapper has ' + t.points.length + '. ' +
+        (t.watchedSince ? 'It has been watching since ' + esc(fmtDate(t.watchedSince, true)) + '.' : '') +
+        ' Come back after a few days and this fills in.</p>';
+      el.hidden = false;
+      return;
+    }
+
+    var cards = TREND_SERIES.map(function (s) {
+      var values = t.points.map(function (p) { return p[s.key]; }).filter(function (v) { return typeof v === 'number'; });
+      if (values.length < 3) {
+        return '<div class="spark"><div class="t">' + esc(s.label) + '</div>' +
+          '<div class="v">' + (values.length ? esc(s.fmt(values[values.length - 1])) : '—') + '</div>' +
+          '<div class="d">Not measured for long enough to draw.</div></div>';
+      }
+      var dir = direction(values, t.days, s);
+      return '<div class="spark ' + dir.klass + '"><div class="t">' + esc(s.label) + '</div>' +
+        '<div class="v">' + esc(s.fmt(values[values.length - 1])) + '</div>' +
+        sparkline(values) +
+        '<div class="d">' + esc(dir.text) + '</div></div>';
+    }).join('');
+
+    el.innerHTML = '<h3>Which way things are moving</h3>' +
+      '<p class="lede">Each line is one reading per scan that found something different, over the last ' + t.days + ' days. ' +
+      'The shape is the point; the numbers underneath are where it stands now.</p>' +
+      '<div class="spark-grid">' + cards + '</div>' +
+      '<div class="foot">Drawn from ' + t.points.length + ' readings kept in the change log’s archive — counts and byte sizes only, ' +
+      'no names and no paths.</div>';
+    el.hidden = false;
+  }
+
+  function loadTrends() {
+    return apiGet('/api/trends?days=90').then(renderTrends, function () { $('trends').hidden = true; });
+  }
+
   function renderAll() {
     renderDrift();
     renderGlance();
@@ -998,6 +1099,7 @@
         loadWatch();
         loadDigest();
         loadWatchRules();
+        loadTrends();
         $('rescan').disabled = false;
         $('rescan').textContent = 'Rescan';
       })
@@ -1544,6 +1646,7 @@
         loadWatch();
         loadDigest();
         loadWatchRules();
+        loadTrends();
         refreshBrain().then(renderSettings, function () {});
         loadPrefs();
         loadWatchRules();

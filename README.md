@@ -171,6 +171,24 @@ says so.
 
 ---
 
+## Which way things are moving
+
+A strip of six small charts on the overview, drawn from the archive's
+measurements: everything all together, the biggest single file, doors that need
+no login, things not finished, how much the scanner can read, and a day at the
+caps in money.
+
+Each is a sparkline with the value it stands at now and one sentence saying
+which way it has gone — *"33% bigger than 90 days ago"*. The shape is the
+point; there are no axes, because "growing every week for a month" is the
+insight and the numbers on the side are not. Movement in the unwelcome
+direction is coloured as such rather than merely shown.
+
+Below three readings the strip says **"not enough history yet"** and draws
+nothing, because a line through one point is a lie. The charts are plain SVG
+built in `app.js` — no chart library, because Express is the only runtime
+dependency and it is going to stay that way.
+
 ## Severity on "Not finished"
 
 The panel gathers known gaps from HaTi's README, its `SECURITY.md` and the

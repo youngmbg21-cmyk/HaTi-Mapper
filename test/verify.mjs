@@ -96,10 +96,10 @@ function check(name, ok, detail) {
   console.log(`${ok ? '  PASS' : '  FAIL'}  ${name}${detail ? `\n        ${detail}` : ''}`);
 }
 
-function startServer(env) {
+function startServer(env, port) {
   const child = spawn(process.execPath, ['server.mjs'], {
     cwd: ROOT,
-    env: { ...process.env, PORT: String(PORT), ...env },
+    env: { ...process.env, PORT: String(port || PORT), ...env },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   let log = '';
@@ -129,6 +129,12 @@ async function waitForServer(tries = 40) {
 const HATI_SECRET = 'sentinel-mapper-token-must-not-leak-9f3a';
 const OWNER_EMAIL = 'verify@example.com';
 const OWNER_PW = 'verifypass1';
+/* A second Mapper, with an archive seeded before it starts, so the trend strip
+   can be checked in the state it reaches after weeks of scanning. */
+const TRENDS_PORT = PORT + 1;
+const TRENDS_DATA = path.join(ROOT, '.tmp-trends-data');
+let trendServer = null;
+
 const source = await hatiSource();
 announce(source);
 const server = startServer({
@@ -405,6 +411,22 @@ try {
   check('It is graded, so a bad score looks bad',
     /\b(good|fair|poor)\b/.test(health.cls), health.cls);
 
+  /* ---- which way things are moving ----
+     This Mapper has only ever scanned once, which is the state a brand-new
+     install is in. Drawing a line through one point would be a lie, so the
+     strip has to say so. The drawn state is checked below against a second
+     Mapper with a seeded archive. */
+  console.log('\nWhich way things are moving');
+  await page.click('.nav button[data-p="screens"]');
+  const freshTrends = await page.evaluate(() => {
+    const el = document.getElementById('trends');
+    return { hidden: el.hidden, text: (el.innerText || '').trim(), charts: el.querySelectorAll('svg').length };
+  });
+  check('A brand-new Mapper shows the strip', !freshTrends.hidden);
+  check('And says it has no history yet rather than drawing a flat line',
+    /Not enough history yet/i.test(freshTrends.text), freshTrends.text.slice(0, 120));
+  check('So nothing is drawn', freshTrends.charts === 0, `${freshTrends.charts} charts`);
+
   /* ---- what it costs to run ---- */
   console.log('\nWhat it costs to run');
   await page.click('.nav button[data-p="cost"]');
@@ -592,13 +614,103 @@ try {
 
   await page.screenshot({ path: path.join(ROOT, 'test', 'verified.png'), fullPage: true }).catch(() => {});
   await page.close();
+
+  /* ---- the same strip, with history behind it ----
+     A second Mapper whose archive is seeded with six weeks of readings, so the
+     drawn state can be checked the way the owner will actually see it. */
+  console.log('\nWhich way things are moving, with history');
+  fs.rmSync(TRENDS_DATA, { recursive: true, force: true });
+  fs.mkdirSync(TRENDS_DATA, { recursive: true });
+  const readingAt = (daysAgo, over) => ({
+    at: new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000).toISOString(),
+    files: 30, bytes: 400000, largest: 60000, openRoutes: 8, hashRoutes: 3,
+    gaps: 12, tables: 10, features: 9, health: 100, dailyCostUsd: 10, ...over,
+  });
+  fs.writeFileSync(path.join(TRENDS_DATA, 'history-archive.json'), JSON.stringify({
+    v: 1,
+    rounds: [],
+    points: [
+      readingAt(40, { bytes: 300000, largest: 40000, openRoutes: 6, gaps: 9, health: 100, dailyCostUsd: 7 }),
+      readingAt(33, { bytes: 320000, largest: 44000, openRoutes: 6, gaps: 10, health: 99, dailyCostUsd: 7.5 }),
+      readingAt(26, { bytes: 351000, largest: 49000, openRoutes: 7, gaps: 10, health: 97, dailyCostUsd: 8 }),
+      readingAt(19, { bytes: 372000, largest: 53000, openRoutes: 7, gaps: 11, health: 96, dailyCostUsd: 9 }),
+      readingAt(12, { bytes: 390000, largest: 57000, openRoutes: 8, gaps: 12, health: 94, dailyCostUsd: 9.5 }),
+      readingAt(2, { bytes: 420000, largest: 62000, openRoutes: 9, gaps: 13, health: 92, dailyCostUsd: 11 }),
+    ],
+  }));
+
+  trendServer = startServer({
+    MAPPER_DATA: TRENDS_DATA, MAPPER_OWNER_EMAIL: OWNER_EMAIL,
+    HATI_URL: '', MAPPER_TOKEN: '', ...source.env,
+  }, TRENDS_PORT);
+  const trendsBase = `http://127.0.0.1:${TRENDS_PORT}`;
+  let trendsUp = false;
+  for (let i = 0; i < 60; i++) {
+    try { if ((await fetch(`${trendsBase}/api/health`)).ok) { trendsUp = true; break; } } catch (_) {}
+    await new Promise(r => setTimeout(r, 250));
+  }
+  check('A second Mapper started on a seeded archive', trendsUp);
+
+  const page2 = await ctx.newPage();
+  const trendErrors = [], trendExternal = [], trendCsp = [];
+  attachConsole(page2, trendErrors, trendExternal, trendCsp);
+  await page2.goto(trendsBase, { waitUntil: 'domcontentloaded' });
+  await page2.waitForSelector('#auth:not([hidden])', { timeout: 20000 });
+  await page2.fill('#authEmail', OWNER_EMAIL);
+  await page2.fill('#authPassword', OWNER_PW);
+  await page2.fill('#authConfirm', OWNER_PW);
+  await page2.click('#authGo');
+  await page2.waitForSelector('#trends .spark-grid', { timeout: 180000 });
+
+  const drawn = await page2.evaluate(() => {
+    const el = document.getElementById('trends');
+    return {
+      charts: el.querySelectorAll('svg').length,
+      lines: el.querySelectorAll('polyline.line').length,
+      points: [...el.querySelectorAll('polyline.line')].map(p => p.getAttribute('points').trim().split(/\s+/).length),
+      labels: [...el.querySelectorAll('.spark .t')].map(e => e.textContent.trim()),
+      values: [...el.querySelectorAll('.spark .v')].map(e => e.textContent.trim()),
+      directions: [...el.querySelectorAll('.spark .d')].map(e => e.textContent.trim()),
+      text: (el.innerText || '').trim(),
+    };
+  });
+  check('Six sparklines are drawn', drawn.charts === 6 && drawn.lines === 6,
+    `${drawn.charts} charts, ${drawn.lines} lines`);
+  /* Six seeded readings plus the one this server took when it started. */
+  check('Each is drawn from every reading in the archive',
+    drawn.points.length === 6 && drawn.points.every(n => n === drawn.points[0] && n >= 6),
+    drawn.points.join(','));
+  check('Weight, biggest file, open doors, gaps, readability and money are all there',
+    ['Everything, all together', 'The biggest single file', 'Doors that need no login',
+     'Things not finished', 'How much the scanner can read', 'A day at the caps, in money']
+      .every(l => drawn.labels.includes(l)), drawn.labels.join(' | '));
+  check('Each carries the value it stands at now', drawn.values.every(v => v && v !== '—'), drawn.values.join(' | '));
+  check('And says which way it is going, in words not axes',
+    drawn.directions.every(d => /% (bigger|smaller|higher|lower) than 90 days ago|Unchanged/.test(d)),
+    drawn.directions.join(' | '));
+  /* Three series whose live value is known from the fixture and which rise
+     across the seeded window: more open doors, more gaps, more money. Each has
+     to be drawn as unwelcome, not merely as movement. */
+  const unwelcome = await page2.$$eval('#trends .spark', els => els
+    .filter(e => e.classList.contains('up'))
+    .map(e => e.querySelector('.t').textContent.trim()));
+  check('Growth in the wrong direction is not drawn as good news',
+    ['Doors that need no login', 'Things not finished', 'A day at the caps, in money']
+      .every(l => unwelcome.includes(l)), unwelcome.join(' | '));
+  check('The strip says the readings are numbers only',
+    /no names and no paths/.test(drawn.text));
+  check('Drawing them raises no console errors', trendErrors.length === 0, trendErrors.slice(0, 3).join(' | '));
+  check('And no policy violations', trendCsp.length === 0, trendCsp.slice(0, 2).join(' | '));
+  await page2.close();
 } catch (e) {
   check('The verification run itself completed', false, e.stack || String(e));
   console.error(server.getLog());
 } finally {
   if (browser) await browser.close().catch(() => {});
   server.kill();
+  if (trendServer) trendServer.kill();
   fs.rmSync(DATA, { recursive: true, force: true });
+  fs.rmSync(TRENDS_DATA, { recursive: true, force: true });
 }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
