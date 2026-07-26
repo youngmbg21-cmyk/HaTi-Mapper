@@ -922,6 +922,8 @@
         var footer = e.noBackend
           ? 'Rescan will not help until the service is running as a web service.'
           : 'Nothing on this page is current. Press Rescan to try again.';
+        // Repeated failures raise a banner of their own; go and look.
+        loadWatchRules();
         var msg = '<div class="notice bad"><div><b>' + headline + '</b> ' + esc(e.message || 'Unknown error') +
           '<br>' + footer + '</div></div>';
         ['screensBody', 'costBody', 'dataBody', 'blastBody', 'gapsBody', 'publicBody', 'changesBody', 'weightBody', 'orphanBody']
@@ -1292,18 +1294,34 @@
   var TRIP_ICON = '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">' +
     '<path d="M12 9v4M12 17h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>';
 
-  function renderTripped(tripped) {
+  function renderTripped(tripped, trouble) {
     var el = $('tripped');
     var list = tripped || [];
-    if (!list.length) { el.hidden = true; el.innerHTML = ''; return; }
-    el.innerHTML = list.map(function (t) {
+    var html = '';
+
+    /* The Mapper failing to read HaTi is not a rule the owner set, and there
+       is nothing to dismiss — it stays until a scan works again. It goes
+       first, because while it is showing, everything below it is stale. */
+    if (trouble) {
+      html += '<div class="trip"' + ' id="scanTrouble">' + TRIP_ICON + '<div class="body">' +
+        '<h4>The Mapper cannot read HaTi’s code</h4>' +
+        '<p>It has failed ' + trouble.failedScans + ' times in a row, since ' + esc(fmtDate(trouble.since, true)) + '. ' +
+        'Reason: ' + esc(trouble.reason || 'not recorded') + '. ' +
+        'Everything on this page is the last scan that worked, so it will look correct while describing older code.' +
+        (trouble.emailed ? ' You have been emailed about this once; there will not be another until a scan succeeds.' : '') +
+        '</p></div></div>';
+    }
+
+    html += list.map(function (t) {
       return '<div class="trip">' + TRIP_ICON + '<div class="body">' +
         '<h4>' + esc(t.title) + '</h4>' +
         '<p>' + esc(t.text) + '</p>' +
         '<div class="when">noticed ' + esc(fmtDate(t.at, true)) + '</div>' +
         '</div><button type="button" data-key="' + esc(t.key) + '">Dismiss</button></div>';
     }).join('');
-    el.hidden = false;
+
+    el.innerHTML = html;
+    el.hidden = !html;
   }
 
   $('tripped').addEventListener('click', function (e) {
@@ -1311,14 +1329,14 @@
     if (!b) return;
     b.disabled = true;
     post('/api/watch/dismiss', { key: b.getAttribute('data-key') })
-      .then(function (r) { renderTripped(r.tripped); })
+      .then(function (r) { renderTripped(r.tripped, watch && watch.scanTrouble); })
       .catch(function () { b.disabled = false; });
   });
 
   function renderWatchRules(w) {
     if (!w) return;
     watch = w;
-    renderTripped(w.tripped);
+    renderTripped(w.tripped, w.scanTrouble);
 
     $('watchRules').innerHTML = w.rules.map(function (r) {
       var say = esc(r.plain);
@@ -1343,7 +1361,13 @@
 
   function saveRule(name, patch) {
     return send('PUT', '/api/watch', { name: name, on: patch.on, threshold: patch.threshold })
-      .then(function (r) { renderWatchRules({ rules: r.rules, tripped: r.tripped, canWatchLiveUsage: watch && watch.canWatchLiveUsage }); });
+      .then(function (r) {
+        renderWatchRules({
+          rules: r.rules, tripped: r.tripped,
+          canWatchLiveUsage: watch && watch.canWatchLiveUsage,
+          scanTrouble: watch && watch.scanTrouble,
+        });
+      });
   }
 
   $('watchRules').addEventListener('click', function (e) {

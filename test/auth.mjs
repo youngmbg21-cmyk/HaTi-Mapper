@@ -84,6 +84,13 @@ const PROXY_PORT = PORT + 2;
 const SPOOF_DATA = path.join(ROOT, '.tmp-auth-data-2');
 let spoofServer = null, spoofProxy = null;
 
+/* A third Mapper, pointed at a source directory that does not exist yet, so
+   its scans fail until the directory is created under it. */
+const TROUBLE_PORT = PORT + 3;
+const TROUBLE_DATA = path.join(ROOT, '.tmp-trouble-data');
+const TROUBLE_SOURCE = path.join(ROOT, '.tmp-trouble-source');
+let troubleServer = null;
+
 /* ---------------------------------------------------------------- a proxy */
 
 /* A stand-in for the edge Render puts in front of this service. A real reverse
@@ -613,6 +620,66 @@ try {
   const digestAnon = await fetch(BASE + '/api/digest');
   check('Nobody without a session can read the summary', digestAnon.status === 401, `got ${digestAnon.status}`);
 
+  /* ---- a monitoring tool that stops monitoring ----
+     The dangerous failure: the scan stops working, the page keeps showing the
+     last good one, and everything looks fine. This Mapper is pointed at a
+     source directory that does not exist, so its scans fail — and the
+     directory is created under it afterwards to prove recovery. */
+  console.log('\nWhen the Mapper cannot read HaTi');
+  fs.rmSync(TROUBLE_SOURCE, { recursive: true, force: true });
+  troubleServer = startMapper(TROUBLE_PORT, TROUBLE_DATA, {
+    HATI_FIXTURE: TROUBLE_SOURCE,
+    // A key that will never work, so the send is attempted and fails. What is
+    // being asserted is that it is attempted once, not that it arrives.
+    RESEND_API_KEY: 'not-a-real-key-for-tests',
+  });
+  const troubleBase = `http://127.0.0.1:${TROUBLE_PORT}`;
+  check('A Mapper with nothing to read started', await waitFor(troubleBase));
+
+  let troubleCookie = '';
+  const troubleCall = async (method, p, body) => {
+    const r = await fetch(troubleBase + p, {
+      method,
+      headers: { 'Content-Type': 'application/json', ...(troubleCookie ? { Cookie: troubleCookie } : {}) },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    const c = r.headers.get('set-cookie');
+    if (c) troubleCookie = c.split(';')[0];
+    return { status: r.status, body: await r.json().catch(() => null) };
+  };
+  await troubleCall('POST', '/api/auth/setup', { email: 'trouble@example.com', password: 'troubled1' });
+
+  const readPrefs = () => JSON.parse(fs.readFileSync(path.join(TROUBLE_DATA, 'prefs.json'), 'utf8'));
+  const failures = [];
+  for (let i = 0; i < 2; i++) failures.push((await troubleCall('GET', '/api/scan?refresh=1')).status);
+  check('A failing scan says so rather than pretending', failures.every(s => s === 502), failures.join(','));
+  check('Two failures are counted but nothing is raised yet',
+    readPrefs().failedScans === 2 && readPrefs().scanAlertSent === false, JSON.stringify(readPrefs().failedScans));
+  const watchQuiet = await troubleCall('GET', '/api/watch');
+  check('And no banner is shown for two', watchQuiet.body.scanTrouble === null, JSON.stringify(watchQuiet.body.scanTrouble));
+
+  const third = await troubleCall('GET', '/api/scan?refresh=1');
+  check('The third failure is the one that matters', third.status === 502);
+  check('Exactly one alert is raised at the third', readPrefs().scanAlertSent === true, JSON.stringify(readPrefs()));
+  const watchLoud = await troubleCall('GET', '/api/watch');
+  check('And the page is given something to show',
+    watchLoud.body.scanTrouble && watchLoud.body.scanTrouble.failedScans === 3, JSON.stringify(watchLoud.body.scanTrouble));
+  check('With the plain reason it failed',
+    /does not exist/.test(watchLoud.body.scanTrouble.reason || ''), watchLoud.body.scanTrouble.reason);
+
+  for (let i = 0; i < 2; i++) await troubleCall('GET', '/api/scan?refresh=1');
+  check('More failures do not raise more alerts',
+    readPrefs().failedScans === 5 && readPrefs().scanAlertSent === true, JSON.stringify(readPrefs()));
+
+  /* Give it something to read, and it should recover on the next scan. */
+  fs.cpSync(FIXTURE_DIR, TROUBLE_SOURCE, { recursive: true });
+  const recovered = await troubleCall('GET', '/api/scan?refresh=1');
+  check('It recovers as soon as there is something to read', recovered.status === 200, `got ${recovered.status}`);
+  check('And the count is wiped, so the next outage alerts again',
+    readPrefs().failedScans === 0 && readPrefs().scanAlertSent === false, JSON.stringify(readPrefs()));
+  const watchClear = await troubleCall('GET', '/api/watch');
+  check('The banner goes with it', watchClear.body.scanTrouble === null, JSON.stringify(watchClear.body.scanTrouble));
+
   /* ---- the documents describe the code as it is ----
      Documentation drift is the disease this whole tool exists to cure, so the
      statements that were once true and are now false are asserted gone. Each
@@ -639,9 +706,12 @@ try {
 } finally {
   server.kill();
   if (spoofServer) spoofServer.kill();
+  if (troubleServer) troubleServer.kill();
   if (spoofProxy) spoofProxy.close();
   fs.rmSync(DATA, { recursive: true, force: true });
   fs.rmSync(SPOOF_DATA, { recursive: true, force: true });
+  fs.rmSync(TROUBLE_DATA, { recursive: true, force: true });
+  fs.rmSync(TROUBLE_SOURCE, { recursive: true, force: true });
 }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

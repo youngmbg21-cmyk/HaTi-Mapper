@@ -499,6 +499,70 @@ function recordTrips(trips) {
   return fresh;
 }
 
+/* ------------------------------------------------- when the scan keeps failing */
+
+/* A monitoring tool that stops being able to monitor, silently, is worse than
+   no monitoring tool: the page still shows the last good scan, so everything
+   looks fine. Three failures in a row is the point at which this stops being
+   a blip — a spun-down GitHub, a network hiccup — and starts being something
+   the owner has to do about. */
+const SCAN_FAILURES_BEFORE_ALERT = 3;
+
+function noteScanFailure(reason) {
+  const failed = (prefs.get('failedScans') || 0) + 1;
+  prefs.update({
+    failedScans: failed,
+    failedSince: prefs.get('failedSince') || new Date().toISOString(),
+    failedReason: String(reason || '').slice(0, 300),
+  });
+  console.warn(`[scan] failure ${failed} in a row.`);
+  if (failed >= SCAN_FAILURES_BEFORE_ALERT) {
+    alertScanFailure().catch(e => console.warn('[scan] the alert could not be sent:', e.message));
+  }
+}
+
+function noteScanSuccess() {
+  if (!prefs.get('failedScans') && !prefs.get('scanAlertSent')) return;
+  console.log('[scan] reading HaTi is working again.');
+  prefs.update({ failedScans: 0, failedSince: null, failedReason: null, scanAlertSent: false });
+}
+
+/* Exactly one alert per outage. Marked as sent before the attempt, so a
+   provider that is itself down cannot turn this into one email every ten
+   minutes for as long as the outage lasts. */
+async function alertScanFailure() {
+  if (prefs.get('scanAlertSent')) return;
+  if (!emailConfigured() || !accounts.ownerEmail) return;   // the banner says it instead
+  prefs.update({ scanAlertSent: true });
+  const since = prefs.get('failedSince');
+  await sendAlertEmail(
+    accounts.ownerEmail,
+    'HaTi Mapper — it cannot read HaTi\'s code',
+    [
+      `The Mapper hasn't been able to read HaTi's code since ${since ? new Date(since).toUTCString() : 'a short while ago'}.`,
+      '',
+      `Reason: ${prefs.get('failedReason') || 'not recorded'}`,
+      '',
+      'Until this clears, the dashboard is showing the last scan that worked, so it will look',
+      'correct while quietly describing older code. Nothing is wrong with HaTi itself as far as',
+      'the Mapper can tell — this is about the Mapper reaching GitHub.',
+      '',
+      'You will not get another of these until a scan succeeds again.',
+      PUBLIC_URL ? 'The dashboard: ' + PUBLIC_URL : '',
+    ].filter(Boolean).join('\n'));
+}
+
+function scanTrouble() {
+  const failed = prefs.get('failedScans') || 0;
+  if (failed < SCAN_FAILURES_BEFORE_ALERT) return null;
+  return {
+    failedScans: failed,
+    since: prefs.get('failedSince'),
+    reason: prefs.get('failedReason'),
+    emailed: !!prefs.get('scanAlertSent'),
+  };
+}
+
 /* Rule (a) is the one that should not wait until morning. The rest ride along
    in the next day's summary, which they do automatically by being in the log. */
 async function alertOnTrips(fresh) {
@@ -531,6 +595,7 @@ app.get('/api/scan', requireAuth, rateLimit('scan', 60, 15 * 60 * 1000), async (
     }
     const payload = await inFlight;
     cache = { at: Date.now(), payload };
+    noteScanSuccess();
     /* The morning summary rides on the first scan of the day rather than on a
        timer, because a scan is when there is something new to summarise. It
        never blocks the response. */
@@ -538,6 +603,7 @@ app.get('/api/scan', requireAuth, rateLimit('scan', 60, 15 * 60 * 1000), async (
     res.json({ ...payload, cached: false, cacheAgeMs: 0 });
   } catch (e) {
     console.error('[scan] failed:', e.message);
+    noteScanFailure(e.message);
     // Serve stale rather than nothing — a ten-minute-old map beats an error.
     if (cache) {
       return res.json({ ...cache.payload, cached: true, stale: true, cacheAgeMs: Date.now() - cache.at,
@@ -632,6 +698,9 @@ app.get('/api/watch', requireAuth, rateLimit('watch', 120, 15 * 60 * 1000), (req
   res.json({
     rules: describeRules(prefs.get('watch')),
     tripped: prefs.get('tripped') || [],
+    // Not a rule the owner set — the Mapper reporting on itself. Kept on this
+    // route because it is the one the page asks for "anything I should know?".
+    scanTrouble: scanTrouble(),
     canWatchLiveUsage: !!(HATI_URL && MAPPER_TOKEN),
     durable: prefs.durable,
   });

@@ -201,6 +201,19 @@ over breakfast.
 A rule that has already raised a banner does not raise it again on the next
 scan; dismissing it lets it fire afresh.
 
+## When the Mapper itself stops working
+
+A monitoring tool that quietly stops monitoring is worse than none: the scan
+fails, the page keeps serving the last good one, and everything looks correct
+while describing older code.
+
+So consecutive scan failures are counted. Three in a row and a banner is pinned
+to the top of the page — how long it has been failing, the plain reason, and
+that what you are looking at is stale. If `RESEND_API_KEY` is set you also get
+one email, once, and not another until a scan succeeds. Without a provider the
+banner says the same thing. A successful scan wipes the count, so the next
+outage alerts again.
+
 ## "What did last night's session do?"
 
 The question the owner asks every morning, answered as one card at the top of
