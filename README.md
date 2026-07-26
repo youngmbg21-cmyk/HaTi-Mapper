@@ -72,6 +72,15 @@ reset. Completing a reset signs every device out. The route answers identically
 whether or not the address is the owner's, so it cannot be used to discover
 which email the Mapper belongs to.
 
+**The page may only load what it actually needs.** A Content-Security-Policy
+refuses everything by default and then names the exceptions: one script, from
+this service; styles from this service, including the inline `style=""`
+attributes the markup uses; the two Google Fonts hosts; the icon, which is a
+`data:` URL; and requests to this service's own `/api/*`. No outside script can
+run, inline or otherwise, and the page cannot send anything anywhere else. The
+headless run asserts the policy is sent and that the browser reported no
+violation of it.
+
 Secrets live in environment variables or in the server's own state directory.
 **No token, key or credential appears in `index.html`, in `app.js`, or in any
 other file served to the browser** — the server serves exactly two files and

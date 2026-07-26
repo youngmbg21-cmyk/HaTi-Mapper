@@ -174,7 +174,30 @@ setInterval(() => {
   }
 }, 600000).unref?.();
 
+/* What this page is actually allowed to load. Written from what it does, not
+   from a template: it fetches its own /api/*, runs one script of its own, uses
+   inline style attributes throughout the markup, carries its icon as a data:
+   URL, and asks Google for two fonts. Nothing else — so everything else is
+   refused by default rather than merely unused.
+
+   'unsafe-inline' is granted to styles only. The markup genuinely carries
+   style="" attributes on generated rows, and there is no way to allow those
+   without it. Scripts get no such grant: the one script is app.js, served from
+   here, and an injected <script> or an inline handler cannot run. */
+const CSP = [
+  "default-src 'none'",
+  "base-uri 'self'",
+  "form-action 'self'",
+  "frame-ancestors 'none'",
+  "script-src 'self'",
+  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+  "font-src https://fonts.gstatic.com",
+  "img-src 'self' data:",
+  "connect-src 'self'",
+].join('; ');
+
 app.use((req, res, next) => {
+  res.setHeader('Content-Security-Policy', CSP);
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('Referrer-Policy', 'no-referrer');

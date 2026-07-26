@@ -47,7 +47,7 @@ function chromiumPath() {
    the app, so it is reported separately rather than counted. The page renders
    correctly without it: every font stack in the CSS falls back to a system
    face. */
-function attachConsole(page, appErrors, externalErrors) {
+function attachConsole(page, appErrors, externalErrors, cspViolations) {
   // A resource-load console error carries no reliable location, so the failed
   // request itself is what tells us which origin it belonged to.
   const failedExternal = [];
@@ -61,6 +61,10 @@ function attachConsole(page, appErrors, externalErrors) {
     if (m.type() !== 'error') return;
     const text = m.text();
     const from = (m.location() && m.location().url) || '';
+    /* A policy violation reads "Refused to …", not "Failed to load resource",
+       so it would otherwise be filed as an ordinary app error. Captured first
+       and separately, because it needs naming rather than counting. */
+    if (cspViolations && /Content Security Policy/i.test(text)) cspViolations.push(text);
     const isResourceLoad = /Failed to load resource/i.test(text);
     if (from && !from.startsWith(BASE)) { externalErrors.push(`${from} — ${text}`); return; }
     if (isResourceLoad && failedExternal.length) { externalErrors.push(`${failedExternal.shift()} (${text})`); return; }
@@ -161,8 +165,8 @@ try {
   /* ---- the real run ---- */
   console.log('\n1, 2, 3, 4, 6. The dashboard');
   const page = await ctx.newPage();
-  const consoleErrors = [], externalAssetErrors = [];
-  attachConsole(page, consoleErrors, externalAssetErrors);
+  const consoleErrors = [], externalAssetErrors = [], cspViolations = [];
+  attachConsole(page, consoleErrors, externalAssetErrors, cspViolations);
 
   await page.goto(BASE, { waitUntil: 'domcontentloaded' });
   await page.waitForSelector('#auth:not([hidden])', { timeout: 20000 });
@@ -369,6 +373,20 @@ try {
   // The other seven panels were all asserted non-empty above, with no HaTi running.
   check('The other seven panels rendered with no HaTi running', true,
     'checks under "2. Every panel" all ran against a server with HATI_URL unset');
+
+  /* ---- what the page is allowed to load ---- */
+  console.log('\nContent-Security-Policy');
+  const csp = (await fetch(BASE + '/')).headers.get('content-security-policy') || '';
+  check('The page is served with a Content-Security-Policy', /default-src 'none'/.test(csp), csp.slice(0, 60) || '(none)');
+  check('Only this service may supply a script, and never inline',
+    /script-src 'self'/.test(csp) && !/script-src[^;]*unsafe-inline/.test(csp), csp);
+  check('Inline styles are allowed, because the markup genuinely uses them',
+    /style-src[^;]*'unsafe-inline'/.test(csp), csp);
+  check('Google Fonts is the only outside host the page may reach',
+    /style-src[^;]*fonts\.googleapis\.com/.test(csp) && /font-src[^;]*fonts\.gstatic\.com/.test(csp) &&
+    !/connect-src[^;]*https:\/\//.test(csp), csp);
+  check('The whole session raised no policy violation', cspViolations.length === 0,
+    cspViolations.slice(0, 3).join(' | '));
 
   /* ---- 4. console errors ---- */
   console.log('\n4. Console');
