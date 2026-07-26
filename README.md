@@ -7,7 +7,7 @@ the product, written for someone who does not read code:
 | Panel | Answers |
 |---|---|
 | **Screens** | Every screen in the product, what a person does there, and the file it lives in |
-| **Where the money goes** | Every feature that calls Anthropic, which model, which cap, and which screens use it |
+| **Where the money goes** | Every feature that calls Anthropic, which model, which cap, which screens use it — and roughly what it costs |
 | **Where things are kept** | Every database table and what is inside it |
 | **What breaks what** | Pick a piece of data, see everything that depends on it — and what changing it can break that is already signed |
 | **Not finished** | Known gaps, gathered from the code and the written documents |
@@ -170,6 +170,27 @@ a writable state directory the count falls back to memory and the service log
 says so.
 
 ---
+
+## Roughly what it costs
+
+"Where the money goes" used to show models and request counts and never money,
+which left the obvious question unanswered.
+
+The honest difficulty is that HaTi's pulse reports numbers only — no token
+counts — so there is nothing real to multiply. What the source *does* state is
+the ceiling each handler puts on one answer, its `max_tokens`. Every estimate
+is built from that, with the assumption printed on the panel rather than
+hidden: **each request is priced as if it used its whole answer allowance twice
+over, once going in and once coming out.**
+
+So the figures are a roof, not a bill — a real request is almost always
+smaller, and the panel says so in those words. You get a per-use estimate for
+every feature, what one person hitting the rate limit could spend, and a
+whole-day ceiling at the limits the code sets. Prices come from
+`data/pricing.js` and are hand-maintained; a model with no entry shows "price
+not on file" rather than borrowing a similar model's price, and a price list
+older than 90 days says so on the panel. The daily estimate goes into every
+snapshot, so it can be charted and watched.
 
 ## Tripwires
 
@@ -355,6 +376,18 @@ parser guessing at them would produce a confident, wrong diagram.
 Validated per scan: every subsystem's `file` must still exist, every `proof`
 identifier must still appear in the source, every `field` an item names must
 still appear, and every subsystem id an item points at must be defined.
+
+### `data/pricing.js` — what Anthropic charges
+
+There is no way to read a price out of HaTi's source and no endpoint that
+reports one, so the numbers are written down: dollars per million tokens, per
+model, with the date they were checked.
+
+Validated per scan, exactly like the other two: a model HaTi is actually using
+with no entry renders **"price not on file"** rather than borrowing the price
+of a similar-looking name, and if the `asOf` date is more than 90 days old the
+panel says the prices may have moved. Update it by checking Anthropic's pricing
+page, changing the numbers, and changing `asOf`.
 
 ### `data/copy.js` — the plain-English phrasebook
 

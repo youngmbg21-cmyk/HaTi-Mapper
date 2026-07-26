@@ -365,6 +365,23 @@
   }
 
   /* ---- 2. where the money goes ---- */
+
+  /* Money, at the precision the number deserves. A fifth of a cent shown as
+     "$0.01" would round a real difference away. */
+  function usd(n) {
+    if (n == null) return null;
+    if (n >= 100) return '$' + Math.round(n).toLocaleString('en-GB');
+    if (n >= 1) return '$' + n.toFixed(2);
+    if (n >= 0.01) return '$' + n.toFixed(3);
+    return '$' + n.toFixed(4);
+  }
+
+  function costFor(feature) {
+    var c = scan.cost;
+    if (!c) return null;
+    return c.features.filter(function (x) { return x.feature === feature; })[0] || null;
+  }
+
   function renderCost() {
     var rows = scan.ai.features.map(function (f) {
       var tiers = f.tiers.length
@@ -376,6 +393,19 @@
       var used = f.usedBy.length
         ? f.usedBy.map(function (c) { return esc(callSiteName(c)); }).join(', ')
         : '<span class="none">not called from the front end</span>';
+      /* What one use of this feature could cost at most. Never a bill — the
+         assumption behind it is printed under the table. */
+      var c = costFor(f.feature);
+      var money;
+      if (!c || c.perRequestUsd == null) {
+        money = nd(c && c.unpricedModels.length ? 'price not on file' : 'no ceiling in the code');
+      } else {
+        money = '<b>' + esc(usd(c.perRequestUsd)) + '</b>' +
+          (c.perWindowUsd != null
+            ? '<div style="color:var(--n500)">' + esc(usd(c.perWindowUsd)) + ' if one person hits the cap</div>'
+            : '');
+      }
+
       return '<tr>' +
         '<td><b>' + esc(f.label || f.feature) + '</b>' +
         '<div class="path">' + (f.does ? esc(f.does) : nd()) + '</div>' +
@@ -383,13 +413,17 @@
         '<td>' + tiers + '</td>' +
         '<td class="path">' + models + '</td>' +
         '<td class="num">' + (f.cap == null ? '—' : num(f.cap)) + '</td>' +
+        '<td class="num">' + money + '</td>' +
         '</tr>' +
-        '<tr><td colspan="4" style="padding-top:0;border-bottom:1px solid var(--divider)">' +
+        '<tr><td colspan="5" style="padding-top:0;border-bottom:1px solid var(--divider)">' +
         '<span class="path">Used by: </span><span style="font-size:11.5px;color:var(--n600)">' + used + '</span></td></tr>';
     }).join('');
 
-    var html = '<table><thead><tr><th style="width:210px">Feature</th><th style="width:78px">Tier</th><th>Model</th>' +
-      '<th class="num" style="width:96px">Cap / ' + (scan.ai.windowMinutes || 15) + ' min</th></tr></thead><tbody>' + rows + '</tbody></table>';
+    var html = '<table><thead><tr><th style="width:190px">Feature</th><th style="width:70px">Tier</th><th>Model</th>' +
+      '<th class="num" style="width:88px">Cap / ' + (scan.ai.windowMinutes || 15) + ' min</th>' +
+      '<th class="num" style="width:120px">Roughly, per use</th></tr></thead><tbody>' + rows + '</tbody></table>';
+
+    html += renderCostNote();
 
     if (scan.ai.nonBillingAiRoutes && scan.ai.nonBillingAiRoutes.length) {
       html += '<div class="blast-note">Another ' + scan.ai.nonBillingAiRoutes.length + ' routes sit under <span class="path">/api/ai/</span> ' +
@@ -398,6 +432,41 @@
     }
     $('costBody').innerHTML = html;
     renderCaps();
+  }
+
+  /* The honesty label, the day's ceiling, and whether the price list itself is
+     still trustworthy. All three belong together — a number without them is
+     the thing this panel was careful not to become. */
+  function renderCostNote() {
+    var c = scan.cost;
+    if (!c) return '';
+    var out = '<div class="blast-note">';
+
+    if (c.dailyCeilingUsd != null) {
+      out += '<b>A whole day, at the limits the code sets: at most about ' + esc(usd(c.dailyCeilingUsd)) + '.</b> ' +
+        'That is ' + num(c.dailyLimit) + ' requests, every one of them the most expensive kind (' + esc(c.dearest) + '). ' +
+        (c.dailyMixedUsd != null
+          ? 'Spread across the features more evenly it is nearer ' + esc(usd(c.dailyMixedUsd)) + '. '
+          : '');
+    } else {
+      out += '<b>A daily total could not be worked out.</b> ' +
+        'That needs both a daily request limit in the code and a price for at least one model in use. ';
+    }
+
+    out += esc(c.assumption);
+
+    if (c.modelsWithoutPrice.length) {
+      out += ' <span style="color:var(--danger)">' + c.modelsWithoutPrice.length + ' model' +
+        (c.modelsWithoutPrice.length === 1 ? ' has' : 's have') + ' no price on file — ' +
+        c.modelsWithoutPrice.map(function (m) { return esc(m); }).join(', ') +
+        '. Nothing is guessed for them.</span>';
+    }
+
+    out += '<div style="margin-top:6px;color:var(--n500)">Prices last checked ' + esc(fmtDate(c.asOf)) +
+      ' and written down by hand in <span class="path">data/pricing.js</span>.' +
+      (c.stale ? ' <b style="color:var(--amber)">That is over ' + c.ageDays + ' days ago — they may be out of date.</b>' : '') +
+      '</div></div>';
+    return out;
   }
 
   /* Name a screen rather than a file path wherever possible. A view module is

@@ -405,6 +405,20 @@ try {
   check('It is graded, so a bad score looks bad',
     /\b(good|fair|poor)\b/.test(health.cls), health.cls);
 
+  /* ---- what it costs to run ---- */
+  console.log('\nWhat it costs to run');
+  await page.click('.nav button[data-p="cost"]');
+  await page.waitForSelector('#costBody table');
+  const costPanel = await page.textContent('#costBody');
+  check('The spend panel now shows money, not just counts', /\$\d/.test(costPanel), costPanel.slice(0, 80));
+  check('With a per-use figure for every feature',
+    (costPanel.match(/if one person hits the cap/g) || []).length >= scan.ai.features.length - 1,
+    `${(costPanel.match(/if one person hits the cap/g) || []).length} rows priced`);
+  check('And a whole-day ceiling', /A whole day, at the limits the code sets/.test(costPanel));
+  check('The honesty label is on the page, not just in the payload',
+    /rough ceiling, not a bill/.test(costPanel));
+  check('So is when the prices were last checked', /Prices last checked/.test(costPanel));
+
   /* ---- tripwires ---- */
   console.log('\nTripwires');
   const banner = await page.evaluate(() => {

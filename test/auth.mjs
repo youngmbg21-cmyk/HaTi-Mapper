@@ -680,6 +680,50 @@ try {
   const watchClear = await troubleCall('GET', '/api/watch');
   check('The banner goes with it', watchClear.body.scanTrouble === null, JSON.stringify(watchClear.body.scanTrouble));
 
+  /* ---- what it costs to run ----
+     The panel showed models and request counts and never money. It now
+     estimates, from the only ceiling the source states — each handler's
+     max_tokens — and says out loud that it is a ceiling. */
+  console.log('\nWhat it costs to run');
+  const cost = full.cost;
+  check('Every feature gets a per-use estimate', cost.features.length === full.ai.features.length,
+    `${cost.features.length} of ${full.ai.features.length}`);
+  check('The estimate is money, derived from the handler\'s own answer limit',
+    cost.features.every(f => f.maxTokens > 0 && f.perRequestUsd > 0),
+    JSON.stringify(cost.features[0]));
+  check('An expensive model costs more per use than a cheap one',
+    cost.features.find(f => f.pricedModel === 'claude-sonnet-5').perRequestUsd >
+    cost.features.find(f => /haiku/.test(f.pricedModel)).perRequestUsd);
+  check('A whole day has a ceiling', cost.dailyCeilingUsd > 0 && cost.dailyLimit > 0,
+    `${cost.dailyLimit} requests → ${cost.dailyCeilingUsd}`);
+  check('And it is labelled as a ceiling, not a bill',
+    /rough ceiling, not a bill/.test(cost.assumption), cost.assumption);
+  check('The price list says when it was last checked', !!cost.asOf && typeof cost.ageDays === 'number',
+    `${cost.asOf}, ${cost.ageDays} days ago`);
+  check('Fresh prices are not flagged as stale', cost.stale === false, `${cost.ageDays} days`);
+  check('The daily estimate goes into the snapshot', snapshot(full).dailyCostUsd === cost.dailyMixedUsd,
+    `${snapshot(full).dailyCostUsd}`);
+  check('No money crosses the payload as a currency string',
+    !/[£$€]/.test(JSON.stringify(cost)), (JSON.stringify(cost).match(/[£$€][^,}]*/) || [])[0] || '');
+
+  /* A model nobody has priced must show as unknown, never be guessed at from
+     a similar-looking name. */
+  const oddModel = readFixture(FIXTURE_DIR);
+  oddModel.files.set('server/server.js', Buffer.from(
+    oddModel.files.get('server/server.js').toString('utf8')
+      .replace("fast: 'claude-haiku-4-5-20251001'", "fast: 'claude-haiku-9-9-invented'")));
+  const unpriced = buildScan({ files: oddModel.files, commits: oddModel.commits, repo: 'f', ref: 'main', requestCount: 0 });
+  check('A model with no price is reported, not guessed at',
+    unpriced.cost.modelsWithoutPrice.includes('claude-haiku-9-9-invented'),
+    JSON.stringify(unpriced.cost.modelsWithoutPrice));
+  check('Its features have no cost rather than an invented one',
+    unpriced.cost.features.filter(f => f.pricedModel === null).length > 0);
+  check('And the scan warns about it in plain English',
+    unpriced.warnings.some(w => /has no price in data\/pricing\.js/.test(w)),
+    unpriced.warnings.find(w => /price/.test(w)) || '(none)');
+  check('Which also drags the health score down', unpriced.health.percent < full.health.percent,
+    `${full.health.percent}% → ${unpriced.health.percent}%`);
+
   /* ---- the documents describe the code as it is ----
      Documentation drift is the disease this whole tool exists to cure, so the
      statements that were once true and are now false are asserted gone. Each
