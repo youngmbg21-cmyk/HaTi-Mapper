@@ -352,6 +352,70 @@ half-finished at a boundary.
 
 ---
 
+## After the run — four fixes from reading the real screen
+
+The owner looked at the running dashboard and raised three things; a fourth
+came out of the same screenshots. Each was pitched as a before-and-after
+proposal first and built only once approved, one commit each.
+
+### 1. The night's changes are numbered
+
+The commit list ran together in small grey type, in the order git hands them
+over — newest first, which is the wrong way round for a report about a night's
+work. They are now turned into the order the work happened and numbered from
+one, under the date they happened, with each reference code moved into a chip
+out of the way of the sentence. The numbering is worked out on the server, so
+the card and the morning email tell the same story with the same numbers.
+
+**Verification.** `npm run verify`: **511 checks, 0 failures** (224 + 61 + 226).
+
+### 2. "Getting bulky" says what each file is
+
+A row reading `server/server.js` is an address, not an answer. Every row now
+leads with what the file **is** and one sentence on what it does, with the path
+demoted to a chip.
+
+Almost none of those sentences is hand-written, which is the part worth
+noticing: a file that renders a screen borrows that screen's own words, a file
+named in the dependency map is the parts it holds, and the file every route is
+answered in counts its own routes. All three sources are already validated on
+every scan, so none of it can quietly become wrong. Exactly two files fall
+through to a new `FILE_COPY` block, and a file nothing can explain says "no
+plain-English note yet" rather than being guessed at. The panel also explains
+what a KB is and what the 60 KB line means.
+
+### 3. Bigger type, pinned tabs, and your place kept
+
+The page was mostly 11.5px. Everything went up about a quarter, with padding
+and row spacing raised alongside so the result is more room rather than more
+crowding. The tab row is pinned to the top of the window, each tab remembers
+where you left it, and a tab opened for the first time starts at its own
+beginning instead of at the top of the document.
+
+**One real bug, and a worse test.** The browser check for this passed while
+asserting nothing — all three scroll positions it compared had been clamped to
+the same number. Made discriminating, it went red at once and exposed a genuine
+fault: while a sticky element is pinned, both its bounding rect and its
+`offsetTop` report the top of the window, so measuring the tab row's resting
+line from the row itself hands back wherever you already were and the page
+never moves. Measured off the panel instead. Written up in `BUGLOG.md`.
+
+### 4. "0 scans" no longer printed bare
+
+The footer said *"put together from 0 scans"* directly under sixteen commits.
+Both halves were true — the commits are GitHub's record, the scans are the
+Mapper's own observations — but together they read as a fault. The wording now
+carries that difference.
+
+### One addition to the stand-in
+
+A fixture commit may now date itself `midnight+90m`. Without it no stand-in
+could ever produce a "last night" to report on, so the morning card would have
+gone unexercised in the browser. Only the fixture reader understands the form;
+nothing arriving from GitHub can produce one.
+
+---
+
 ## Before this run — what the platform already was
 
 Everything from here down describes the rounds that came before the July 2026

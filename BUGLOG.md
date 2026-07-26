@@ -253,6 +253,53 @@ exactly as strict as it is. Recorded because it is the second time in one run
 that this check caught its own author, which is the strongest argument for
 keeping it that could be made.
 
+---
+
+## After the run — a browser check that asserted nothing
+
+**What broke.** The four fixes the owner asked for after seeing the real screen
+were built and the suite went green, including the check meant to prove that
+switching tabs no longer throws you to the top of the page. Reading its output
+rather than its verdict showed the problem:
+
+    PASS  There is enough page to scroll for this to mean anything
+          parked at 900
+    PASS  A tab opened for the first time starts at its own beginning
+          900 against a nav line of 900
+    PASS  And coming back puts you where you left it
+          left at 900, returned to 900
+
+Every number was 900. The parked position, the panel's start and the restored
+position had all landed on the same value, because the scroll had been clamped
+to the bottom of a short page. Two of those three checks could not have failed
+whatever the code did.
+
+**What was tried.** Making the test discriminating: park a distance below the
+tab row and clear of the bottom, then assert the three positions are different
+numbers as well as the right ones. That turned one of them red immediately —
+which is the point.
+
+The bug it exposed was real and in the shipped code. To send someone to "the
+top of this panel" you have to know where the tab row rests, and the row is
+`position: sticky`. While it is pinned, `getBoundingClientRect().top` is zero,
+so `rect.top + scrollY` gives back the scroll position you already had —
+`Math.min(scrollY, thatValue)` is then just `scrollY`, and the page never
+moves. Switching to `offsetTop` on the theory that sticky positioning is a
+paint-time effect and leaves layout alone did not help: Chrome reports the
+pinned offset there too. The trace was unambiguous once the call was recorded
+rather than reasoned about — `scrollTo({top: 1000})` when 418 was wanted.
+
+**How it ended.** Fixed by measuring the panel instead of the tab row. A panel
+is an ordinary element, so its rect is honest at any scroll position, and
+"where this panel begins, less the height of the row pinned above it" is a more
+direct statement of the intent than "where the row rests" ever was.
+
+**Worth keeping.** The failure here was not the sticky-positioning trap — that
+is just a browser detail. It was a green check that could not go red. A test
+whose inputs coincide reports success for a codebase that does nothing at all,
+and the only way to notice is to read the numbers it prints rather than the
+word in front of them.
+
 ## Nothing was abandoned
 
 Rule 4 of the brief covers the case where an item breaks verification and
