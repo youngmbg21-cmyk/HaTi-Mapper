@@ -276,11 +276,47 @@
 
   var tabs = document.querySelectorAll('.nav button');
   var panels = document.querySelectorAll('.panel');
+
+  /* Switching tabs used to throw you back to the top of the document, which
+     meant that reading halfway down one panel and glancing at another cost you
+     your place in both. Each tab now keeps the position you left it at, and a
+     tab you have not opened before starts at its own beginning — which is the
+     line the nav rests on, not the top of the page, so the pinned nav is not
+     covering the first heading when you arrive. */
+  var scrollMemory = {};
+  var openTab = 'screens';
+
+  /* Where a panel begins, with room left for the pinned tab row above it.
+     Measured off the panel, which is an ordinary element and therefore honest
+     at any scroll position. The tab row is not: while it is pinned, both its
+     rect and its offsetTop report where it is being *painted*, which is the
+     top of the window, so measuring from it gives back wherever you already
+     were and the page appears not to move at all. */
+  function panelStart(panel) {
+    var nav = document.querySelector('.nav');
+    if (!panel) return 0;
+    var top = panel.getBoundingClientRect().top + window.scrollY;
+    return Math.max(0, top - (nav ? nav.getBoundingClientRect().height : 0));
+  }
+
   tabs.forEach(function (t) {
     t.addEventListener('click', function () {
+      var next = t.getAttribute('data-p');
+      if (next !== openTab) scrollMemory[openTab] = window.scrollY;
+
       tabs.forEach(function (x) { x.setAttribute('aria-selected', String(x === t)); });
-      panels.forEach(function (p) { p.hidden = p.getAttribute('data-panel') !== t.getAttribute('data-p'); });
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+      var shown = null;
+      panels.forEach(function (p) {
+        p.hidden = p.getAttribute('data-panel') !== next;
+        if (!p.hidden) shown = p;
+      });
+
+      var was = scrollMemory[next];
+      // Never scroll someone downwards into a panel they have not seen: if
+      // they were reading above the tabs, leave them where they are.
+      var to = was == null ? Math.min(window.scrollY, panelStart(shown)) : was;
+      openTab = next;
+      window.scrollTo({ top: to, behavior: 'auto' });
     });
   });
 

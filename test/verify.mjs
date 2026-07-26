@@ -420,6 +420,81 @@ try {
   check('It is graded, so a bad score looks bad',
     /\b(good|fair|poor)\b/.test(health.cls), health.cls);
 
+  /* ---- the page is readable, and keeps your place ----
+     Two complaints from the owner, both about using the thing rather than
+     about what it says: everything is set too small, and switching tabs threw
+     away where you were reading. */
+  console.log('\nReadable, and keeps your place');
+  const typeSizes = await page.evaluate(() => {
+    const px = el => parseFloat(getComputedStyle(el).fontSize);
+    const body = document.querySelector('.panel:not([hidden]) .card');
+    return {
+      base: px(document.body),
+      lede: body ? px(body.querySelector('.lede') || body) : 0,
+      // The smallest text anywhere on a rendered panel — the fine print is
+      // what actually decides whether the page is readable.
+      smallest: Math.min(...[...document.querySelectorAll('.panel:not([hidden]) *')]
+        .filter(el => el.textContent.trim() && !el.children.length).map(px)),
+    };
+  });
+  check('The page is not set in fine print', typeSizes.base >= 14.5, `body is ${typeSizes.base}px`);
+  check('Nor is the smallest text on a panel',
+    typeSizes.smallest >= 10.5, `smallest rendered text is ${typeSizes.smallest}px`);
+  check('The panel intros are readable too', typeSizes.lede >= 13, `${typeSizes.lede}px`);
+
+  const navPinned = await page.evaluate(() => getComputedStyle(document.querySelector('.nav')).position);
+  check('The tabs are pinned to the top of the window, not left up the page',
+    navPinned === 'sticky', navPinned);
+
+  /* Scroll a long way down one tab, go elsewhere, come back. The place has to
+     be waiting where it was left. Reloaded first, because "a tab you have not
+     opened before" is only true of a page that has not been driven through
+     every tab already, as this one has. */
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForSelector('#app:not([hidden])', { timeout: 60000 });
+  await page.waitForFunction(() => !document.querySelector('#screensBody .skel'), null, { timeout: 60000 });
+
+  /* Where the open panel begins, with room for the pinned tab row above it.
+     Measured off the panel rather than the row: while the row is pinned, both
+     its rect and its offsetTop report the top of the window, which is how the
+     first version of this silently asserted nothing at all. */
+  const navLine = () => page.evaluate(() => {
+    const panel = document.querySelector('.panel:not([hidden])');
+    const nav = document.querySelector('.nav');
+    return Math.max(0, panel.getBoundingClientRect().top + window.scrollY - nav.getBoundingClientRect().height);
+  });
+
+  /* Park a good way *below* the nav line, and not at the very bottom, so the
+     three positions this asserts are genuinely different numbers. A test where
+     they all coincide would pass without proving anything. */
+  const anchor = await navLine();
+  const target = await page.evaluate(top => {
+    const max = document.documentElement.scrollHeight - window.innerHeight;
+    const to = Math.min(top + 420, max - 40);
+    window.scrollTo(0, to);
+    return { to, max };
+  }, anchor);
+  await page.waitForTimeout(80);
+  const parked = await page.evaluate(() => window.scrollY);
+  check('There is enough page below the tabs for this to mean anything',
+    parked > anchor + 100, `parked at ${parked}, nav line ${anchor}, furthest ${target.max}`);
+
+  await page.click('.nav button[data-p="weight"]');
+  await page.waitForTimeout(120);
+  const onFirstVisit = await page.evaluate(() => window.scrollY);
+  check('Switching tabs no longer flings you back to the top of the page',
+    onFirstVisit > 0, `landed at ${onFirstVisit} having been at ${parked}`);
+  check('A tab opened for the first time starts at its own beginning, under the tabs',
+    Math.abs(onFirstVisit - anchor) < 4 && onFirstVisit < parked - 100,
+    `${onFirstVisit} against a nav line of ${anchor}`);
+
+  await page.click('.nav button[data-p="screens"]');
+  await page.waitForTimeout(120);
+  const backOnScreens = await page.evaluate(() => window.scrollY);
+  check('And coming back to one puts you where you left it, not at its start',
+    Math.abs(backOnScreens - parked) < 4 && backOnScreens > anchor + 100,
+    `left at ${parked}, returned to ${backOnScreens}, start would be ${anchor}`);
+
   /* ---- what each bulky file actually is ----
      A path is an address, not an answer: it tells a developer where to look
      and the owner nothing. Every row has to lead with what the file IS, and

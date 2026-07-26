@@ -198,6 +198,31 @@ refused rather than drafted around. It goes through the same key, the same
 daily budget and the same rate limit — there is no second way to reach
 Anthropic.
 
+## Reading it, and keeping your place
+
+Two things about using the dashboard rather than about what it says.
+
+**It is not set in fine print.** The whole page went up about a quarter — body
+text to 15px, the notes under each panel to 13.5px, headings and row spacing to
+match — with the card padding and table rows raised alongside it, so the effect
+is more room rather than more crowding. Nothing moved and nothing changed
+meaning.
+
+**Switching tabs keeps your place.** The tab row is pinned to the top of the
+window, so it is one click away from wherever you have read to. Each tab
+remembers where you left it and puts you back there when you return; a tab you
+have not opened before starts at its own beginning, just under the pinned row,
+rather than at the top of the document. If you were reading *above* the tabs
+when you switched, nothing scrolls at all.
+
+One trap worth writing down, because it cost a debugging round: while a sticky
+element is pinned, **both** its `getBoundingClientRect()` and its `offsetTop`
+report where it is being painted, which is the top of the window. Measuring the
+tab row's resting line from the row itself therefore hands back wherever you
+already were, and the page silently never moves. The measurement is taken off
+the panel instead, which is an ordinary element and honest at any scroll
+position.
+
 ## "Getting bulky" says what each file is
 
 A line reading `server/server.js` is a file path — the address of one file
