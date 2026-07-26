@@ -13,6 +13,7 @@ import { spawn } from 'node:child_process';
 import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { hatiSource, announce } from './source.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, '..');
@@ -52,6 +53,9 @@ const text = t => ({ type: 'text', text: t });
 
 fs.rmSync(DATA, { recursive: true, force: true });
 
+const source = await hatiSource();
+announce(source);
+
 const server = spawn(process.execPath, ['server.mjs'], {
   cwd: ROOT,
   env: {
@@ -62,6 +66,7 @@ const server = spawn(process.execPath, ['server.mjs'], {
     ANTHROPIC_BASE_URL: `http://127.0.0.1:${STUB}`,
     HATI_URL: '',
     MAPPER_TOKEN: '',
+    ...source.env,
   },
   stdio: ['ignore', 'pipe', 'pipe'],
 });

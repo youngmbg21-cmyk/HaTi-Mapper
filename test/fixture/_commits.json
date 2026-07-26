@@ -1,0 +1,80 @@
+[
+  {
+    "sha": "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
+    "commit": {
+      "message": "Speed up the register table on large portfolios",
+      "author": {
+        "date": "2026-07-24T09:00:00.000Z"
+      }
+    },
+    "_files": [
+      "js/views/register.js",
+      "server/server.js"
+    ]
+  },
+  {
+    "sha": "b2c3d4e5f60718293a4b5c6d7e8f901234567890",
+    "commit": {
+      "message": "Read obligations off scanned pages more reliably",
+      "author": {
+        "date": "2026-07-23T09:00:00.000Z"
+      }
+    },
+    "_files": [
+      "js/ocr.js",
+      "js/obligations.js"
+    ]
+  },
+  {
+    "sha": "c3d4e5f60718293a4b5c6d7e8f90123456789012",
+    "commit": {
+      "message": "Add the clause deviation summary to reports",
+      "author": {
+        "date": "2026-07-22T09:00:00.000Z"
+      }
+    },
+    "_files": [
+      "js/views/reports.js",
+      "js/playbook.js"
+    ]
+  },
+  {
+    "sha": "d4e5f60718293a4b5c6d7e8f9012345678901234",
+    "commit": {
+      "message": "Tighten the share portal expiry check",
+      "author": {
+        "date": "2026-07-21T09:00:00.000Z"
+      }
+    },
+    "_files": [
+      "server/server.js",
+      "js/views/portal.js"
+    ]
+  },
+  {
+    "sha": "e5f60718293a4b5c6d7e8f901234567890123456",
+    "commit": {
+      "message": "Import: skip files already in the register",
+      "author": {
+        "date": "2026-07-20T09:00:00.000Z"
+      }
+    },
+    "_files": [
+      "js/dedupe.js",
+      "js/views/migration.js"
+    ]
+  },
+  {
+    "sha": "f60718293a4b5c6d7e8f90123456789012345678",
+    "commit": {
+      "message": "Wire the approval gate into the pipeline board",
+      "author": {
+        "date": "2026-07-19T09:00:00.000Z"
+      }
+    },
+    "_files": [
+      "js/approvals.js",
+      "js/views/queue.js"
+    ]
+  }
+]

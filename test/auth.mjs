@@ -12,6 +12,7 @@ import { spawn } from 'node:child_process';
 import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { hatiSource, announce } from './source.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, '..');
@@ -50,9 +51,15 @@ const post = (p, b) => call('POST', p, b || {});
 
 fs.rmSync(DATA, { recursive: true, force: true });
 
+const source = await hatiSource();
+announce(source);
+
 const server = spawn(process.execPath, ['server.mjs'], {
   cwd: ROOT,
-  env: { ...process.env, PORT: String(PORT), MAPPER_DATA: DATA, MAPPER_OWNER_EMAIL: OWNER, HATI_URL: '', MAPPER_TOKEN: '', RESEND_API_KEY: '' },
+  env: {
+    ...process.env, PORT: String(PORT), MAPPER_DATA: DATA, MAPPER_OWNER_EMAIL: OWNER,
+    HATI_URL: '', MAPPER_TOKEN: '', RESEND_API_KEY: '', ...source.env,
+  },
   stdio: ['ignore', 'pipe', 'pipe'],
 });
 let log = '';

@@ -15,6 +15,7 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { hatiSource, announce } from './source.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, '..');
@@ -109,11 +110,14 @@ async function waitForServer(tries = 40) {
 const HATI_SECRET = 'sentinel-mapper-token-must-not-leak-9f3a';
 const OWNER_EMAIL = 'verify@example.com';
 const OWNER_PW = 'verifypass1';
+const source = await hatiSource();
+announce(source);
 const server = startServer({
   HATI_URL: 'http://127.0.0.1:59997',
   MAPPER_TOKEN: HATI_SECRET,
   MAPPER_DATA: DATA,
   MAPPER_OWNER_EMAIL: OWNER_EMAIL,
+  ...source.env,
 });
 
 let browser;
@@ -190,10 +194,21 @@ try {
 
   /* ---- 8. one repository download, not hundreds of API calls ---- */
   console.log('\n8. Scan cost');
-  check('A cold scan uses one repository download', scan.requestCount >= 1,
-    `${scan.requestCount} GitHub requests total (1 tarball + 1 commit list + up to 20 commit details)`);
-  check('A cold scan does not make hundreds of API calls', scan.requestCount <= 25,
-    `${scan.requestCount} requests for ${scan.fileCount} files`);
+  if (source.mode === 'live') {
+    check('A cold scan uses one repository download', scan.requestCount >= 1,
+      `${scan.requestCount} GitHub requests total (1 tarball + 1 commit list + up to 20 commit details)`);
+    check('A cold scan does not make hundreds of API calls', scan.requestCount <= 25,
+      `${scan.requestCount} requests for ${scan.fileCount} files`);
+    check('The scan says it read the real repository', scan.fixture === false, `fixture=${scan.fixture}`);
+  } else {
+    /* No GitHub, so the download itself cannot be measured. What can be
+       asserted is that the stand-in was used and that the page says so
+       rather than presenting it as the live product. */
+    check('The scan says plainly that it read a stand-in', scan.fixture === true, `fixture=${scan.fixture}`);
+    check('And the warning is carried in the payload',
+      (scan.warnings || []).some(w => /stand-in for HaTi/i.test(w)), (scan.warnings || []).slice(0, 2).join(' | '));
+    check('The stand-in produced a whole repository to read', scan.fileCount >= 20, `${scan.fileCount} files`);
+  }
   check('A cold scan completes in reasonable time', coldMs < 120000, `${(coldMs / 1000).toFixed(1)}s to first render`);
   const warm0 = Date.now();
   const warm = await (await authed('/api/scan')).json();

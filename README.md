@@ -167,6 +167,17 @@ GITHUB_TOKEN=ghp_... npm start
 Then open http://localhost:3000. `npm run verify` drives the whole thing
 headlessly and asserts the checks in `test/verify.mjs`.
 
+**Running the checks without access to HaTi.** Every check needs a scan to
+succeed first, which normally means downloading HaTi's repository. Where that
+is not possible — no network, no token yet, or a machine allowed to see only
+this repository — the suite asks GitHub once, then falls back to the stand-in
+in `test/fixture/`: a small tree shaped like HaTi, with no real content in it.
+The fallback is printed at the top of the run and never chosen silently, and a
+scan that read it marks itself `fixture: true` and carries a warning saying so,
+so a stand-in can never be mistaken for the live product. Set `HATI_FIXTURE` to
+a directory to force it by hand. Leave it unset in production, which is the
+default — then the tarball download is the only way source reaches the scanner.
+
 ---
 
 ## Turning HaTi's endpoint off

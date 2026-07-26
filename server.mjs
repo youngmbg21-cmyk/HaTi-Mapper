@@ -37,6 +37,7 @@ import { CHAT_TOOLS, buildSystem, runTool, normalizeAnswer } from './lib/chat.mj
 import { messages as anthropicMessages, friendlyError, DEFAULT_MODEL } from './lib/anthropic.mjs';
 import { Accounts, validEmail, normaliseEmail, SESSION_DAYS } from './lib/accounts.mjs';
 import { sendResetEmail, emailConfigured } from './lib/mail.mjs';
+import { readFixture, FIXTURE_WARNING } from './lib/fixture.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -46,6 +47,11 @@ const REF = process.env.HATI_REF || 'main';
 const GITHUB_TOKEN = (process.env.GITHUB_TOKEN || '').trim();
 const HATI_URL = (process.env.HATI_URL || '').trim().replace(/\/+$/, '');
 const MAPPER_TOKEN = (process.env.MAPPER_TOKEN || '').trim();
+
+/* Read HaTi's source from a directory instead of downloading it. Unset in
+   normal running; the verification suite sets it when the real repository
+   cannot be reached. See lib/fixture.mjs. */
+const FIXTURE = (process.env.HATI_FIXTURE || '').trim();
 
 const CACHE_MS = 10 * 60 * 1000;   // the code does not change minute to minute
 /* The commit list is one call; each commit's file list is another, so a cold
@@ -318,23 +324,33 @@ let inFlight = null;       // coalesces concurrent cold scans into one download
 
 async function runScan() {
   const started = Date.now();
-  const client = makeClient(GITHUB_TOKEN);
-  const files = await fetchRepoFiles(client, REPO, REF);
 
-  // Commit history is best-effort: the seven code-derived panels do not need
-  // it, so a commits failure must not take the whole scan down with it.
-  let commits = null, commitError = null;
-  try {
-    commits = await fetchCommits(client, REPO, REF, COMMIT_COUNT);
-  } catch (e) {
-    commitError = e.message;
+  let files, commits = null, commitError = null, requests = 0;
+  if (FIXTURE) {
+    const fx = readFixture(FIXTURE);
+    files = fx.files;
+    commits = fx.commits;
+  } else {
+    const client = makeClient(GITHUB_TOKEN);
+    files = await fetchRepoFiles(client, REPO, REF);
+
+    // Commit history is best-effort: the seven code-derived panels do not need
+    // it, so a commits failure must not take the whole scan down with it.
+    try {
+      commits = await fetchCommits(client, REPO, REF, COMMIT_COUNT);
+    } catch (e) {
+      commitError = e.message;
+    }
+    requests = client.requests;
   }
 
-  const payload = buildScan({ files, commits, repo: REPO, ref: REF, requestCount: client.requests });
+  const payload = buildScan({ files, commits, repo: REPO, ref: REF, requestCount: requests });
   payload.tookMs = Date.now() - started;
   payload.tokenConfigured = !!GITHUB_TOKEN;
+  payload.fixture = !!FIXTURE;
+  if (FIXTURE) payload.warnings.push(FIXTURE_WARNING);
   if (commitError) payload.warnings.push(`Commit history could not be read: ${commitError}`);
-  if (!GITHUB_TOKEN) payload.warnings.push('GITHUB_TOKEN is not set — GitHub allows only 60 unauthenticated requests an hour, so scans will start failing.');
+  if (!FIXTURE && !GITHUB_TOKEN) payload.warnings.push('GITHUB_TOKEN is not set — GitHub allows only 60 unauthenticated requests an hour, so scans will start failing.');
 
   /* Every fresh scan is compared with the last one and anything that moved is
      written to the 72-hour log. Scans that find nothing changed add nothing,
