@@ -49,6 +49,14 @@ connection is https. Every route that returns or changes anything requires a
 session — `/api/auth/status` and `/api/health` are the only ones that answer
 without one, and neither returns any data.
 
+**Rate limits know who you are.** Every limit — sign-in, reset, scan, chat —
+is counted against the address Express derives from the connection and the one
+proxy hop in front of it (`trust proxy 1`), not against the `x-forwarded-for`
+header a caller can write for themselves. Render's edge appends the real caller
+to that header, so its last entry is the truthful one and anything a caller
+puts in front of it is ignored. Sign-in is capped at 12 attempts per 15 minutes
+from one address.
+
 **Forgotten password** sends a single-use link that expires in 30 minutes. Only
 a hash of the token is stored, so a copy of the account file cannot be used to
 reset. Completing a reset signs every device out. The route answers identically

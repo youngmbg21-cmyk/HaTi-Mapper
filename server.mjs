@@ -133,6 +133,16 @@ function chatBudget() {
 
 const app = express();
 app.disable('x-powered-by');
+
+/* One proxy sits in front of this service — Render's edge, which terminates
+   TLS and appends the real caller to x-forwarded-for. Telling Express that is
+   what makes req.ip trustworthy: with one hop trusted it takes the entry the
+   proxy itself added and ignores anything the caller put in front of it, so a
+   forged header cannot move a request into a fresh rate-limit bucket. Reading
+   the header directly, as this used to, made the login limit bypassable by
+   rotating a value the client controls. */
+app.set('trust proxy', 1);
+
 app.use(express.json({ limit: '256kb' }));
 
 /* ------------------------------------------------------------------ guard */
@@ -144,7 +154,7 @@ app.use(express.json({ limit: '256kb' }));
 const hits = new Map();
 function rateLimit(bucket, max, windowMs) {
   return (req, res, next) => {
-    const id = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.ip || 'unknown';
+    const id = req.ip || 'unknown';
     const key = bucket + ':' + id;
     const nowMs = Date.now();
     const arr = (hits.get(key) || []).filter(t => nowMs - t < windowMs);
@@ -217,7 +227,9 @@ function requireAuth(req, res, next) {
   next();
 }
 
-const clientIp = req => (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.ip || null;
+/* Express derives this from the socket and the one trusted proxy hop, so it is
+   the same value the limiter buckets on and cannot be set by the caller. */
+const clientIp = req => req.ip || null;
 
 /* ------------------------------------------------------------ /api/auth/* */
 

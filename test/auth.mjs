@@ -9,6 +9,7 @@
  */
 
 import { spawn } from 'node:child_process';
+import http from 'node:http';
 import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -67,6 +68,58 @@ server.stdout.on('data', d => { log += d; });
 server.stderr.on('data', d => { log += d; });
 
 const PROTECTED = ['/api/scan', '/api/pulse', '/api/changes', '/api/ai/config'];
+
+/* A second Mapper, behind a stand-in proxy, for the checks that need a fresh
+   set of rate-limit buckets or a caller that appears to come from elsewhere. */
+const SPOOF_PORT = PORT + 1;
+const PROXY_PORT = PORT + 2;
+const SPOOF_DATA = path.join(ROOT, '.tmp-auth-data-2');
+let spoofServer = null, spoofProxy = null;
+
+/* ---------------------------------------------------------------- a proxy */
+
+/* A stand-in for the edge Render puts in front of this service. A real reverse
+   proxy APPENDS its own view of the caller to x-forwarded-for, leaving
+   anything the caller wrote there in front of it — which is exactly why the
+   first entry in that header is worthless as an identity and the last one is
+   not. This behaves the same way, so the limiter can be tested honestly.
+   `x-test-source` lets a test say which address the proxy should claim. */
+function startProxy(port, upstreamPort) {
+  const srv = http.createServer((req, res) => {
+    const headers = { ...req.headers };
+    const source = headers['x-test-source'] || '127.0.0.1';
+    delete headers['x-test-source'];
+    headers['x-forwarded-for'] = (headers['x-forwarded-for'] ? headers['x-forwarded-for'] + ', ' : '') + source;
+    headers.host = '127.0.0.1:' + upstreamPort;
+    const up = http.request({ host: '127.0.0.1', port: upstreamPort, path: req.url, method: req.method, headers }, r => {
+      res.writeHead(r.statusCode, r.headers);
+      r.pipe(res);
+    });
+    up.on('error', e => { res.writeHead(502, { 'Content-Type': 'application/json' }).end(JSON.stringify({ error: e.message })); });
+    req.pipe(up);
+  });
+  return new Promise((resolve, reject) => srv.listen(port, () => resolve(srv)).on('error', reject));
+}
+
+function startMapper(port, dataDir, extra) {
+  fs.rmSync(dataDir, { recursive: true, force: true });
+  return spawn(process.execPath, ['server.mjs'], {
+    cwd: ROOT,
+    env: {
+      ...process.env, PORT: String(port), MAPPER_DATA: dataDir,
+      HATI_URL: '', MAPPER_TOKEN: '', RESEND_API_KEY: '', ...source.env, ...(extra || {}),
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+}
+
+async function waitFor(base, tries = 60) {
+  for (let i = 0; i < tries; i++) {
+    try { if ((await fetch(base + '/api/health')).ok) return true; } catch (_) {}
+    await new Promise(r => setTimeout(r, 250));
+  }
+  return false;
+}
 
 try {
   for (let i = 0; i < 60; i++) {
@@ -195,6 +248,47 @@ try {
   check('Reset tokens are stored hashed too',
     (onDisk.resets || []).every(r => !!r.tokenHash && !('token' in r)));
 
+  /* ---- a forged x-forwarded-for cannot buy a fresh rate-limit bucket ----
+     The limiter used to key on the FIRST entry of x-forwarded-for, which is
+     the one entry the caller controls, so rotating it reset the bucket and the
+     login limit of 12 in 15 minutes could be walked straight past. It now keys
+     on req.ip, which Express derives from the socket and the one trusted proxy
+     hop. Proved through a stand-in proxy, because without one in front there
+     is no honest way to tell a forged header from a real one. */
+  console.log('\nA forged x-forwarded-for cannot reset the limit');
+  spoofServer = startMapper(SPOOF_PORT, SPOOF_DATA);
+  spoofProxy = await startProxy(PROXY_PORT, SPOOF_PORT);
+  const proxyBase = `http://127.0.0.1:${PROXY_PORT}`;
+  check('A second Mapper started behind a stand-in proxy', await waitFor(proxyBase));
+
+  /* /api/auth/reset is the cheapest bucket to prove this on: 10 in 15 minutes,
+     no account needed, no side effect — a bad token is simply refused. */
+  const forged = [];
+  const early = [];
+  let lastSpoof = null;
+  for (let i = 0; i < 11; i++) {
+    const spoof = `198.51.100.${i + 1}`;
+    forged.push(spoof);
+    lastSpoof = await fetch(`${proxyBase}/api/auth/reset`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Forwarded-For': spoof },
+      body: JSON.stringify({ token: 'r_zzzzzz.deadbeef', password: 'nevermind1' }),
+    });
+    if (i < 10) early.push(lastSpoof.status);
+  }
+  check('Every attempt carried a different forged address', new Set(forged).size === 11, forged.slice(0, 3).join(', ') + ' …');
+  check('The first ten are answered on their merits', early.every(s => s === 400), early.join(','));
+  check('The eleventh lands in the same bucket and is refused', lastSpoof.status === 429, `got ${lastSpoof.status}`);
+
+  /* And the proxy's own view of the caller is what counts: a different source
+     behind the same forged headers gets its own bucket. */
+  const otherSource = await fetch(`${proxyBase}/api/auth/reset`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Forwarded-For': '198.51.100.1', 'X-Test-Source': '203.0.113.9' },
+    body: JSON.stringify({ token: 'r_zzzzzz.deadbeef', password: 'nevermind1' }),
+  });
+  check('A genuinely different source still gets its own bucket', otherSource.status === 400, `got ${otherSource.status}`);
+
   /* ---- the documents describe the code as it is ----
      Documentation drift is the disease this whole tool exists to cure, so the
      statements that were once true and are now false are asserted gone. Each
@@ -220,7 +314,10 @@ try {
   console.error(log.slice(-2000));
 } finally {
   server.kill();
+  if (spoofServer) spoofServer.kill();
+  if (spoofProxy) spoofProxy.close();
   fs.rmSync(DATA, { recursive: true, force: true });
+  fs.rmSync(SPOOF_DATA, { recursive: true, force: true });
 }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

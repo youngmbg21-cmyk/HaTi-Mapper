@@ -12,3 +12,6 @@ test/verified.png
 # NOT data/, which holds the hand-maintained dependency map and phrasebook.
 .mapper-state/
 .tmp-loop-data/
+.tmp-auth-data/
+.tmp-auth-data-2/
+.tmp-verify-data/
