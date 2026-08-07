@@ -435,6 +435,107 @@ nothing arriving from GitHub can produce one.
 
 ---
 
+## The Copilot panel — Plain/Technical, charts, and a renderer that bites
+
+The assistant already existed and already read the dashboard's own data. This
+round turned it into a Copilot: a way to control how much machine detail comes
+back, a way to put a chart in an answer that cannot be hallucinated, and a
+renderer that treats the model's reply as the untrusted input it is.
+
+It was built **in the panel that was already there** rather than as a new one.
+This app has a single responsive layout, not separate desktop and mobile
+screens, so the floating panel *is* the phone panel and one shared renderer
+reaches both. A new panel would have meant two of everything.
+
+### 1. Plain / Technical
+
+Two buttons above the question box. Plain is the default. It is not a tone
+setting: it decides what an answer may leave out, and it may never leave out a
+caveat, a warning or a "someone should look at this" — plain is a shorter
+answer, not a less accurate one.
+
+Four properties, each a real failure in products built this way, each pinned by
+`test/copilot.mjs`:
+
+- **Read at call time.** `registerRules()`, `chatTools()` and `draftSystem()`
+  are functions taking the register, and the browser reads its own choice
+  through `currentRegister()` at the moment of each request. Nothing is
+  assembled at module load. A frozen copy is how a toggle comes to move its own
+  button and change nothing else for the rest of a session.
+- **Flipping restates what is on screen.** In place, replacing the bubble — two
+  bubbles read as two opinions, and this is one explanation wearing two
+  registers. Both versions are cached once they exist, so flipping back is
+  instant and never re-asks the model. The server gets a `restate` mode telling
+  it, hard, that nothing may be lost in either direction and that a figure it
+  does not have must be fetched rather than remembered.
+- **Every prompt path carries it**, enforced as a shape rather than a
+  checklist: the server reaches Anthropic from exactly one place, the browser
+  posts to it from exactly one place, and both facts are asserted against the
+  source. That covers the tool description sitting next to the question — which
+  used to say "short, plain markdown" permanently and would have quietly beaten
+  the technical register from six inches away — and the fixed enumeration the
+  "Draft a fix prompt" path sends.
+- **The choice sticks**, in the browser and on the server, so it follows the
+  owner onto a new device.
+
+### 2. Charts the model cannot make up
+
+The model emits a fenced `monitor-chart` block naming a *kind* and nothing
+else. The client lifts the block out before the markdown renderer sees it, and
+fills the placeholder from the live records the dashboard beside it is drawn
+from. A model that invents a number gets to invent a sentence, which the reader
+can weigh; never a chart, which reads as measured fact.
+
+The ten kinds come from what this dashboard actually measures. There is
+deliberately **no** deploy-history, test-pass-rate or response-time chart: the
+Mapper measures none of those, and a kind for something unmeasured is an empty
+box waiting to happen. A `quoted` kind is the single exception and is labelled
+on screen as the assistant's own figures.
+
+`charts.js` is a third servable file, fetched on first use rather than sitting
+in the page head. It is self-hosted because this page's CSP allows scripts from
+this origin and nowhere else — a CDN library would be refused by the browser
+before it ran, and it would also break the "no new runtime dependencies" rule.
+Every instance is held in one registry and destroyed when the conversation is
+cleared or its card scrolls well out of view; it holds a canvas, two listeners,
+a resize observer and an animation frame, and dropping the markup without
+destroying it leaks all four.
+
+Empty data, an unknown kind, an unreadable block, a second chart in one reply,
+and a library that will not load all end in a card that says which. None ends
+in a blank box.
+
+### 3. The renderer as a security boundary
+
+Headings, bold, italic, lists, tables, quotes, horizontal rules, fenced code
+and links. Everything that is not markdown is escaped — quotes and apostrophes
+included, because chunks land inside attribute values — and link schemes are
+checked against an allow-list rather than a block-list. A refused address still
+renders as the text it is.
+
+This matters more here than in most chat panels: log lines and error messages
+from the monitored system flow through this renderer. The suite asserts that a
+reply full of `<script>`, `onerror=`, `javascript:`, `data:` and a
+protocol-relative `//host` creates no element the model named, leaves no
+handler attribute on anything, and executes nothing — and, separately, that a
+reply engineered to break out of the copy button's `data-` attribute cannot.
+
+Colour markers — `{+}`, `{-}`, `{!}`, `{~}` — are applied after the markdown has
+run, on already-escaped text, and are written so a marker cannot match across a
+tag boundary.
+
+### What was left out, and why
+
+- **No "explain this alert" button was added.** The brief said every such path
+  must carry the register; it did not ask for new ones, and the tripped-alert
+  banner already has "Draft a fix prompt". Adding a second AI button there
+  would have been scope the owner did not ask for.
+- **Flipping restates the most recent answer only**, not every answer in the
+  conversation. Restating five answers would be five model calls for one
+  button press. "The answer already on screen" is the one being read.
+
+---
+
 ## Before this run — what the platform already was
 
 Everything from here down describes the rounds that came before the July 2026

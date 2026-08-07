@@ -21,3 +21,5 @@ test/verified.png
 .tmp-trouble-source/
 .tmp-gapmove-data/
 .tmp-trends-data/
+.tmp-copilot-data/
+.tmp-copilot-shots/

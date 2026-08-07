@@ -378,6 +378,48 @@ all three. Automated checks are good at holding a thing still once you know
 what to hold; they are no good at all at noticing what you never thought to
 measure.
 
+## The Copilot round — four things that went wrong
+
+**A sentinel that turned the front end into a binary file.** The markdown
+renderer lifts fenced blocks out before anything is escaped and leaves a marker
+in their place. The first version used a literal NUL character as that marker,
+written straight into `app.js`. It worked, and `grep` immediately started
+reporting `app.js: binary file matches` — every search of the front end became
+useless. Replaced with a printable record-separator character, written as a
+named constant, and any copy of it arriving from the model is stripped before
+parsing so a reply cannot forge one. The lesson is small and worth keeping: a
+control character in a source file costs you every tool that reads it as text.
+
+**An escaping check that could not have failed.** The first test for "quotes
+and apostrophes are escaped" read the rendered bubble's `innerHTML` back out of
+the DOM and looked for `&quot;`. It will never be there: serializing a text
+node escapes `&`, `<` and `>` and leaves quotes alone, so the assertion was
+testing the browser's serializer rather than the renderer. Worse, the
+replacement regex for "no handler attribute survived" matched the *escaped
+text* ` onerror=` and failed on output that was completely safe. Both were
+rewritten to inspect real attributes on real elements, plus a separate check
+that drives the real "Draft a fix prompt" button with a reply engineered to
+break out of the copy button's `data-copy` attribute — which is the place a
+model chunk genuinely lands inside an attribute value. A test that cannot fail
+is worse than no test, because it reports as a pass.
+
+**A chart that kept the dark palette on a light card.** Everything on this page
+follows the theme because everything is styled by CSS. A canvas is not: it
+holds pixels, and the colours it drew with were read off the page at the moment
+it drew. Switching the theme left the chart's axis labels in the dark theme's
+near-white on a white card — visible in a screenshot, invisible to every
+assertion in the suite. The theme handler now repaints every live chart, and a
+check compares the canvas before and after the switch. Found by looking at the
+picture, not by running the tests.
+
+**A phone check that was never signed in.** The narrow-screen assertions opened
+a fresh browser context to get a phone viewport, which meant a fresh cookie
+jar, which meant the sign-in card rather than the dashboard, which meant a
+three-minute timeout on a selector that was never going to appear. The fix was
+also the more honest test: resize a page in the *same* signed-in context,
+because the property being checked is that this app has one layout and one
+panel rather than a separate mobile screen.
+
 ## Nothing was abandoned
 
 Rule 4 of the brief covers the case where an item breaks verification and

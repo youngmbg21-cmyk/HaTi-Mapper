@@ -7,7 +7,7 @@
   "main": "server.mjs",
   "scripts": {
     "start": "node server.mjs",
-    "verify": "node test/verify.mjs && node test/chat-loop.mjs && node test/auth.mjs"
+    "verify": "node test/verify.mjs && node test/chat-loop.mjs && node test/auth.mjs && node test/copilot.mjs"
   },
   "engines": {
     "node": ">=22.5"

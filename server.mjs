@@ -40,7 +40,7 @@ import { fileURLToPath } from 'node:url';
 import { makeClient, fetchRepoFiles, fetchCommits } from './lib/github.mjs';
 import { buildScan } from './lib/scan.mjs';
 import { History, MAX_HISTORY_HOURS, snapshot } from './lib/history.mjs';
-import { CHAT_TOOLS, buildSystem, runTool, normalizeAnswer } from './lib/chat.mjs';
+import { chatTools, buildSystem, runTool, normalizeAnswer, normalizeRegister } from './lib/chat.mjs';
 import { messages as anthropicMessages, friendlyError, DEFAULT_MODEL } from './lib/anthropic.mjs';
 import { Accounts, validEmail, normaliseEmail, SESSION_DAYS } from './lib/accounts.mjs';
 import { sendResetEmail, sendDigestEmail, sendAlertEmail, emailConfigured } from './lib/mail.mjs';
@@ -809,6 +809,7 @@ app.get('/api/preferences', requireAuth, rateLimit('prefs', 120, 15 * 60 * 1000)
   res.json({
     digestEmail: all.digestEmail,
     lastDigestDate: all.lastDigestDate,
+    answerRegister: normalizeRegister(all.answerRegister),
     canEmail: emailConfigured(),
     durable: prefs.durable,
   });
@@ -818,10 +819,17 @@ app.put('/api/preferences', requireAuth, rateLimit('prefsw', 40, 15 * 60 * 1000)
   const body = req.body || {};
   const patch = {};
   if (typeof body.digestEmail === 'boolean') patch.digestEmail = body.digestEmail;
+  if (typeof body.answerRegister === 'string') patch.answerRegister = normalizeRegister(body.answerRegister);
   if (!Object.keys(patch).length) return res.status(400).json({ error: 'Nothing to change.' });
   prefs.update(patch);
-  console.log(`[prefs] morning summaries are now ${prefs.get('digestEmail') ? 'on' : 'off'}.`);
-  res.json({ digestEmail: prefs.get('digestEmail'), canEmail: emailConfigured(), durable: prefs.durable });
+  if ('digestEmail' in patch) console.log(`[prefs] morning summaries are now ${prefs.get('digestEmail') ? 'on' : 'off'}.`);
+  if ('answerRegister' in patch) console.log(`[prefs] answers are now in the ${prefs.get('answerRegister')} register.`);
+  res.json({
+    digestEmail: prefs.get('digestEmail'),
+    answerRegister: normalizeRegister(prefs.get('answerRegister')),
+    canEmail: emailConfigured(),
+    durable: prefs.durable,
+  });
 });
 
 /* -------------------------------------------------------------- /api/watch */
@@ -972,16 +980,42 @@ app.post('/api/chat', requireAuth, rateLimit('chat', 40, 15 * 60 * 1000), async 
   }
   const scan = cache.payload;
 
+  /* The register the answer must be written in. Every path through this route
+     reads it here, at call time, from the request — falling back to what the
+     owner saved, not to a constant decided when the process booted. A request
+     that names one also saves it, so the browser and the server agree without
+     a second round trip. */
+  const registerAsked = typeof req.body?.register === 'string' ? req.body.register : null;
+  const register = normalizeRegister(registerAsked || prefs.get('answerRegister'));
+  if (registerAsked && normalizeRegister(prefs.get('answerRegister')) !== register) {
+    prefs.update({ answerRegister: register });
+  }
+
   /* "Draft a fix prompt" on a finding. The instruction is built here, from the
      scan, so the paths and identifiers in it are the ones that were actually
      scanned rather than anything typed or remembered. Same key, same budget,
      same rate limit, same loop — there is no second way to reach Anthropic. */
   const draftReq = req.body?.draft;
+  /* The owner flipped the toggle over an answer already on screen. Same loop,
+     same tools, same register plumbing — it re-says one answer rather than
+     answering a new question. */
+  const restateReq = req.body?.restate;
   let convo;
   if (draftReq && typeof draftReq.kind === 'string') {
     const finding = describeFinding(scan, draftReq.kind, String(draftReq.id || ''));
     if (finding.error) return res.status(404).json({ error: finding.error });
-    convo = [{ role: 'user', content: draftInstruction(scan, finding) }];
+    convo = [{ role: 'user', content: draftInstruction(scan, finding, register) }];
+  } else if (restateReq && typeof restateReq.answer === 'string' && restateReq.answer.trim()) {
+    const asked = typeof restateReq.question === 'string' ? restateReq.question.trim().slice(0, 4000) : '';
+    convo = [{
+      role: 'user',
+      content: [
+        asked ? `I asked you this:\n\n${asked}\n` : '',
+        'You answered this:\n\n' + restateReq.answer.trim().slice(0, 8000),
+        '',
+        `Say that again in the ${register} register. Same findings, same figures, same warnings — only the register changes.`,
+      ].filter(Boolean).join('\n'),
+    }];
   } else {
     const incoming = Array.isArray(req.body?.messages) ? req.body.messages : [];
     convo = incoming
@@ -996,14 +1030,27 @@ app.post('/api/chat', requireAuth, rateLimit('chat', 40, 15 * 60 * 1000), async 
   let pulse = null;
   try { pulse = await readPulse(); } catch (_) { pulse = { available: false }; }
 
-  const system = buildSystem({ scan, historyStatus: history.status(), pulse, draft: !!draftReq });
+  /* Built per request, from the register read a moment ago. Nothing about the
+     style rules is computed at module load, so flipping the toggle changes the
+     next answer and not merely the button. */
+  const system = buildSystem({
+    scan, historyStatus: history.status(), pulse,
+    draft: !!draftReq, restate: !!restateReq, register,
+  });
+  const tools = chatTools(register);
   const working = convo.slice();
   const ctx = { scan, history, pulse };
   let final = null, usedModel = AI_MODEL, toolsUsed = [];
 
   try {
     for (let step = 0; step < 5; step++) {
-      const resp = await anthropicMessages(key, { max_tokens: 1600, system, tools: CHAT_TOOLS, messages: working }, AI_MODEL);
+      /* Technical answers are longer by definition — exact names, exact
+         figures, tables — so the ceiling moves with the register rather than
+         truncating the one that was asked for. */
+      const resp = await anthropicMessages(key, {
+        max_tokens: register === 'technical' ? 3000 : 1600,
+        system, tools, messages: working,
+      }, AI_MODEL);
       if (!resp.ok) {
         console.warn('[chat] Anthropic error', resp.status);
         return res.status(502).json({ error: friendlyError(resp) });
@@ -1038,7 +1085,14 @@ app.post('/api/chat', requireAuth, rateLimit('chat', 40, 15 * 60 * 1000), async 
     /* Anthropic answered, so this one counts. Anything that returned above —
        a rejected key, a rate limit, an outage — did not. */
     countAnsweredQuestion();
-    res.json({ ...final, model: usedModel, toolsUsed, budget: chatBudget(), drafted: !!draftReq });
+    res.json({
+      ...final, model: usedModel, toolsUsed, budget: chatBudget(),
+      drafted: !!draftReq, restated: !!restateReq,
+      /* Echoed back so the page can cache the answer against the register it
+         was actually written in, rather than against whichever one the toggle
+         is showing by the time the reply lands. */
+      register,
+    });
   } catch (e) {
     console.error('[chat] failed:', e.message);
     res.status(502).json({ error: `The assistant could not complete that: ${e.message}` });
@@ -1049,13 +1103,21 @@ app.post('/api/chat', requireAuth, rateLimit('chat', 40, 15 * 60 * 1000), async 
 
 app.get('/api/health', (req, res) => res.json({ ok: true }));
 
-/* Exactly two files are servable. Nothing else in this directory — not lib/,
+/* Exactly three files are servable. Nothing else in this directory — not lib/,
    not data/, not server.mjs, not package.json — is reachable over HTTP, so an
-   allow-list is used rather than express.static over the repository root. */
+   allow-list is used rather than express.static over the repository root.
+
+   charts.js is the drawing code behind the assistant's charts, and it is NOT
+   in the page head: app.js fetches it the first time an answer actually asks
+   for a chart, which most sessions never do. It is served from here rather
+   than from a CDN because this page's Content-Security-Policy allows scripts
+   from this origin and nowhere else — a chart library on someone else's domain
+   would be refused by the browser before it ran. */
 const SERVABLE = {
   '/': ['index.html', 'text/html; charset=utf-8'],
   '/index.html': ['index.html', 'text/html; charset=utf-8'],
   '/app.js': ['app.js', 'text/javascript; charset=utf-8'],
+  '/charts.js': ['charts.js', 'text/javascript; charset=utf-8'],
 };
 for (const [url, [file, type]] of Object.entries(SERVABLE)) {
   app.get(url, (req, res) => {

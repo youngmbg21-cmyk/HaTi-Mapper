@@ -329,6 +329,11 @@
     document.documentElement.style.background = light ? '#f1f5f9' : '#020617';
     /* The button shows what pressing it gets you, not what you already have. */
     $('themeBtn').innerHTML = light ? MOON : SUN;
+    /* Everything on this page is themed by CSS and follows on its own. A
+       canvas does not: it holds pixels, and the colours it drew with were read
+       off the page at the moment it drew. Left alone, a chart in an answer
+       keeps the dark palette on a light card. */
+    repaintCharts();
   }
 
   var savedTheme = null;
@@ -1783,44 +1788,649 @@
   /*  already shows, so it has no route to HaTi's contract data.           */
   /* ==================================================================== */
 
-  var chat = { history: [], busy: false, brain: null };
+  var chat = { history: [], busy: false, brain: null, seq: 0 };
 
   var SUGGESTIONS = [
-    'What should I be worried about?',
-    'What changed in the last day?',
+    'Is anything broken right now?',
+    'What changed since yesterday?',
     'What is this costing me to run?',
     'What works without logging in?',
     'What would be risky to change?',
   ];
 
-  /* A small, safe markdown renderer — bold, code, lists, paragraphs. Enough
-     for the assistant's answers, and it escapes everything first so nothing
-     the model writes can inject markup. */
-  function md(src) {
-    var text = esc(String(src || '').trim());
-    text = text.replace(/`([^`]+)`/g, '<code>$1</code>');
-    text = text.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-    var lines = text.split('\n'), out = [], list = null;
+  /* ==================================================================== */
+  /*  PLAIN or TECHNICAL — the register                                    */
+  /*                                                                       */
+  /*  Not a tone and not a personality. It decides what an answer is       */
+  /*  allowed to LEAVE OUT: plain leaves out the machine detail, and never */
+  /*  leaves out a caveat, a warning or a "someone should look at this".   */
+  /*                                                                       */
+  /*  Read through currentRegister() at the moment of every call, never    */
+  /*  captured into a variable when this file loads. A captured value      */
+  /*  freezes whichever register was current at load, and every flip after */
+  /*  that moves the button and nothing else.                              */
+  /* ==================================================================== */
+
+  var REGISTER_KEY = 'hati-mapper.answerRegister';
+  var REGISTERS = ['plain', 'technical'];
+
+  function normalizeRegister(v) {
+    var s = String(v == null ? '' : v).toLowerCase().trim();
+    return REGISTERS.indexOf(s) >= 0 ? s : 'plain';
+  }
+
+  /* The browser's copy is authoritative for what the page draws; the server's
+     copy exists so the choice follows the owner onto their next device. */
+  function currentRegister() {
+    try { return normalizeRegister(localStorage.getItem(REGISTER_KEY)); }
+    catch (e) { return 'plain'; }
+  }
+
+  function setRegister(next, persistToServer) {
+    var reg = normalizeRegister(next);
+    try { localStorage.setItem(REGISTER_KEY, reg); } catch (e) { /* private mode */ }
+    paintRegisterToggle();
+    if (persistToServer) {
+      send('PUT', '/api/preferences', { answerRegister: reg }).catch(function () {
+        /* The page keeps working on the local copy alone. Nothing here is
+           worth interrupting a conversation over. */
+      });
+    }
+    return reg;
+  }
+
+  function paintRegisterToggle() {
+    var reg = currentRegister();
+    var row = $('askRegister');
+    if (!row) return;
+    row.querySelectorAll('button[data-reg]').forEach(function (b) {
+      var on = b.getAttribute('data-reg') === reg;
+      b.classList.toggle('on', on);
+      b.setAttribute('aria-pressed', String(on));
+    });
+  }
+
+  /* ==================================================================== */
+  /*  Rendering the model's reply                                          */
+  /*                                                                       */
+  /*  The reply is untrusted input. Log lines and error messages from the  */
+  /*  monitored system flow through here, so the escaping below is the     */
+  /*  security boundary rather than a nicety: every chunk that is not      */
+  /*  markdown is escaped — quotes and apostrophes included, because       */
+  /*  chunks end up inside attribute values — and link schemes are checked */
+  /*  against an allow-list rather than a block-list. javascript: and      */
+  /*  data: are the two everybody remembers; the next one has not been     */
+  /*  invented yet, so nothing is clickable unless it is on the list.      */
+  /* ==================================================================== */
+
+  /* https, http, mailto, an in-page #anchor, or a path on this origin. A bare
+     "//host" is deliberately excluded: it looks like a path and is not one. */
+  function safeHref(raw) {
+    var u = String(raw == null ? '' : raw).trim();
+    if (!u || /[\u0000-\u0020\u007f<>"']/.test(u)) return null;
+    if (/^(https?:\/\/|mailto:)/i.test(u)) return u;
+    if (u.charAt(0) === '#') return u;
+    if (u.charAt(0) === '/' && u.charAt(1) !== '/') return u;
+    return null;
+  }
+
+  /* The marker that stands in for a lifted-out block while the rest of the
+     reply is parsed. It is a printable character the escaper leaves alone, and
+     any copy of it arriving from the model is stripped before parsing starts,
+     so a reply cannot forge one. */
+  var SENT = '␞';
+
+  /* Blocks lifted out before anything else runs, so no later pass — bold,
+     colour markers, link detection — can reach inside them. */
+  function stasher() {
+    var kept = [];
+    return {
+      put: function (html) { kept.push(html); return SENT + 'K' + (kept.length - 1) + SENT; },
+      restore: function (s) {
+        return s.replace(new RegExp(SENT + 'K(\\d+)' + SENT, 'g'), function (_, i) { return kept[Number(i)] || ''; });
+      },
+    };
+  }
+
+  function inline(text, keep) {
+    /* Code spans first, and stashed, so ** inside a code span stays literal. */
+    var s = text.replace(/`([^`\n]+)`/g, function (_, code) {
+      return keep.put('<code>' + code + '</code>');
+    });
+    /* Links. The label is already escaped; the address has to earn its href. */
+    s = s.replace(/\[([^\]\n]*)\]\(([^)\s]+)\)/g, function (whole, label, href) {
+      /* The address arrives escaped, so &amp; has to come back before it is
+         judged and before it is used. */
+      var raw = href.replace(/&amp;/g, '&').replace(/&#39;/g, "'").replace(/&quot;/g, '"');
+      var ok = safeHref(raw);
+      if (!ok) return label + ' (' + href + ')';   // still readable, no longer clickable
+      return keep.put('<a href="' + esc(ok) + '" target="_blank" rel="noopener noreferrer nofollow">' +
+        (label || esc(ok)) + '</a>');
+    });
+    s = s.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
+    s = s.replace(/(^|[\s(])\*([^*\n]+)\*(?=$|[\s).,;:!?])/g, '$1<em>$2</em>');
+    s = s.replace(/(^|[\s(])_([^_\n]+)_(?=$|[\s).,;:!?])/g, '$1<em>$2</em>');
+    return s;
+  }
+
+  /* Colour emphasis for short spans — a status, a deadline, a figure, a risk.
+     Applied AFTER the markdown has run, on text that is already escaped, and
+     deliberately unable to match across a tag: no < or > may appear inside a
+     marker, so it can never wrap half of one element and half of another. */
+  var MARKS = { '+': 'good', '-': 'bad', '!': 'warn', '~': 'aside' };
+
+  function colourMarks(html) {
+    return html.replace(/\{([+\-!~])([^{}<>]{1,240})\}/g, function (_, sign, body) {
+      return '<span class="mk mk-' + MARKS[sign] + '">' + body + '</span>';
+    });
+  }
+
+  function tableRow(line) {
+    var t = line.trim().replace(/^\|/, '').replace(/\|$/, '');
+    return t.split('|').map(function (c) { return c.trim(); });
+  }
+
+  /* The renderer proper. Returns the html and the chart requests found in it;
+     md() is the shorthand for the callers that cannot contain a chart. */
+  function renderMarkdown(src, msgId) {
+    var charts = [];
+    var mid = msgId == null ? 'x' : String(msgId);
+    var keep = stasher();
+    /* The sentinel below is a real character, so any of it arriving from the
+       model is removed before it can be mistaken for one of ours. */
+    var text = String(src == null ? '' : src).split(SENT).join('').trim();
+
+    /* 1. Fenced blocks, before anything is escaped. A monitor-chart block
+          becomes a placeholder and its contents are recorded; every other
+          fence becomes an escaped, inert code block. */
+    text = text.replace(/```([^\n`]*)\r?\n([\s\S]*?)```/g, function (_, info, body) {
+      var lang = String(info || '').trim().toLowerCase();
+      if (lang === 'monitor-chart') {
+        charts.push(body);
+        return '\n\n' + SENT + 'C' + (charts.length - 1) + SENT + '\n\n';
+      }
+      return '\n\n' + keep.put('<pre class="codeblock"' + (lang ? ' data-lang="' + esc(lang) + '"' : '') +
+        '><code>' + esc(body.replace(/\r?\n$/, '')) + '</code></pre>') + '\n\n';
+    });
+
+    /* 2. Everything that is left is escaped. Nothing after this point can
+          introduce markup that the model wrote. */
+    text = esc(text);
+
+    /* 3. Blocks. */
+    var lines = text.split('\n');
+    var out = [], list = null, quote = false, i = 0;
+
     function closeList() { if (list) { out.push('</' + list + '>'); list = null; } }
-    lines.forEach(function (line) {
+    function closeQuote() { if (quote) { out.push('</blockquote>'); quote = false; } }
+    function closeAll() { closeList(); closeQuote(); }
+
+    for (i = 0; i < lines.length; i++) {
+      var line = lines[i];
       var t = line.trim();
-      var ul = t.match(/^[-*]\s+(.*)$/);
+
+      var slot = t.match(new RegExp('^' + SENT + 'C(\\d+)' + SENT + '$'));
+      if (slot) {
+        closeAll();
+        out.push('<div class="chartslot" data-msg="' + esc(mid) + '" data-chart="' + Number(slot[1]) +
+          '" data-key="' + esc(mid + ':' + Number(slot[1])) + '"></div>');
+        continue;
+      }
+      var kept = t.match(new RegExp('^' + SENT + 'K(\\d+)' + SENT + '$'));
+      if (kept) { closeAll(); out.push(t); continue; }
+
+      if (!t) { closeAll(); continue; }
+
+      if (/^(---+|\*\*\*+|___+)$/.test(t)) { closeAll(); out.push('<hr>'); continue; }
+
+      var head = t.match(/^(#{1,4})\s+(.*)$/);
+      if (head) {
+        closeAll();
+        var level = Math.min(head[1].length + 2, 6);   // # becomes h3 inside a bubble
+        out.push('<h' + level + '>' + inline(head[2], keep) + '</h' + level + '>');
+        continue;
+      }
+
+      /* A table: a header row, a |---|---| rule under it, then body rows. */
+      if (t.indexOf('|') >= 0 && i + 1 < lines.length && /^\s*\|?[\s:-]*-[-\s|:]*\|?\s*$/.test(lines[i + 1]) && lines[i + 1].indexOf('-') >= 0) {
+        closeAll();
+        var header = tableRow(t);
+        var rows = [];
+        i += 2;
+        while (i < lines.length && lines[i].trim() && lines[i].indexOf('|') >= 0) {
+          rows.push(tableRow(lines[i]));
+          i++;
+        }
+        i--;
+        out.push('<div class="tblscroll"><table><thead><tr>' +
+          header.map(function (c) { return '<th>' + inline(c, keep) + '</th>'; }).join('') +
+          '</tr></thead><tbody>' +
+          rows.map(function (r) {
+            return '<tr>' + r.map(function (c) { return '<td>' + inline(c, keep) + '</td>'; }).join('') + '</tr>';
+          }).join('') +
+          '</tbody></table></div>');
+        continue;
+      }
+
+      var q = t.match(/^&gt;\s?(.*)$/);
+      if (q) {
+        closeList();
+        if (!quote) { out.push('<blockquote>'); quote = true; }
+        out.push('<p>' + inline(q[1], keep) + '</p>');
+        continue;
+      }
+      closeQuote();
+
+      var ul = t.match(/^[-*+]\s+(.*)$/);
       var ol = t.match(/^\d+[.)]\s+(.*)$/);
       if (ul) {
         if (list !== 'ul') { closeList(); out.push('<ul>'); list = 'ul'; }
-        out.push('<li>' + ul[1] + '</li>');
+        out.push('<li>' + inline(ul[1], keep) + '</li>');
       } else if (ol) {
         if (list !== 'ol') { closeList(); out.push('<ol>'); list = 'ol'; }
-        out.push('<li>' + ol[1] + '</li>');
-      } else if (!t) {
-        closeList();
+        out.push('<li>' + inline(ol[1], keep) + '</li>');
       } else {
         closeList();
-        out.push('<p>' + t + '</p>');
+        out.push('<p>' + inline(t, keep) + '</p>');
       }
+    }
+    closeAll();
+
+    /* 4. Colour markers, then the stashed blocks go back in last of all so
+          nothing above could have reached inside them. */
+    return { html: keep.restore(colourMarks(out.join(''))), charts: charts };
+  }
+
+  function md(src) { return renderMarkdown(src).html; }
+
+  /* ==================================================================== */
+  /*  Charts inside an answer                                              */
+  /*                                                                       */
+  /*  THE MODEL NEVER SUPPLIES THE DATA. It names a kind; renderMarkdown   */
+  /*  lifts the block out before the reply is drawn and leaves a           */
+  /*  placeholder; the recipes below fill that placeholder from the SAME   */
+  /*  live records the dashboard beside it is drawn from. So a chart in an */
+  /*  answer cannot drift from the tab it came from, cannot go stale, and  */
+  /*  cannot be hallucinated. A model that invents a number gets to invent */
+  /*  a SENTENCE, which the reader can weigh — never a CHART, which the    */
+  /*  reader reads as measured fact.                                       */
+  /*                                                                       */
+  /*  The one exception is "quoted", which draws figures the model has     */
+  /*  already stated in the same reply and is labelled on screen as its    */
+  /*  own figures rather than as a measurement.                            */
+  /* ==================================================================== */
+
+  function trendSeries(field, scale) {
+    var pts = (trends && trends.points) || [];
+    var out = [];
+    pts.forEach(function (p) {
+      var v = p[field];
+      if (typeof v !== 'number' || !isFinite(v)) return;
+      out.push({ label: fmtDate(p.at), value: scale ? scale(v) : v });
     });
-    closeList();
-    return out.join('');
+    return out;
+  }
+
+  var TREND_TOO_SHORT = 'The Mapper has fewer than three readings to draw a line through. ' +
+    'It records one every time a scan finds something different, so this fills in after a few days.';
+
+  function watchRounds() {
+    return (towerWatch && towerWatch.rounds) || (watchData && watchData.rounds) || [];
+  }
+
+  /* Each recipe answers with points, or with a reason there are none. Neither
+     answer is ever a blank box. */
+  var CHART_RECIPES = {
+    'cost-trend': {
+      title: 'What a full day at HaTi’s caps would cost',
+      unit: 'US dollars', type: 'line',
+      from: 'the same readings as the “Today’s burn” line on the control tower — this dashboard’s own estimate, a roof rather than a bill',
+      build: function () {
+        var s = trendSeries('dailyCostUsd');
+        return s.length >= 3 ? { points: s } : { empty: TREND_TOO_SHORT };
+      },
+    },
+    'cost-by-feature': {
+      title: 'Estimated cost of one use, per AI feature',
+      unit: 'US dollars', type: 'hbar',
+      from: 'the Money tab — HaTi’s own caps priced at list rates, not a bill',
+      build: function () {
+        var f = ((scan && scan.cost && scan.cost.features) || [])
+          .filter(function (x) { return typeof x.perRequestUsd === 'number'; })
+          .sort(function (a, b) { return b.perRequestUsd - a.perRequestUsd; })
+          .slice(0, 12)
+          .map(function (x) { return { label: x.label || x.feature, value: x.perRequestUsd }; });
+        return f.length ? { points: f } : { empty: 'No AI feature in the latest scan could be priced, so there is nothing to draw.' };
+      },
+    },
+    'ai-caps': {
+      title: 'How often each AI feature may be used',
+      unit: 'requests per 15 minutes', type: 'hbar',
+      from: 'the Money tab — the limits written into HaTi’s own code',
+      build: function () {
+        var f = ((scan && scan.ai && scan.ai.features) || [])
+          .filter(function (x) { return typeof x.cap === 'number'; })
+          .sort(function (a, b) { return b.cap - a.cap; })
+          .slice(0, 12)
+          .map(function (x) { return { label: x.label || x.feature, value: x.cap }; });
+        return f.length ? { points: f } : { empty: 'The scan could not read a usage cap off any AI feature, so there is nothing to draw.' };
+      },
+    },
+    'open-doors-trend': {
+      title: 'Addresses that work without logging in',
+      unit: 'addresses', type: 'line',
+      from: 'the change log’s own readings, the same ones behind the Open to the public tab',
+      build: function () {
+        var s = trendSeries('openRoutes');
+        return s.length >= 3 ? { points: s } : { empty: TREND_TOO_SHORT };
+      },
+    },
+    'scan-health-trend': {
+      title: 'How much of HaTi the scanner could read',
+      unit: 'percent', type: 'line',
+      from: 'the “Scanner grip” reading on the control tower',
+      build: function () {
+        var s = trendSeries('health');
+        return s.length >= 3 ? { points: s } : { empty: TREND_TOO_SHORT };
+      },
+    },
+    'code-size-trend': {
+      title: 'The total size of everything scanned',
+      unit: 'kilobytes', type: 'line',
+      from: 'the same readings as the “Getting bulky” tab',
+      build: function () {
+        var s = trendSeries('bytes', function (v) { return v / 1024; });
+        return s.length >= 3 ? { points: s } : { empty: TREND_TOO_SHORT };
+      },
+    },
+    'gaps-trend': {
+      title: 'Known gaps written down',
+      unit: 'gaps', type: 'line',
+      from: 'the same readings as the “Not finished” panel',
+      build: function () {
+        var s = trendSeries('gaps');
+        return s.length >= 3 ? { points: s } : { empty: TREND_TOO_SHORT };
+      },
+    },
+    'changes-per-day': {
+      title: 'Changes the Mapper observed, by day',
+      unit: 'changes', type: 'bar',
+      from: 'the watch log — what the Mapper saw move between one scan and the next, not the git history',
+      build: function () {
+        var rounds = watchRounds();
+        if (!rounds.length) return { empty: 'The Mapper has not observed anything change yet, so there is nothing to draw. That is a real answer, not a missing one — it needs two scans to compare.' };
+        var byDay = {};
+        rounds.forEach(function (r) {
+          var d = new Date(r.at);
+          if (isNaN(d)) return;
+          var key = d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate();
+          byDay[key] = (byDay[key] || 0) + (r.events || []).length;
+        });
+        var pts = [], now = new Date();
+        for (var i = 13; i >= 0; i--) {
+          var d2 = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
+          var k = d2.getFullYear() + '-' + (d2.getMonth() + 1) + '-' + d2.getDate();
+          pts.push({ label: d2.toLocaleString('en-GB', { day: 'numeric', month: 'short' }), value: byDay[k] || 0 });
+        }
+        return { points: pts };
+      },
+    },
+    'changes-by-area': {
+      title: 'Changes the Mapper observed, by area',
+      unit: 'changes', type: 'hbar',
+      from: 'the watch log — what the Mapper saw move between one scan and the next',
+      build: function () {
+        var rounds = watchRounds(), tally = {};
+        rounds.forEach(function (r) {
+          (r.events || []).forEach(function (e) {
+            var k = KIND_LABEL[e.kind] || e.kind || 'other';
+            tally[k] = (tally[k] || 0) + 1;
+          });
+        });
+        var pts = Object.keys(tally).map(function (k) { return { label: k, value: tally[k] }; })
+          .sort(function (a, b) { return b.value - a.value; });
+        return pts.length ? { points: pts }
+          : { empty: 'The Mapper has not observed anything change yet, so there is nothing to group. It needs two scans to compare.' };
+      },
+    },
+    'biggest-files': {
+      title: 'The largest files in HaTi',
+      unit: 'kilobytes', type: 'hbar',
+      from: 'the “Getting bulky” tab, the same file sizes',
+      build: function () {
+        var f = ((scan && scan.weight && scan.weight.files) || [])
+          .slice()
+          .sort(function (a, b) { return b.bytes - a.bytes; })
+          .slice(0, 10)
+          .map(function (x) { return { label: x.path, value: x.bytes / 1024 }; });
+        return f.length ? { points: f } : { empty: 'The latest scan recorded no file sizes, so there is nothing to draw.' };
+      },
+    },
+  };
+
+  /* Published so the verification can hold what this page can actually draw
+     against what the server offers the model. Two lists in two languages that
+     must never drift apart — a kind the model is offered and the page cannot
+     draw is an error card the reader did nothing to deserve. */
+  window.__mapperChartKinds = Object.keys(CHART_RECIPES);
+
+  /* The one place the model's own numbers are allowed through, and they are
+     labelled as its numbers wherever they appear. */
+  function buildQuoted(spec) {
+    var pts = Array.isArray(spec.points) ? spec.points : [];
+    var clean = pts.filter(function (p) {
+      return p && typeof p.value === 'number' && isFinite(p.value);
+    }).slice(0, 12).map(function (p) {
+      return { label: String(p.label == null ? '' : p.label).slice(0, 40), value: p.value };
+    });
+    if (clean.length < 2) {
+      return { error: 'The assistant asked for a chart of its own figures but gave fewer than two of them.' };
+    }
+    return {
+      title: typeof spec.title === 'string' && spec.title.trim() ? spec.title.trim().slice(0, 90) : 'The assistant’s own figures',
+      unit: typeof spec.unit === 'string' ? spec.unit.slice(0, 30) : '',
+      type: clean.length > 6 ? 'bar' : 'hbar',
+      from: null,
+      quoted: true,
+      points: clean,
+    };
+  }
+
+  /* ---- the library, fetched the first time an answer actually wants one ---- */
+
+  var chartLibPromise = null;
+
+  function loadChartLib() {
+    if (window.MapperCharts) return Promise.resolve(window.MapperCharts);
+    if (chartLibPromise) return chartLibPromise;
+    chartLibPromise = new Promise(function (resolve, reject) {
+      var s = document.createElement('script');
+      s.src = '/charts.js';
+      s.async = true;
+      s.onload = function () {
+        if (window.MapperCharts) resolve(window.MapperCharts);
+        else reject(new Error('loaded but empty'));
+      };
+      s.onerror = function () {
+        /* Cleared so a later question can try again — a chart library that
+           failed to arrive once is usually a blip, not a permanent state. */
+        chartLibPromise = null;
+        s.parentNode && s.parentNode.removeChild(s);
+        reject(new Error('could not be fetched'));
+      };
+      document.head.appendChild(s);
+    });
+    return chartLibPromise;
+  }
+
+  /* ---- the registry ----
+
+     Every live chart is in here, keyed by the message it belongs to. An
+     instance holds a canvas, two listeners, a resize observer and possibly an
+     animation frame; dropping the markup without calling destroy() leaks all
+     of them, so nothing drops markup without coming through here. */
+
+  var liveCharts = {};      // key -> chart instance
+  var chartSpecs = {};      // message id -> the raw blocks found in that reply
+  var chartWatcher = null;  // one observer for every slot on screen
+
+  function destroyChart(key) {
+    var c = liveCharts[key];
+    if (!c) return;
+    try { c.destroy(); } catch (e) {}
+    delete liveCharts[key];
+  }
+
+  /* Redraw every live chart with the colours currently on the page. Guarded
+     because the theme is applied while this file is still being read, long
+     before any chart exists. */
+  function repaintCharts() {
+    if (!liveCharts) return;
+    Object.keys(liveCharts).forEach(function (key) {
+      var c = liveCharts[key];
+      if (c && typeof c.draw === 'function') { try { c.draw(); } catch (e) {} }
+    });
+  }
+
+  function destroyAllCharts() {
+    Object.keys(liveCharts).forEach(destroyChart);
+    chartSpecs = {};
+    if (chartWatcher) { chartWatcher.disconnect(); chartWatcher = null; }
+  }
+
+  /* Anything whose canvas is no longer in the document is gone as far as the
+     reader is concerned and must not still be holding listeners. Run after
+     every repaint of the feed, because a repaint replaces the markup wholesale
+     and every chart in it is detached in one go. */
+  function sweepCharts() {
+    Object.keys(liveCharts).forEach(function (key) {
+      var c = liveCharts[key];
+      if (!c || !c.canvas || !document.body.contains(c.canvas)) destroyChart(key);
+    });
+  }
+
+  function chartCard(inner, extraClass) {
+    return '<figure class="chartcard' + (extraClass ? ' ' + extraClass : '') + '">' + inner + '</figure>';
+  }
+
+  function chartNotice(slot, headline, detail) {
+    slot.setAttribute('data-settled', '1');
+    slot.innerHTML = chartCard(
+      '<figcaption>' + esc(headline) + '</figcaption>' +
+      '<div class="chartnote">' + esc(detail) + '</div>', 'flat');
+  }
+
+  /* One slot, from its block to something on screen. Every failure below ends
+     in a card that says what happened; none of them ends in a blank box or a
+     broken panel. */
+  function fillChartSlot(slot) {
+    var key = slot.getAttribute('data-key');
+    if (liveCharts[key]) return;
+    /* A card that says why there is no chart has nothing to rebuild, so it is
+       written once rather than on every scroll past it. */
+    if (slot.getAttribute('data-settled') === '1') return;
+
+    var raw = (chartSpecs[slot.getAttribute('data-msg')] || [])[Number(slot.getAttribute('data-chart'))];
+    var index = Number(slot.getAttribute('data-chart'));
+
+    if (index > 0) {
+      return chartNotice(slot, 'Only the first chart is drawn',
+        'The assistant asked for more than one chart in a single answer. One chart per answer is the rule, so the rest are not drawn.');
+    }
+
+    var spec = null;
+    try { spec = JSON.parse(String(raw || '')); } catch (e) { spec = null; }
+    if (!spec || typeof spec !== 'object' || typeof spec.kind !== 'string') {
+      return chartNotice(slot, 'That chart could not be read',
+        'The assistant asked for a chart but did not name a kind the page understands. Nothing was drawn, and nothing else in the answer is affected.');
+    }
+
+    var kind = spec.kind.trim();
+    var recipe = CHART_RECIPES[kind];
+    var built;
+
+    if (kind === 'quoted') {
+      built = buildQuoted(spec);
+      if (built.error) return chartNotice(slot, 'That chart could not be drawn', built.error);
+    } else if (!recipe) {
+      return chartNotice(slot, 'Unknown chart: “' + kind + '”',
+        'The assistant asked for a kind of chart this dashboard does not draw. The rest of the answer is unaffected.');
+    } else {
+      var data = recipe.build();
+      if (data.empty) return chartNotice(slot, recipe.title, data.empty);
+      built = {
+        title: typeof spec.title === 'string' && spec.title.trim() ? spec.title.trim().slice(0, 90) : recipe.title,
+        unit: recipe.unit, type: recipe.type, from: recipe.from, points: data.points, quoted: false,
+      };
+    }
+
+    if (!built.points || !built.points.length) {
+      return chartNotice(slot, built.title || 'Nothing to draw', 'There are no readings behind this chart yet.');
+    }
+
+    var height = built.type === 'hbar' ? Math.max(90, Math.min(built.points.length * 24 + 10, 300)) : 150;
+    slot.innerHTML = chartCard(
+      '<figcaption>' + esc(built.title) +
+      (built.unit ? '<span class="unit">' + esc(built.unit) + '</span>' : '') + '</figcaption>' +
+      '<div class="chartbox" style="height:' + height + 'px"><canvas></canvas></div>' +
+      '<figcaption class="src">' +
+      (built.quoted
+        ? '<b>The assistant’s own figures</b>, from the answer above — not measured by this dashboard.'
+        : 'Drawn by this page from ' + esc(built.from) + '.') +
+      '</figcaption>');
+
+    var canvas = slot.querySelector('canvas');
+    loadChartLib().then(function (lib) {
+      if (!document.body.contains(canvas)) return;    // the feed repainted while we waited
+      destroyChart(key);
+      liveCharts[key] = lib.create(canvas, {
+        type: built.type, unit: built.unit, points: built.points,
+      });
+    }, function () {
+      chartNotice(slot, built.title,
+        'The chart could not be drawn because its drawing code did not load. Everything the answer says in words is unaffected — try asking again in a moment.');
+    });
+  }
+
+  function releaseChartSlot(slot) {
+    destroyChart(slot.getAttribute('data-key'));
+  }
+
+  /* Charts are created when their card is on screen and destroyed when it is
+     well past it, so a long conversation holds a handful of canvases rather
+     than one per answer ever given. A card that scrolls back into view is
+     rebuilt from its own block, so nothing leaves a hole behind it. */
+  function hydrateCharts() {
+    sweepCharts();
+    var feed = $('askFeed');
+    if (!feed) return;
+    var slots = feed.querySelectorAll('.chartslot');
+    if (!slots.length) {
+      if (chartWatcher) { chartWatcher.disconnect(); chartWatcher = null; }
+      return;
+    }
+
+    /* Rebuilt rather than reused: a repaint replaces every slot element, and
+       an observer kept across repaints goes on holding references to elements
+       that left the document. */
+    if (chartWatcher) chartWatcher.disconnect();
+    if (window.IntersectionObserver) {
+      chartWatcher = new IntersectionObserver(function (entries) {
+        entries.forEach(function (en) {
+          if (en.isIntersecting) fillChartSlot(en.target);
+          else releaseChartSlot(en.target);
+        });
+      }, { root: feed, rootMargin: '400px' });
+    }
+
+    slots.forEach(function (slot) {
+      if (chartWatcher) chartWatcher.observe(slot);
+      else fillChartSlot(slot);       // no observer: draw them all and rely on the sweep
+    });
+
+    /* And once more after the browser has actually painted, because that is
+       when a canvas that lost its place is finally detached. */
+    requestAnimationFrame(sweepCharts);
   }
 
   function askOpen(open) {
@@ -1828,6 +2438,7 @@
     $('askLaunch').hidden = open;
     if (open) {
       refreshBrain();
+      paintRegisterToggle();
       setExpanded(rememberedExpanded());   // restore the remembered width
       if (!chat.history.length) renderFeed();
       setTimeout(function () { var i = $('askInput'); if (i && !$('askKey').hidden === false) i.focus(); }, 60);
@@ -1874,9 +2485,12 @@
   }
 
   /* Cleared straight away, no confirm — the conversation is local and cheap to
-     start again, and a prompt for something this reversible is just friction. */
+     start again, and a prompt for something this reversible is just friction.
+     The charts go with it: they are the one part of a conversation that keeps
+     holding listeners and a canvas after its markup is gone. */
   function clearChat() {
     if (!chat.history.length) return toast('Nothing to delete yet');
+    destroyAllCharts();
     chat.history = [];
     renderFeed();
     toast('Conversation deleted');
@@ -1966,14 +2580,32 @@
     thinkingAt = 0;
   }
 
+  var WELCOME = 'Hello. I watch how your platform is doing and I can answer questions about it — ' +
+    '**is anything broken right now**, what changed since yesterday, what it is costing you to run, ' +
+    'whether anything is open that should not be.\n\n' +
+    'Use the **Plain / Technical** buttons below to choose how much machine detail you want back. ' +
+    'You can flip them over an answer that is already on screen and I will say the same thing the other way.\n\n' +
+    'I read the same information the tabs above show. {~I never see the contracts inside HaTi.}';
+
+  /* The text of one assistant message in the register currently chosen, if
+     there is a version of it in that register. Read at call time. */
+  function bodyFor(m) {
+    var reg = currentRegister();
+    if (m.versions && m.versions[reg]) return m.versions[reg];
+    return m.content;
+  }
+
   function renderFeed(typing) {
     var feed = $('askFeed');
     var html = '';
 
+    /* Every repaint replaces this markup wholesale, so anything a previous
+       repaint left holding a canvas is released here rather than lingering
+       until the sweep happens to run. */
+    var seenCharts = {};
+
     if (!chat.history.length) {
-      html += '<div class="msg bot"><div class="body">' +
-        md('Hello. I can explain anything on this page — what your platform contains, what it costs to run, what has changed lately, and what is worth keeping an eye on.\n\nI read the same information the tabs above show. I never see the contracts inside HaTi.') +
-        '</div></div>';
+      html += '<div class="msg bot"><div class="body">' + md(WELCOME) + '</div></div>';
     }
 
     chat.history.forEach(function (m) {
@@ -1981,13 +2613,24 @@
         html += '<div class="msg me">' + esc(m.content) + '</div>';
         return;
       }
-      html += '<div class="msg bot' + (m.error ? ' err' : '') + '"><div class="body">' + md(m.content);
+      var text = bodyFor(m);
+      var drawn = renderMarkdown(text, m.id);
+      chartSpecs[m.id] = drawn.charts;
+      seenCharts[m.id] = true;
+
+      html += '<div class="msg bot' + (m.error ? ' err' : '') + '"' +
+        (m.id ? ' data-msg="' + esc(m.id) + '"' : '') + '>' +
+        '<div class="body">' + drawn.html;
       if (m.watchOut) html += '<div class="watch">' + esc(m.watchOut) + '</div>';
       html += '</div>';
+      if (m.restating) {
+        html += '<div class="restating" role="status" aria-live="polite">Saying that again, ' +
+          esc(currentRegister() === 'technical' ? 'in full detail' : 'in plain English') + '…</div>';
+      }
       /* A drafted prompt exists to be pasted somewhere else, so the only thing
          that matters is getting it out of here intact. */
       if (m.copyable) {
-        html += '<div class="srcs"><button class="copy" data-copy="' + esc(m.content) + '">Copy this prompt</button></div>';
+        html += '<div class="srcs"><button class="copy" data-copy="' + esc(text) + '">Copy this prompt</button></div>';
       }
       if (m.sources && m.sources.length) {
         html += '<div class="srcs">' + m.sources.map(function (s) {
@@ -2007,15 +2650,30 @@
     feed.innerHTML = html;
     feed.scrollTop = feed.scrollHeight;
 
+    /* Blocks belonging to messages that are no longer in the conversation go
+       too, so this map cannot grow for the life of the tab. */
+    Object.keys(chartSpecs).forEach(function (id) { if (!seenCharts[id]) delete chartSpecs[id]; });
+    hydrateCharts();
+
     $('askSugg').innerHTML = chat.history.length
       ? ''
       : SUGGESTIONS.map(function (s) { return '<button data-q="' + esc(s) + '">' + esc(s) + '</button>'; }).join('');
   }
 
+  function nextMsgId() { chat.seq += 1; return 'm' + chat.seq; }
+
+  /* Every request to the assistant goes through here, so there is exactly one
+     place that decides which register is being asked for — and it decides it
+     now, from currentRegister(), rather than from anything captured earlier. */
+  function askServer(body) {
+    return send('POST', '/api/chat', Object.assign({ register: currentRegister() }, body || {}));
+  }
+
   function sendQuestion(q) {
     if (chat.busy || !q.trim()) return;
+    var question = q.trim();
     chat.busy = true;
-    chat.history.push({ role: 'user', content: q.trim() });
+    chat.history.push({ role: 'user', content: question });
     startThinking();
     renderFeed(true);
     $('askSend').disabled = true;
@@ -2023,35 +2681,96 @@
 
     var payload = chat.history
       .filter(function (m) { return !m.error; })
-      .map(function (m) { return { role: m.role, content: m.content }; });
+      .map(function (m) { return { role: m.role, content: m.role === 'assistant' ? bodyFor(m) : m.content }; });
 
-    fetch('/api/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'same-origin',
-      body: JSON.stringify({ messages: payload }),
-    })
-      .then(function (res) {
-        return res.text().then(function (raw) {
-          var b = null;
-          try { b = JSON.parse(raw); } catch (e) {}
-          if (!b) throw new Error('The assistant is not reachable — this page may be running without its server.');
-          if (!res.ok) { var e2 = new Error(b.error || 'That did not work.'); e2.needsKey = b.needsKey; throw e2; }
-          return b;
-        });
-      })
+    askServer({ messages: payload })
       .then(function (b) {
-        chat.history.push({ role: 'assistant', content: b.answer, sources: b.sources, watchOut: b.watchOut });
+        var versions = {};
+        versions[normalizeRegister(b.register)] = b.answer;
+        chat.history.push({
+          id: nextMsgId(), role: 'assistant', content: b.answer,
+          sources: b.sources, watchOut: b.watchOut,
+          question: question, versions: versions,
+        });
         if (b.budget) refreshBrain();
       })
       .catch(function (e) {
-        chat.history.push({ role: 'assistant', content: e.message, error: true });
-        if (e.needsKey) refreshBrain();
+        chat.history.push({ id: nextMsgId(), role: 'assistant', content: e.message, error: true });
+        if (e.body && e.body.needsKey) refreshBrain();
       })
       .then(function () {
         chat.busy = false;
         $('askSend').disabled = false;
         stopThinking();
+        renderFeed(false);
+        reconcileRegister();
+      });
+  }
+
+  /* ---- flipping the toggle over an answer already on screen ----
+
+     The toggle is not only a preference for the next question. Flipping it
+     re-says the answer the reader is looking at, in place, in the register
+     they have just chosen. Both versions are kept once they exist, so flipping
+     back is instant and never asks the model again.
+
+     The existing bubble is REPLACED, never joined by a second one. One
+     explanation wearing two registers is one thing; two bubbles read as two
+     opinions. */
+
+  /* If the toggle was flipped while an answer was in the air, that answer
+     arrives written in the register that was current when it was asked, and
+     the toggle now says something else. Rather than leave the two disagreeing,
+     the answer is put into the register the reader is actually looking at. */
+  function reconcileRegister() {
+    var m = lastAnswer();
+    if (!m || !m.versions) return;
+    if (m.versions[currentRegister()]) return;
+    restateOnScreen();
+  }
+
+  function lastAnswer() {
+    for (var i = chat.history.length - 1; i >= 0; i--) {
+      var m = chat.history[i];
+      if (m.role === 'assistant' && !m.error) return m;
+    }
+    return null;
+  }
+
+  function restateOnScreen() {
+    var m = lastAnswer();
+    if (!m) return;                       // nothing on screen to restate
+    /* A drafted fix prompt is not an explanation, it is an artefact to paste
+       into another session. Re-saying it in plainer words would damage the
+       thing itself, so the toggle leaves it alone and only remembers. */
+    if (m.copyable) return;
+    var reg = currentRegister();
+    if (m.versions && m.versions[reg]) { renderFeed(false); return; }   // cached: instant
+    if (chat.busy) { renderFeed(false); return; }
+
+    chat.busy = true;
+    m.restating = true;
+    $('askSend').disabled = true;
+    renderFeed(false);
+
+    askServer({ restate: { question: m.question || '', answer: m.content } })
+      .then(function (b) {
+        var got = normalizeRegister(b.register);
+        m.versions = m.versions || {};
+        m.versions[got] = b.answer;
+        /* Only the words change. The sources and the warning belong to the
+           finding, not to the register it was said in. */
+        if (b.watchOut) m.watchOut = b.watchOut;
+        if (b.sources && b.sources.length) m.sources = b.sources;
+        if (b.budget) refreshBrain();
+      })
+      .catch(function (e) {
+        toast('Could not say that again: ' + e.message);
+      })
+      .then(function () {
+        m.restating = false;
+        chat.busy = false;
+        $('askSend').disabled = false;
         renderFeed(false);
       });
   }
@@ -2080,13 +2799,21 @@
     renderFeed(true);
     $('askSend').disabled = true;
 
-    send('POST', '/api/chat', { draft: { kind: kind, id: id } })
+    /* Through askServer like every other request, so the drafted prompt is
+       shaped by the same toggle as everything else. */
+    askServer({ draft: { kind: kind, id: id } })
       .then(function (b) {
-        chat.history.push({ role: 'assistant', content: b.answer, sources: b.sources, watchOut: b.watchOut, copyable: true });
+        var versions = {};
+        versions[normalizeRegister(b.register)] = b.answer;
+        chat.history.push({
+          id: nextMsgId(), role: 'assistant', content: b.answer,
+          sources: b.sources, watchOut: b.watchOut, copyable: true,
+          question: 'Draft a fix prompt for this.', versions: versions,
+        });
         if (b.budget) refreshBrain();
       })
       .catch(function (e) {
-        chat.history.push({ role: 'assistant', content: e.message, error: true });
+        chat.history.push({ id: nextMsgId(), role: 'assistant', content: e.message, error: true });
         if (e.body && e.body.needsKey) refreshBrain();
       })
       .then(function () {
@@ -2106,6 +2833,19 @@
   });
 
   /* --- wiring --- */
+
+  /* The toggle. Flipping it saves the choice, repaints the buttons, and then
+     re-says whatever answer is already on screen in the register just chosen.
+     If there is nothing on screen, it does nothing more than remember. */
+  $('askRegister').addEventListener('click', function (e) {
+    var b = e.target.closest('button[data-reg]');
+    if (!b) return;
+    var want = normalizeRegister(b.getAttribute('data-reg'));
+    if (want === currentRegister()) return;
+    setRegister(want, true);
+    restateOnScreen();
+  });
+
   $('askLaunch').addEventListener('click', function () { askOpen(true); });
   $('askClose').addEventListener('click', function () { askOpen(false); });
   $('askExpand').addEventListener('click', function () {
@@ -2368,6 +3108,16 @@
   function renderPrefs(p) {
     if (!p) return;
     prefs = p;
+
+    /* The register the owner last chose, as the server remembers it. A browser
+       that has never been told adopts it, so the choice follows them onto a new
+       device; a browser that has its own answer keeps it, because whatever they
+       last pressed on THIS screen is the more recent instruction. */
+    var localReg = null;
+    try { localReg = localStorage.getItem(REGISTER_KEY); } catch (e) {}
+    if (!localReg && p.answerRegister) setRegister(p.answerRegister, false);
+    paintRegisterToggle();
+
     var b = $('setDigest');
     b.textContent = p.digestEmail ? 'On' : 'Off';
     b.setAttribute('aria-pressed', String(!!p.digestEmail));

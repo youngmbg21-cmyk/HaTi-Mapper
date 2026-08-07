@@ -442,6 +442,69 @@ a{color:inherit;}
 .ask-foot .btn-primary{background:var(--onlav);border-color:var(--onlav);color:var(--askband);}
 .ask-foot .btn-primary:hover{background:var(--card);border-color:var(--card);color:var(--askband);}
 .ask-note{font-size:11px;color:var(--onlav);opacity:.85;margin-top:7px;line-height:1.45;}
+/* ---------------------------------------------- PLAIN / TECHNICAL toggle
+   It sits directly above the input box because that is where the decision is
+   made — while you are typing the question, not buried in Settings. Its two
+   buttons are the same segmented control the panels above use, so it reads as
+   a choice rather than as a switch that does something drastic. */
+.regrow{display:flex;align-items:center;gap:9px;margin-bottom:9px;}
+.reglab{font-family:var(--mono);font-size:9.5px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--onlav);opacity:.75;}
+.ask-foot .seg.reg{display:flex;gap:2px;background:rgba(0,0,0,.16);border-radius:999px;padding:3px;}
+.ask-foot .seg.reg button{font-family:var(--font);font-size:11.5px;font-weight:600;color:var(--onlav);opacity:.7;
+  background:none;border:0;border-radius:999px;padding:4px 13px;cursor:pointer;}
+.ask-foot .seg.reg button:hover{opacity:1;}
+.ask-foot .seg.reg button.on{background:var(--onlav);color:var(--askband);opacity:1;}
+/* Said while the same answer is being put the other way. The bubble above is
+   still the old wording until the new one lands — it is never joined by a
+   second bubble, which would read as a second opinion. */
+.restating{align-self:flex-start;font-size:11.5px;color:var(--tx3);margin-top:6px;font-style:italic;}
+
+/* -------------------------------------------------- richer answer bodies */
+.msg.bot h3,.msg.bot h4,.msg.bot h5,.msg.bot h6{margin:12px 0 6px;font-size:13.5px;font-weight:700;
+  color:var(--tx);letter-spacing:-0.01em;}
+.msg.bot h3:first-child,.msg.bot h4:first-child{margin-top:0;}
+.msg.bot h5,.msg.bot h6{font-size:12.5px;color:var(--tx2);}
+.msg.bot hr{border:0;border-top:1px solid var(--line);margin:11px 0;}
+.msg.bot em{font-style:italic;}
+.msg.bot blockquote{margin:8px 0;padding:2px 0 2px 11px;border-left:3px solid var(--line);color:var(--tx3);}
+.msg.bot blockquote p{margin:0 0 4px;}
+.msg.bot a{color:var(--lav);text-decoration:underline;text-underline-offset:2px;}
+.msg.bot .codeblock{margin:9px 0;padding:9px 11px;background:var(--tile2);border:1px solid var(--line);border-radius:10px;
+  overflow-x:auto;font-family:var(--mono);font-size:12px;line-height:1.55;white-space:pre;}
+.msg.bot .codeblock code{background:none;padding:0;font-size:12px;}
+/* A table inside a chat bubble will not fit at every width, so it scrolls
+   sideways inside its own box rather than stretching the panel. */
+.msg.bot .tblscroll{margin:9px 0;overflow-x:auto;}
+.msg.bot table{border-collapse:collapse;font-size:12.5px;min-width:100%;}
+.msg.bot th,.msg.bot td{text-align:left;padding:5px 10px 5px 0;border-bottom:1px solid var(--line);white-space:nowrap;}
+.msg.bot th{font-family:var(--mono);font-size:9.5px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--tx3);}
+
+/* Colour emphasis on short spans — a status, a deadline, a figure, a risk.
+   Deliberately not available for ordinary prose: a paragraph that is entirely
+   coloured says nothing, and the point of these is that they are rare. */
+.mk{border-radius:5px;padding:1px 5px;font-weight:600;}
+.mk-good{background:var(--good);color:var(--goodtx);}
+.mk-bad{background:var(--bad);color:var(--badtx);}
+.mk-warn{background:var(--gold);color:var(--ongold);}
+.mk-aside{background:var(--tile2);color:var(--tx3);font-weight:500;}
+
+/* ------------------------------------------------------ charts in answers
+   Never a bare canvas: the card always carries what it is, what its unit is,
+   and where the numbers came from — because the whole claim of these charts
+   is that they were not written by the model. When something goes wrong the
+   same card carries the reason instead. Never a blank box. */
+.chartcard{margin:10px 0 4px;padding:10px 12px;background:var(--tile2);border:1px solid var(--line);border-radius:12px;}
+.chartcard figcaption{font-size:12px;font-weight:600;color:var(--tx);display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;}
+.chartcard figcaption .unit{font-family:var(--mono);font-size:9.5px;font-weight:600;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--tx3);margin-left:auto;}
+.chartcard .chartbox{margin:8px 0 6px;width:100%;}
+.chartcard canvas{display:block;width:100%;height:100%;}
+.chartcard figcaption.src{display:block;font-size:11px;font-weight:400;color:var(--tx3);line-height:1.45;}
+.chartcard figcaption.src b{color:var(--tx2);font-weight:600;}
+.chartcard .chartnote{margin-top:6px;font-size:11.5px;color:var(--tx3);line-height:1.5;}
+.chartcard.flat{background:var(--tile);}
+
 .keybox{padding:14px 16px;border-bottom:1px solid var(--line);font-size:13px;color:var(--tx2);line-height:1.55;}
 .keybox h4{margin:0 0 6px;font-size:14px;font-weight:600;color:var(--tx);}
 .keybox ol{margin:9px 0;padding-left:19px;}
@@ -914,6 +977,18 @@ a{color:inherit;}
   <div class="sugg" id="askSugg"></div>
 
   <div class="ask-foot" id="askFoot">
+    <!-- How much machine detail an answer carries. Not a tone and not a
+         personality: it decides what an answer is allowed to leave out.
+         Flipping it re-says the answer already on screen, in place. -->
+    <div class="regrow">
+      <span class="reglab">Answers</span>
+      <div class="seg reg" id="askRegister" role="group" aria-label="How much detail answers should carry">
+        <button type="button" data-reg="plain" class="on" aria-pressed="true"
+          title="Everyday language, short, no jargon. Never leaves out a warning.">Plain</button>
+        <button type="button" data-reg="technical" aria-pressed="false"
+          title="Full engineering depth — exact names, figures and timestamps.">Technical</button>
+      </div>
+    </div>
     <form class="ask-form" id="askForm">
       <textarea id="askInput" rows="1" placeholder="Ask anything about your platform…" autocomplete="off"></textarea>
       <button class="btn btn-primary" type="submit" id="askSend">Ask</button>

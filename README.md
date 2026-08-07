@@ -139,8 +139,12 @@ violation of it.
 
 Secrets live in environment variables or in the server's own state directory.
 **No token, key or credential appears in `index.html`, in `app.js`, or in any
-other file served to the browser** — the server serves exactly two files and
-refuses everything else, and `npm run verify` asserts it.
+other file served to the browser** — the server serves exactly three files
+(`index.html`, `app.js` and `charts.js`) and refuses everything else, and
+`npm run verify` asserts it. `charts.js` is not in the page head: it is fetched
+the first time an answer actually asks for a chart, which most sessions never
+do. It is served from here rather than from a CDN because this page's
+Content-Security-Policy allows scripts from this origin and nowhere else.
 
 ---
 
@@ -185,6 +189,108 @@ middle is deliberately left plain: the conversation is what should be read,
 not the frame around it. The field you type into keeps its own background for
 the same reason, and the Ask button swaps its two colours over, since green on
 green is no button at all.
+
+### Plain or Technical
+
+Above the question box are two buttons: **Answers · Plain · Technical**. Plain
+is the default and the one most people should stay on.
+
+This is **not a tone or a personality setting**. It changes what an answer is
+allowed to leave out.
+
+- **Plain** — everyday language, two or three sentences unless more is genuinely
+  needed. The answer first, then the reason. What it means for the business
+  rather than what the machine did. Any technical term is explained in the same
+  breath.
+- **Technical** — full engineering depth. Exact route addresses, file paths,
+  identifiers, model ids, timestamps and figures as they appear in the data,
+  with assumptions stated and no distinction simplified away.
+
+**Plain is a shorter answer, never a less accurate one.** A caveat, a warning,
+a risk or a "someone needs to look at this" is carried in both registers; the
+plain version says it in plainer words and never drops it to be brief. If
+something is genuinely uncertain, both versions say so.
+
+Four things about how it behaves, each of which is a real bug in products built
+this way and is therefore pinned by `test/copilot.mjs`:
+
+1. **The choice sticks.** It is remembered in the browser and saved on the
+   server, so it follows you onto a new device. Whoever needs plain needs it
+   every time.
+2. **Flipping it re-says the answer already on screen**, in place, in the
+   register just chosen — it is not only a preference for the next question.
+   The existing message is *replaced*; a second bubble would read as a second
+   opinion, and it is one explanation wearing two registers. Once both versions
+   exist they are both kept, so flipping back and forth is instant and never
+   asks the model again. With nothing on screen, flipping only remembers.
+3. **The style rules are built when the question is asked**, never assembled
+   when the server starts. A frozen copy means flipping the toggle moves the
+   button and changes nothing else for the rest of the session.
+4. **Every path that asks the model anything carries it.** That is a shape
+   rather than a checklist: the server reaches Anthropic from exactly one place
+   and the browser posts to it from exactly one place, and both are asserted.
+   It includes the tool description sitting next to the question and the fixed
+   list of instructions the "Draft a fix prompt" path sends — a specific
+   instruction close to the question silently beats a general style rule in the
+   background briefing, so those enumerations respond to the register too.
+
+Alongside the register, every call in both registers carries the rules that
+make an answer trustworthy rather than merely fluent: use the figures and
+timestamps you were given and never invent or recompute one; say "I can't see
+that from here" rather than guess; distinguish "this is broken" from "this
+looks unusual"; and never call something fixed unless the data shows it
+recovered.
+
+### Charts inside an answer
+
+An answer can carry **one** chart. The model never supplies its numbers.
+
+It names a *kind* — nothing else, no numbers, no labels, no dates — and before
+the answer is drawn the page pulls that request out and fills it from the same
+live records the dashboard beside it is drawn from. So a chart in an answer is
+built by the same code, from the same readings, as the tab it came from: it
+cannot drift, it cannot go stale and it cannot be hallucinated. A model that
+invents a number gets to invent a *sentence*, which you can weigh. It never
+gets to invent a *chart*, which reads as a measurement.
+
+The kinds are drawn from what this dashboard actually measures — the cost of a
+day at the caps, cost and usage cap per AI feature, addresses open without a
+login, scanner grip, total size, known gaps, observed changes by day and by
+area, and the largest files. There are deliberately no charts for deploys,
+tests or response times: the Mapper does not measure those, and a chart kind
+for something unmeasured is an empty box waiting to happen.
+
+The one exception is a `quoted` chart, which draws two to twelve figures the
+model has already stated in the same reply, in one unit — and it is labelled on
+screen as **the assistant's own figures**, not as measured data.
+
+If a chart has no readings behind it yet, if the model names a kind that does
+not exist, if its request cannot be read, or if the drawing code cannot be
+fetched, you get a card saying which — never a blank box and never a broken
+panel. The drawing code (`charts.js`) is fetched the first time an answer
+actually asks for a chart; most sessions never do, so it is not in the page
+head. Every live chart is held in one registry and destroyed when the
+conversation is cleared or its card scrolls well out of view, because a chart
+holds a canvas, its listeners and its animation frame, and dropping the markup
+without destroying it leaks all three.
+
+### How an answer is rendered
+
+Answers render as markdown — headings, bold, lists, tables, quotes, code
+blocks — and **the model's output is treated as untrusted input.** Log lines and
+error messages from the monitored system flow through this renderer, so the
+escaping is the security boundary rather than a nicety. Every chunk that is not
+markdown is escaped, quotes and apostrophes included, because chunks end up
+inside attribute values. Link schemes are checked against an allow-list —
+`https://`, `http://`, `mailto:`, `#`, and a path on this origin — rather than a
+block-list: `javascript:` and `data:` are the two everybody remembers and the
+next one has not been invented yet. An address that fails the check still
+renders as the text it is; it simply stops being clickable.
+
+The model can also colour short spans — a status, a deadline, a figure, a risk
+statement, never ordinary prose: `{+good news}`, `{-bad news}`,
+`{!needs attention}`, `{~context}`. These are applied after the markdown has
+run, on text that is already escaped, and cannot match across a tag.
 
 The band has its own colour token rather than borrowing the accent green,
 because it carries body text and the accent does not have to. In the light
@@ -286,6 +392,13 @@ the research, and is told to add nothing. A finding that no longer exists is
 refused rather than drafted around. It goes through the same key, the same
 daily budget and the same rate limit — there is no second way to reach
 Anthropic.
+
+It also carries the Plain/Technical toggle, and this is the one place where
+what the register changes is narrow on purpose. The drafted prompt is read by a
+coding session, so its file paths and identifiers stay exact either way — plain
+English never means a vaguer path. What moves is whether the prompt opens with
+a sentence in ordinary English explaining what is wrong, for you reading it
+before you paste it.
 
 ## Reading it, and keeping your place
 
@@ -702,6 +815,14 @@ every pull request: Node 22, `npm install`, the Playwright Chromium the suite
 drives, then the suite itself. No live HaTi and no deployed Mapper is involved —
 the suite starts its own server on a spare port, and the panels that need a
 running HaTi assert the "cannot reach it" wording instead.
+
+`npm run verify` is four files. `test/verify.mjs` drives the dashboard,
+`test/chat-loop.mjs` drives the assistant's tool loop against a stand-in model,
+`test/auth.mjs` drives the login, and `test/copilot.mjs` drives the Copilot
+panel — the register read at call time rather than frozen, flipping restating
+the answer on screen in place, both versions cached, every prompt path carrying
+the register, the model unable to inject markup through a reply, and an unknown
+chart kind showing a card rather than breaking the panel.
 
 The token it hands the scan is the one GitHub issues for the run, read-only. It
 can read this repository but not HaTi's, so CI falls back to the stand-in in
