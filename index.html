@@ -425,10 +425,6 @@ a{color:inherit;}
 .typing .say{font-size:12.5px;color:var(--tx2);line-height:1.4;}
 @keyframes bob{0%,60%,100%{transform:translateY(0);opacity:.45;}30%{transform:translateY(-4px);opacity:1;}}
 @media(prefers-reduced-motion:reduce){.typing i{animation:none;opacity:.6;}}
-.sugg{flex:none;display:flex;flex-direction:column;gap:6px;padding:0 16px 10px;}
-.sugg button{font-family:var(--font);font-size:12.5px;color:var(--tx2);background:var(--tile);border:1px solid var(--line);border-radius:12px;
-  padding:7px 12px;cursor:pointer;text-align:left;}
-.sugg button:hover{color:var(--tx);border-color:var(--tx3);}
 .ask-foot{flex:none;padding:11px 14px;background:var(--askband);color:var(--onlav);}
 .ask-form{display:flex;gap:8px;align-items:flex-end;}
 /* The one thing here that stays as it was. A field you type into should look
@@ -974,7 +970,6 @@ a{color:inherit;}
   </div>
 
   <div class="ask-feed" id="askFeed"></div>
-  <div class="sugg" id="askSugg"></div>
 
   <div class="ask-foot" id="askFoot">
     <!-- How much machine detail an answer carries. Not a tone and not a

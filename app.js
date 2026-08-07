@@ -1790,14 +1790,6 @@
 
   var chat = { history: [], busy: false, brain: null, seq: 0 };
 
-  var SUGGESTIONS = [
-    'Is anything broken right now?',
-    'What changed since yesterday?',
-    'What is this costing me to run?',
-    'What works without logging in?',
-    'What would be risky to change?',
-  ];
-
   /* ==================================================================== */
   /*  PLAIN or TECHNICAL — the register                                    */
   /*                                                                       */
@@ -2511,7 +2503,6 @@
       var needsKey = !cfg.configured;
       $('askKey').hidden = !needsKey;
       $('askFeed').hidden = needsKey;
-      $('askSugg').hidden = needsKey;
       $('askFoot').hidden = needsKey;
 
       if (cfg.configured) {
@@ -2654,10 +2645,6 @@
        too, so this map cannot grow for the life of the tab. */
     Object.keys(chartSpecs).forEach(function (id) { if (!seenCharts[id]) delete chartSpecs[id]; });
     hydrateCharts();
-
-    $('askSugg').innerHTML = chat.history.length
-      ? ''
-      : SUGGESTIONS.map(function (s) { return '<button data-q="' + esc(s) + '">' + esc(s) + '</button>'; }).join('');
   }
 
   function nextMsgId() { chat.seq += 1; return 'm' + chat.seq; }
@@ -2872,11 +2859,6 @@
   $('askInput').addEventListener('input', function () {
     this.style.height = 'auto';
     this.style.height = Math.min(this.scrollHeight, 110) + 'px';
-  });
-
-  $('askSugg').addEventListener('click', function (e) {
-    var b = e.target.closest('button[data-q]');
-    if (b) sendQuestion(b.getAttribute('data-q'));
   });
 
   /* "See <panel>" jumps to that tab, so an answer always has somewhere to
