@@ -155,6 +155,16 @@ English rather than developer language. It is built the same way as HaTi's own
 Copilot: the model is given tools, fetches real data before answering, and
 finishes by delivering a grounded answer with links to the tab that shows it.
 
+**It says so while it works.** Fetching real data before answering means a
+question can sit for the better part of a minute, and the answer arrives in one
+piece — there is no progress to stream. So the panel shows a marker with words
+on it: *"Reading your question"*, then *"Looking things up on this page"*, and
+past ten and thirty seconds two more that say it is still going. The wording
+moves on with the wait rather than describing steps, because the page cannot
+see which lookup is running and will not pretend otherwise. It is announced to
+a screen reader as well as drawn, since an animation on its own tells nobody
+anything.
+
 **What it can and cannot see.** It reads the scan payload, the 72-hour change
 log and the live caps — exactly what the dashboard already displays. It has no
 tool that can reach HaTi's database, so no contract, counterparty, name, email
@@ -349,7 +359,12 @@ into the tile the number belongs to:
   start of the log — HaTi moved under the patterns."*
 - **The total size** says whether it grew or shrank over the log.
 - **The month** marks which days were scanned and which of those found
-  something.
+  something, and counts this month's changes underneath it.
+
+The calendar reads the change log over the archive's whole 90 days rather than
+the Changes panel's chosen range. Fed by that range it drew a month from three
+days of log while shading "scanned" days from ninety days of readings — one
+picture built from two windows, with the shorter one winning silently.
 
 Below three readings the spend line is not drawn at all and the tile says so,
 because a line through one point is a lie. Everything is plain SVG built in

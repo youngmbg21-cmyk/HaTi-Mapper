@@ -364,7 +364,14 @@
   /* ==================================================================== */
 
   var trends = null;   // the measurement series, once /api/trends answers
-  var watchData = null; // the watch log, once /api/changes answers
+  var watchData = null; // the watch log for the Changes panel's chosen range
+  /* The same log over the widest window the archive keeps. The tower's
+     calendar draws a whole month, so it cannot be fed by the Changes panel's
+     range: at that panel's default of 72 hours the month would be marked from
+     three days of log and counted from three days of events, while the days it
+     shades as "scanned" come from 90 days of readings. One picture, two
+     windows, and the shorter one silently wins. */
+  var towerWatch = null;
   var doorsResult = null; // the last live door check, if the owner ran one
 
   function pct(a, b) { return b ? Math.round((a / b) * 100) : 0; }
@@ -460,11 +467,17 @@
       var d = new Date(p.at);
       if (d.getFullYear() === year && d.getMonth() === month) looked[d.getDate()] = true;
     });
+    /* Only this month's rounds, because this month is what is drawn above the
+       number. A round carries its changes as `events` — counting `changes`
+       here read a field the API has never sent, so the figure was zero however
+       much had moved. */
     var changeCount = 0;
-    (watchData && watchData.rounds ? watchData.rounds : []).forEach(function (r) {
+    (towerWatch && towerWatch.rounds ? towerWatch.rounds : []).forEach(function (r) {
       var d = new Date(r.at);
-      changeCount += (r.changes || []).length;
-      if (d.getFullYear() === year && d.getMonth() === month) { found[d.getDate()] = true; looked[d.getDate()] = true; }
+      if (d.getFullYear() !== year || d.getMonth() !== month) return;
+      changeCount += (r.events || []).length;
+      found[d.getDate()] = true;
+      looked[d.getDate()] = true;
     });
 
     var first = new Date(year, month, 1).getDay();      // 0 = Sunday
@@ -491,8 +504,8 @@
       '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17L17 7M9 7h8v8"/></svg></button></div>' +
       '<div class="dows">' + dows + '</div>' +
       '<div class="days">' + cells + '</div>' +
-      '<div class="foot"><div><div class="v">' + (watchData ? changeCount : '—') + ' change' + (changeCount === 1 ? '' : 's') + '</div>' +
-      '<div class="l">noticed in the log · teal days moved</div></div>' +
+      '<div class="foot"><div><div class="v">' + (towerWatch ? changeCount : '—') + ' change' + (changeCount === 1 ? '' : 's') + '</div>' +
+      '<div class="l">noticed this month · teal days moved</div></div>' +
       '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" style="color:var(--tx3)"><path d="M3 3v18h18"/><path d="M7 14l4-4 3 3 5-6"/></svg></div>';
 
     /* The arrow in the corner is a panel switch like any pill, so it needs the
@@ -673,7 +686,7 @@
     var was = series.length > 1 ? series[0] : null;
     html += '<div class="subnum gripnote">' +
       (missed === 0
-        ? 'Everything it looks for, it found.'
+        ? 'Everything it looks for, it found. '
         : missed + ' of the ' + num(h.attempts) + ' things it looks for came back “not detected” or with a warning. ') +
       (was != null && was !== h.percent
         ? 'Was ' + was + '% at the start of the log — HaTi moved under the patterns.'
@@ -1297,6 +1310,10 @@
   /* How far back the panel is looking. 72 hours is the working set; the longer
      ranges are served from the archive. */
   var watchHours = 72;
+  /* Mirrors MAX_HISTORY_HOURS in lib/history.mjs. Asking for more than the
+     server keeps is not an error — it clamps — so this only ever needs to be
+     at least as large as the archive's retention. */
+  var MAX_WATCH_HOURS = 2160;
   var RANGE_LABEL = { 72: 'the last 72 hours', 168: 'the last 7 days', 720: 'the last 30 days', 2160: 'the last 90 days' };
   function rangeLabel() { return RANGE_LABEL[watchHours] || ('the last ' + watchHours + ' hours'); }
 
@@ -1305,8 +1322,6 @@
     var body = $('watchBody');
     if (!watch) { body.innerHTML = skeleton(4); return; }
     watchData = watch;
-    // The tower's calendar marks the days this log says something moved.
-    if (scan) renderTowerCal();
 
     if (!watch.watching) {
       lede.textContent = 'Every scan is compared with the one before, and anything that moved is kept here.';
@@ -1436,6 +1451,17 @@
     return apiGet('/api/changes?hours=' + watchHours).then(renderWatch, function () {
       $('watchBody').innerHTML = '<div class="note">The change log could not be read just now.</div>';
     });
+  }
+
+  /* The tower's own copy, over the archive's whole 90 days, so the calendar's
+     marks and its count describe the month it is drawing rather than whatever
+     range the Changes panel happens to be set to. A failure is not worth
+     reporting here — the calendar shows an em dash until it arrives. */
+  function loadTowerWatch() {
+    return apiGet('/api/changes?hours=' + MAX_WATCH_HOURS).then(function (w) {
+      towerWatch = w;
+      if (scan) renderTowerCal();
+    }, function () {});
   }
 
   $('watchRange').addEventListener('click', function (e) {
@@ -1613,6 +1639,7 @@
         // A rescan may have noticed something new, so refresh both the
         // summary and the log below it.
         loadWatch();
+        loadTowerWatch();
         loadDigest();
         loadWatchRules();
         loadTrends();
@@ -1783,6 +1810,50 @@
     }, function () { /* the config route is optional to the rest of the page */ });
   }
 
+  /* Saying so while it works.
+
+     The assistant answers in a single request: it decides what it needs, reads
+     those parts of the dashboard's own data, and comes back once with the
+     finished answer. Nothing reports progress from inside that, so this page
+     cannot honestly narrate the steps — it does not know which one is running.
+     What it can say truthfully is that the assistant is working, that looking
+     things up is part of answering, and that the wait is still going. The
+     wording moves on as the wait grows so a long answer never looks stalled,
+     and none of it claims to know more than it does. */
+  var THINKING = [
+    [0, 'Reading your question'],
+    [3500, 'Looking things up on this page'],
+    [14000, 'Still going — a wide question takes a few more looks'],
+    [35000, 'Still going. A long answer can take about a minute'],
+  ];
+  var thinkingAt = 0, thinkingTimer = null;
+
+  function thinkingLabel() {
+    if (!thinkingAt) return THINKING[0][1];
+    var ms = Date.now() - thinkingAt;
+    var out = THINKING[0][1];
+    for (var i = 0; i < THINKING.length; i++) if (ms >= THINKING[i][0]) out = THINKING[i][1];
+    return out;
+  }
+
+  /* Updated in place rather than by re-rendering the feed: a full re-render
+     every second would throw away the reader's scroll position while they are
+     reading back over the answer above. */
+  function startThinking() {
+    thinkingAt = Date.now();
+    clearInterval(thinkingTimer);
+    thinkingTimer = setInterval(function () {
+      var el = document.querySelector('#askFeed .typing .say');
+      if (el) el.textContent = thinkingLabel();
+    }, 1000);
+  }
+
+  function stopThinking() {
+    clearInterval(thinkingTimer);
+    thinkingTimer = null;
+    thinkingAt = 0;
+  }
+
   function renderFeed(typing) {
     var feed = $('askFeed');
     var html = '';
@@ -1814,7 +1885,13 @@
       html += '</div>';
     });
 
-    if (typing) html += '<div class="typing"><i></i><i></i><i></i></div>';
+    /* Announced to a screen reader as well as drawn, since "it is working" is
+       exactly the kind of thing an animation alone never tells anyone. */
+    if (typing) {
+      html += '<div class="typing" role="status" aria-live="polite">' +
+        '<span class="dots"><i></i><i></i><i></i></span>' +
+        '<span class="say">' + esc(thinkingLabel()) + '</span></div>';
+    }
     feed.innerHTML = html;
     feed.scrollTop = feed.scrollHeight;
 
@@ -1827,6 +1904,7 @@
     if (chat.busy || !q.trim()) return;
     chat.busy = true;
     chat.history.push({ role: 'user', content: q.trim() });
+    startThinking();
     renderFeed(true);
     $('askSend').disabled = true;
     $('askInput').value = '';
@@ -1861,6 +1939,7 @@
       .then(function () {
         chat.busy = false;
         $('askSend').disabled = false;
+        stopThinking();
         renderFeed(false);
       });
   }
@@ -1885,6 +1964,7 @@
     askOpen(true);
     chat.busy = true;
     chat.history.push({ role: 'user', content: 'Draft a fix prompt for this.' });
+    startThinking();
     renderFeed(true);
     $('askSend').disabled = true;
 
@@ -1900,6 +1980,7 @@
       .then(function () {
         chat.busy = false;
         $('askSend').disabled = false;
+        stopThinking();
         renderFeed(false);
       });
   }
@@ -2224,6 +2305,7 @@
         showApp(authInfo);
         load(false);
         loadWatch();
+        loadTowerWatch();
         loadDigest();
         loadWatchRules();
         loadTrends();

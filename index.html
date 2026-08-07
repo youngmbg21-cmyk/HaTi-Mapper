@@ -357,14 +357,36 @@ a{color:inherit;}
 .ask-x.close{font-size:19px;padding:2px 8px;}
 .ask-feed{flex:1;overflow-y:auto;padding:14px 16px;display:flex;flex-direction:column;gap:12px;}
 .msg{max-width:92%;font-size:14px;line-height:1.6;}
-.msg.you{align-self:flex-end;background:var(--lav);color:var(--onlav);border-radius:14px 14px 4px 14px;padding:9px 13px;}
+/* `me`, not `you`: the class is written from the sender's side, which is what
+   app.js emits. Styling the other spelling leaves your own messages as bare
+   text against the background — the panel looks broken and nothing says why. */
+.msg.me{align-self:flex-end;background:var(--lav);color:var(--onlav);border-radius:14px 14px 4px 14px;padding:9px 13px;}
 .msg.bot{align-self:flex-start;color:var(--tx2);}
-.msg.bot b{color:var(--tx);font-weight:600;}
-.msg.bot code{font-family:var(--mono);font-size:12.5px;background:var(--tile);border-radius:5px;padding:1px 5px;}
-.msg.err{color:var(--badtx);}
+.msg.bot .body{background:var(--tile);border-radius:14px 14px 14px 4px;padding:10px 13px;}
+.msg.bot p{margin:0 0 8px;} .msg.bot p:last-child{margin:0;}
+.msg.bot ul,.msg.bot ol{margin:6px 0;padding-left:19px;}
+.msg.bot li{margin:3px 0;}
+.msg.bot b,.msg.bot strong{color:var(--tx);font-weight:600;}
+.msg.bot code{font-family:var(--mono);font-size:12.5px;background:var(--tile2);border-radius:5px;padding:1px 5px;}
+.msg.err .body{background:var(--bad);color:var(--badtx);}
+/* The one thing the assistant is asked to flag rather than merely mention. */
+.watch{margin-top:8px;background:var(--gold);color:var(--ongold);border-radius:10px;padding:8px 11px;font-size:12.5px;line-height:1.5;}
 .srcs{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;}
 .srcs button{font-family:var(--font);font-size:11.5px;font-weight:600;color:var(--onlav);background:var(--lav);border:0;border-radius:999px;
   padding:3px 11px;cursor:pointer;}
+/* What the wait looks like. The assistant answers in one request and looks
+   things up as it goes, so a question can sit for the better part of a minute
+   with nothing to show for it. An unstyled marker — which is what this was —
+   leaves that time indistinguishable from the panel having died. */
+.typing{align-self:flex-start;display:flex;align-items:center;gap:10px;max-width:92%;
+  background:var(--tile);border-radius:14px 14px 14px 4px;padding:10px 13px;}
+.typing .dots{flex:none;display:flex;gap:4px;}
+.typing i{width:6px;height:6px;border-radius:50%;background:var(--lav);animation:bob 1.2s infinite;}
+.typing i:nth-child(2){animation-delay:.15s;}
+.typing i:nth-child(3){animation-delay:.3s;}
+.typing .say{font-size:12.5px;color:var(--tx2);line-height:1.4;}
+@keyframes bob{0%,60%,100%{transform:translateY(0);opacity:.45;}30%{transform:translateY(-4px);opacity:1;}}
+@media(prefers-reduced-motion:reduce){.typing i{animation:none;opacity:.6;}}
 .sugg{flex:none;display:flex;flex-direction:column;gap:6px;padding:0 16px 10px;}
 .sugg button{font-family:var(--font);font-size:12.5px;color:var(--tx2);background:var(--tile);border:1px solid var(--line);border-radius:12px;
   padding:7px 12px;cursor:pointer;text-align:left;}

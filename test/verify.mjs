@@ -379,6 +379,77 @@ try {
   await page.waitForTimeout(200);
   check('Escape again closes it', await page.$eval('#ask', e => e.hidden));
 
+  /* ---- saying so while it works ----
+     A question can sit for the better part of a minute while the assistant
+     looks things up, and for a while this page had a marker for that with no
+     styling behind it — three empty elements, drawn as nothing. The wait was
+     indistinguishable from the panel having died. So the marker is asserted
+     the way the reader meets it: is something actually painted, does it say
+     what is happening, and does it go when the answer lands.
+
+     The answer is intercepted and held open, because what is being checked is
+     the wait itself. The key is set only so the panel offers its form rather
+     than its key box; the request never reaches Anthropic. */
+  console.log('\nSaying so while it works');
+  await page.evaluate(() => fetch('/api/ai/config', {
+    method: 'PUT', credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ key: 'sk-ant-' + 'z'.repeat(40) }),
+  }));
+  await page.route('**/api/chat', async route => {
+    await new Promise(r => setTimeout(r, 6000));
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ answer: 'Done.', sources: [] }) });
+  });
+  await page.click('#askLaunch');
+  await page.waitForSelector('#askInput', { state: 'visible', timeout: 15000 });
+  await page.fill('#askInput', 'What changed lately?');
+  await page.click('#askSend');
+  await page.waitForTimeout(600);
+
+  const waiting = await page.evaluate(() => {
+    const t = document.querySelector('#askFeed .typing');
+    if (!t) return { there: false };
+    const r = t.getBoundingClientRect(), dot = t.querySelector('i').getBoundingClientRect();
+    const mine = document.querySelector('#askFeed .msg.me');
+    return {
+      there: true, w: Math.round(r.width), h: Math.round(r.height), dot: Math.round(dot.width),
+      say: (t.querySelector('.say') || {}).textContent || '',
+      live: t.getAttribute('aria-live'),
+      mine: mine ? Math.round(mine.getBoundingClientRect().width) : 0,
+    };
+  });
+  check('Asking a question puts something on screen straight away', waiting.there);
+  check('And it is drawn rather than being an element with no styling',
+    waiting.there && waiting.w > 60 && waiting.h > 20 && waiting.dot >= 4,
+    `${waiting.w}x${waiting.h}, dot ${waiting.dot}px`);
+  check('It says what is happening, not only three dots',
+    /Reading your question/.test(waiting.say), waiting.say);
+  check('A screen reader is told as well as shown', waiting.live === 'polite', String(waiting.live));
+  check('Your own question is drawn as a message of yours', waiting.mine > 40, `${waiting.mine}px wide`);
+
+  await page.waitForTimeout(4200);
+  const stillGoing = await page.evaluate(() => (document.querySelector('#askFeed .typing .say') || {}).textContent || '');
+  check('The wording moves on, so a long wait never reads as stalled',
+    /Looking things up/.test(stillGoing), stillGoing);
+
+  await page.waitForSelector('#askFeed .msg.bot .body', { timeout: 20000 });
+  const answered = await page.evaluate(() => {
+    const body = document.querySelector('#askFeed .msg.bot .body');
+    return {
+      typing: document.querySelectorAll('#askFeed .typing').length,
+      bg: getComputedStyle(body).backgroundColor,
+    };
+  });
+  check('The marker goes when the answer lands', answered.typing === 0, `${answered.typing} left`);
+  check("And the answer is drawn in the assistant's own bubble",
+    answered.bg !== 'rgba(0, 0, 0, 0)' && answered.bg !== 'transparent', answered.bg);
+
+  await page.unroute('**/api/chat');
+  await page.evaluate(() => document.getElementById('askClear').click());
+  await page.waitForTimeout(200);
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(200);
+
   /* ---- 3. what breaks what ---- */
   console.log('\n3. What breaks what');
   await page.click('[data-p="blast"]');
@@ -916,9 +987,24 @@ try {
     files: 30, bytes: 400000, largest: 60000, openRoutes: 8, hashRoutes: 3,
     gaps: 12, tables: 10, features: 9, health: 100, dailyCostUsd: 10, ...over,
   });
+  /* Rounds inside the month the calendar draws, plus one well outside it. The
+     tile's figure counts events, and it counts only this month's — so a seed
+     with both tells a correct count apart from "everything in the log" and
+     from the zero a wrong field name produces. */
+  const monthDay = d => new Date(new Date().getFullYear(), new Date().getMonth(), d, 9, 0, 0).toISOString();
+  const someEvents = n => Array.from({ length: n }, (_, i) => ({ kind: 'test', text: `something moved ${i}` }));
+  const today = new Date().getDate();
+  const MONTH_ROUNDS = [
+    { at: monthDay(1), commit: 'aaa1111', events: someEvents(4) },
+    { at: monthDay(Math.max(1, Math.min(today - 1, 27))), commit: 'bbb2222', events: someEvents(5) },
+    { at: monthDay(today), commit: 'ccc3333', events: someEvents(3) },
+  ];
+  const MONTH_EVENTS = 12;
+  const OUTSIDE_ROUND = { at: new Date(Date.now() - 40 * 864e5).toISOString(), commit: 'ddd4444', events: someEvents(7) };
+
   fs.writeFileSync(path.join(TRENDS_DATA, 'history-archive.json'), JSON.stringify({
     v: 1,
-    rounds: [],
+    rounds: [OUTSIDE_ROUND, ...MONTH_ROUNDS],
     points: [
       /* The oldest reading's grip is deliberately below what the scan finds
          now, so the tile has a real change to report rather than falling
@@ -979,6 +1065,20 @@ try {
     /(grew|shrank) [\d.]+ ?[KM]B over the log/.test(drawn.weight), drawn.weight.slice(0, 120));
   check('The calendar marks the days the archive was scanned', drawn.scanned >= 1,
     `${drawn.scanned} days marked`);
+
+  /* The figure under the month. It reads the rounds' `events`, and only those
+     dated inside the month above it — the two ways this has been wrong. */
+  const monthCount = await page2.evaluate(() => ({
+    count: ((document.querySelector('#towerCal .foot .v') || {}).textContent || '').trim(),
+    label: ((document.querySelector('#towerCal .foot .l') || {}).textContent || '').trim(),
+    moved: document.querySelectorAll('#towerCal .d.hot').length,
+  }));
+  check(`The calendar counts this month's changes, not zero`,
+    monthCount.count === `${MONTH_EVENTS} changes`, `tile says "${monthCount.count}"`);
+  check('And says the figure is this month, matching the month it draws',
+    /this month/.test(monthCount.label), monthCount.label);
+  check('A round from outside the month is counted on neither',
+    monthCount.moved === MONTH_ROUNDS.length, `${monthCount.moved} days marked as moved`);
 
   /* ---- the tower is one screen, and stays one screen ----
      The whole point of the control tower is that it is taken in at a glance,
