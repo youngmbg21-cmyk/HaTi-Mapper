@@ -219,47 +219,51 @@ match — with the card padding and table rows raised alongside it, so the effec
 is more room rather than more crowding. Nothing moved and nothing changed
 meaning.
 
-**Switching tabs does not move the page.** The tab row is pinned to the top of
-the window, and every panel begins on the same line directly beneath it, so
-holding the scroll position exactly where it is puts the new panel's heading
-where the old one's was. Your eye stays level and the tabs stay under the
-cursor.
+**Switching tabs does not move the page.** On any screen at least 900px wide
+and 620px tall the app is a **fixed frame**: the tab row is a fixed part of the
+top of the window, the scan stamp a fixed part of the bottom, and whichever
+panel is open scrolls in the gap between them. The document itself never
+scrolls at all.
 
-That is the whole rule, and it is deliberately dumber than what came before it.
-Sending you to the top of the new panel moves you when you were reading further
-down; restoring a position the tab remembers from last time moves you when you
-were not. Both were tried, and both are jumps — the only behaviour that never
-surprises is not moving.
+That is a stronger guarantee than the one it replaces, and a simpler one.
+Earlier versions let the whole page scroll and put the position back after a
+tab switch, which works but is a correction — it can only ever be as good as
+its arithmetic. With the row and the stamp outside the box that moves, there is
+nothing to correct. Each panel is its own scrolling box, so it also keeps its
+own place: leave a long table half-read, come back, and it is where you left
+it, without any code remembering a number.
 
-Three things make it possible:
+Below that size the frame would squeeze the tiles past reading, so the page
+goes back to scrolling the ordinary way, with the tab row pinned as before.
 
-- **Every panel reserves a screenful** (`min-height`). A panel too short to
-  fill the window would shrink the document when it opened, and the browser
-  would drag the scroll position — and the reader — up with it.
-- **Scroll anchoring is off** on the page body. Chrome shifts the scroll
-  position by itself when content above the viewport changes height, which is
-  exactly what swapping panels does. That guesswork suits a feed and not a page
-  of independent panels.
-- **The tabs wrap rather than scroll sideways.** A scrolling strip slides the
-  whole row when you click a tab near its end — the tabs move out from under
-  the cursor, which is the same complaint on the other axis. Wrapped, every tab
-  is always visible and always in the same place. Settings is the one screen
-  not in the row: it is the gear in the top right, beside the theme switch and
-  Rescan, because it is a place you go rather than a panel you read. On a phone
-  the rows would eat the screen, so below 700px the bar gives up its pin and
-  scrolls away with everything else.
+**The control tower does not scroll at all.** The other panels are lists and
+tables that can honestly run past a screen; the tower is the morning glance,
+and a glance that needs scrolling is not one. So inside the frame it divides
+the gap into seven tiles across two rows — the top row taller, because it
+carries the two charts, the month and the door history — and each tile is a
+fixed box that fits its contents. Where a tile holds a list of unknown length,
+the list scrolls inside the tile rather than pushing the page taller, which
+keeps its neighbours where they are. The suite measures this at 1920×1080,
+1440×900 and 1280×720: nothing may scroll, no tile may be cut off, and all
+seven must still be drawn — fitting by rendering less is not fitting.
 
-The one case that cannot be honoured is scrolling deeper than a panel reaches —
-from the bottom of the long file list to a short panel, say. There is no
-content down there to hold, so you land at the end of the new panel. The suite
-asserts that too, so it can never quietly become "back to the top".
+Two things still shape the row itself:
 
-One trap worth writing down, because it cost a debugging round: while a sticky
-element is pinned, **both** its `getBoundingClientRect()` and its `offsetTop`
-report where it is being painted, which is the top of the window. Any
-measurement taken off the tab row therefore hands back wherever you already
-were. Measure from a panel instead — an ordinary element, honest at any scroll
-position.
+- **The tabs stay on one line.** They sit above a screen measured to the pixel,
+  so a second row of tabs is a row taken off every tile beneath it. As the
+  window narrows they give up their padding, then their size, and below 1340px
+  the signed-in email gives way before they do — the account is one click away
+  under the gear. They never scroll sideways: a sliding strip moves a tab out
+  from under the cursor as you click it.
+- **Settings is not in the row.** It is the gear in the top right, beside the
+  theme switch and Rescan, because it is a place you go rather than a panel you
+  read.
+
+An alarm is the one thing allowed above the tabs. A tripwire that has gone off
+puts its banner at the very top of the frame and pushes the row down, which is
+where an alarm belongs. What may not happen is the row sliding away as you
+read, and that is what the suite asserts — not a CSS keyword, but the row's
+position before and after reading to the end of the longest panel.
 
 ## "Getting bulky" says what each file is
 
@@ -328,21 +332,29 @@ again without knocking a second time.
 
 ## Which way things are moving
 
-A strip of six small charts on the overview, drawn from the archive's
-measurements: everything all together, the biggest single file, doors that need
-no login, things not finished, how much the scanner can read, and a day at the
-caps in money.
+The archive's measurements have no card of their own. There used to be a strip
+of six sparklines under the control tower, and it was the reason the tower
+needed scrolling — six charts of the second-most-interesting version of numbers
+the tiles above already showed, sitting below the fold where the morning glance
+never reached them.
 
-Each is a sparkline with the value it stands at now and one sentence saying
-which way it has gone — *"33% bigger than 90 days ago"*. The shape is the
-point; there are no axes, because "growing every week for a month" is the
-insight and the numbers on the side are not. Movement in the unwelcome
-direction is coloured as such rather than merely shown.
+So the series now feeds the tower's tiles instead, each one putting the history
+into the tile the number belongs to:
 
-Below three readings the strip says **"not enough history yet"** and draws
-nothing, because a line through one point is a lie. The charts are plain SVG
-built in `app.js` — no chart library, because Express is the only runtime
-dependency and it is going to stay that way.
+- **Today's burn** draws the spend line across every reading, with what it
+  stands at now on the chip.
+- **Open doors** draws the last seven readings as bars, so a door that appeared
+  is a step rather than a sentence.
+- **Scanner grip** says what it was at the start of the log — *"Was 96% at the
+  start of the log — HaTi moved under the patterns."*
+- **The total size** says whether it grew or shrank over the log.
+- **The month** marks which days were scanned and which of those found
+  something.
+
+Below three readings the spend line is not drawn at all and the tile says so,
+because a line through one point is a lie. Everything is plain SVG built in
+`app.js` — no chart library, because Express is the only runtime dependency and
+it is going to stay that way. `/api/trends` is unchanged; only what reads it is.
 
 ## Severity on "Not finished"
 

@@ -67,7 +67,11 @@ a{color:inherit;}
   border:1px solid var(--line);border-radius:22px;padding:4px;}
 .pills button{font-family:var(--font);font-size:13px;font-weight:600;color:var(--tx2);background:none;border:0;border-radius:999px;
   padding:7px 13px;cursor:pointer;white-space:nowrap;transition:background .15s,color .15s;}
-@media(max-width:1360px){.pills button{padding:7px 10px;font-size:12.5px;}}
+/* The tab row must stay on one line: it sits above a screen that is measured
+   to the pixel, so a second row of tabs is a row taken off every tile below
+   it. The tabs give up their padding first, then their size. */
+@media(max-width:1600px){.pills button{padding:7px 10px;font-size:12.5px;}}
+@media(max-width:1180px){.pills button{padding:6px 8px;font-size:11.5px;}}
 .pills button:hover{color:var(--tx);}
 .pills button[aria-selected="true"]{background:var(--lav);color:var(--onlav);}
 .tops{display:flex;align-items:center;gap:8px;flex:none;}
@@ -83,7 +87,9 @@ a{color:inherit;}
   display:flex;align-items:center;justify-content:center;}
 .who b{display:block;font-size:12.5px;font-weight:600;line-height:1.2;max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .who span{display:block;font-size:10.5px;color:var(--tx3);line-height:1.2;}
-@media(max-width:900px){.who div{display:none;}.who{padding:4px;}}
+/* Below this the email is what the tab row is short of, and the tabs are the
+   more useful of the two — the account is one click away under the gear. */
+@media(max-width:1340px){.who div{display:none;}.who{padding:4px;}}
 /* On a phone the wrapped pill rows would eat the screen, so the bar gives up
    its pin and scrolls away with everything else. */
 @media(max-width:820px){.topbar{flex-wrap:wrap;}.pills{order:3;width:100%;}}
@@ -115,11 +121,16 @@ a{color:inherit;}
 /* -------------------------------------------------------------- primitives */
 .bignum{font-size:30px;font-weight:700;letter-spacing:-0.03em;line-height:1.05;}
 .subnum{font-size:11.5px;color:var(--tx3);margin-top:3px;}
+.gripnote{margin-top:8px;}
 .delta{display:inline-flex;align-items:center;gap:3px;font-size:11px;font-weight:700;border-radius:999px;padding:2px 8px;vertical-align:6px;margin-left:7px;}
 .delta.good{background:var(--good);color:var(--goodtx);}
 .delta.bad{background:var(--bad);color:var(--badtx);}
 .delta.flat{background:var(--tile2);color:var(--tx2);}
 .duo{display:flex;gap:26px;margin-bottom:6px;flex-wrap:wrap;}
+/* The two figures share the width evenly. Left to size themselves they take
+   as much as their longest sentence wants and drop one below the other, which
+   costs the tile a third of its height to say the same thing. */
+.duo > div{flex:1 1 0;min-width:132px;}
 .badge{display:inline-block;font-size:9.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;border-radius:5px;padding:2px 7px;background:var(--tile2);color:var(--tx2);}
 .badge.lav{background:var(--lav);color:var(--onlav);}
 .badge.gold{background:var(--gold);color:var(--ongold);}
@@ -154,13 +165,6 @@ a{color:inherit;}
 .bar.au{background:var(--gold);}
 .bval{position:absolute;top:-22px;left:50%;transform:translateX(-50%);font-size:10.5px;font-weight:700;background:var(--tile2);border:1px solid var(--line);border-radius:999px;padding:1px 7px;}
 .blabels{display:grid;grid-template-columns:repeat(7,1fr);gap:7px;margin-top:6px;text-align:center;font-size:10px;color:var(--tx3);font-family:var(--mono);}
-.spark-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px;}
-.spark{background:var(--tile);border-radius:12px;padding:10px 12px;min-width:0;}
-.spark .t{font-size:10px;color:var(--tx3);line-height:1.3;}
-.spark .v{font-size:17px;font-weight:700;letter-spacing:-0.02em;margin-top:1px;}
-.spark .d{font-size:10.5px;color:var(--tx3);line-height:1.4;}
-.spark.up .v{color:var(--gold);}
-.spark.down .v{color:var(--lav);}
 .bubbles{position:relative;height:196px;margin-top:4px;}
 .bub{position:absolute;border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;}
 .bub b{font-size:inherit;font-weight:700;letter-spacing:-0.02em;}
@@ -171,6 +175,10 @@ a{color:inherit;}
 .cal .head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
 .cal .head .mon{font-size:12.5px;font-weight:600;background:var(--tile);border-radius:999px;padding:6px 13px;}
 .cal .days{display:grid;grid-template-columns:repeat(7,1fr);gap:5px;flex:1;align-content:start;}
+/* The initials sit in their own grid rather than in the first row of the day
+   grid, so that when the day rows are told to share the height going spare
+   the letters are not handed a whole day's worth of it. */
+.cal .dows{display:grid;grid-template-columns:repeat(7,1fr);gap:5px;margin-bottom:5px;flex:none;}
 .cal .dow{font-size:10px;font-family:var(--mono);color:var(--tx3);text-align:center;letter-spacing:.06em;text-transform:uppercase;}
 .cal .d{aspect-ratio:1/.92;display:flex;align-items:center;justify-content:center;font-size:11.5px;font-weight:500;color:var(--tx2);border-radius:10px;background:var(--tile);}
 .cal .d.blank{background:transparent;}
@@ -394,6 +402,87 @@ a{color:inherit;}
 .toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);z-index:60;background:var(--tx);color:var(--sh);font-size:13.5px;
   font-weight:600;padding:9px 17px;border-radius:999px;box-shadow:var(--shadow);opacity:0;transition:opacity .18s;pointer-events:none;}
 .toast.on{opacity:1;}
+
+/* ------------------------------------------------------------ locked frame
+   The control tower is a wall display: everything it has to say is meant to
+   be taken in at once, so it may not ask to be scrolled. On a screen with
+   the room for it the whole app therefore becomes a fixed frame — tab row
+   pinned to the top, stamp pinned to the bottom, one panel filling the gap
+   between them. The seven list-and-table panels scroll inside that gap; the
+   tower divides it into seven tiles and never overflows at all.
+
+   A tile with more to say than it has room for scrolls on its own, which is
+   the one honest way to hold a list of unknown length inside a fixed box —
+   it keeps its neighbours where they are instead of pushing the page taller.
+
+   Below this size the tiles would be squeezed past reading, so the page goes
+   back to scrolling the ordinary way. */
+@media(min-width:900px) and (min-height:620px){
+  .shell{height:100vh;height:100dvh;padding:14px 22px 10px;display:flex;flex-direction:column;overflow:hidden;}
+  .shell .inner{width:100%;flex:1;min-height:0;display:flex;flex-direction:column;}
+  .topbar{position:static;flex:none;padding:6px 8px 12px;}
+  .panel{min-height:0;flex:1;overflow:auto;padding-right:3px;}
+  /* Pinned to the floor, the footer's right-hand end now sits exactly where
+     the assistant's button floats, so it gives up that much width. It may not
+     answer by wrapping: a second line of footer is a line taken off every tile
+     above it. On a screen too narrow to hold all three the last of them — the
+     one sentence here that is the same every day — gives way instead. */
+  .footer{flex:none;margin-top:9px;padding-right:168px;flex-wrap:nowrap;}
+  .footer > span{min-width:0;}
+  .footer > span:last-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .tfill{flex:1;min-height:0;overflow-y:auto;}
+
+  /* The top row carries the two charts, the month and the door history; the
+     bottom row carries four shorter tiles. Splitting the height evenly starves
+     the first and leaves the second with room it does not use, so the split
+     follows the content rather than the arithmetic. */
+  .panel[data-panel="tower"]{overflow:hidden;padding-right:0;
+    display:grid;grid-template-rows:minmax(0,1.07fr) minmax(0,0.93fr);gap:12px;}
+  .panel[data-panel="tower"] .grid1,
+  .panel[data-panel="tower"] .grid2{margin:0;min-height:0;}
+  .panel[data-panel="tower"] .card,
+  .panel[data-panel="tower"] .cal{margin:0;min-height:0;overflow:hidden;display:flex;flex-direction:column;}
+  .panel[data-panel="tower"] .chead,
+  .panel[data-panel="tower"] .statehead,
+  .panel[data-panel="tower"] .duo,
+  .panel[data-panel="tower"] .minis,
+  .panel[data-panel="tower"] .subnum{flex:none;}
+  /* A note is the stand-in a tile shows before its chart has any readings,
+     so it takes the room the chart would have had rather than floating. */
+  .panel[data-panel="tower"] .note{flex:0 1 auto;overflow-y:auto;min-height:0;}
+
+  /* The day grid takes whatever height the head and foot leave it, and the
+     cells give up being square rather than the month giving up a week. */
+  .panel[data-panel="tower"] .cal .days{flex:1;min-height:0;grid-auto-rows:minmax(0,1fr);align-content:stretch;}
+  .panel[data-panel="tower"] .cal .d{aspect-ratio:auto;min-height:0;font-size:11px;}
+  .panel[data-panel="tower"] .cal .head,
+  .panel[data-panel="tower"] .cal .foot{flex:none;}
+  .panel[data-panel="tower"] .cal .foot{padding:8px 13px;margin-top:9px;}
+
+  /* The spend line stretches to the floor of its tile. */
+  .panel[data-panel="tower"] .chartwrap{flex:1;min-height:0;display:flex;flex-direction:column;margin-top:6px;}
+  .panel[data-panel="tower"] .chartwrap svg{flex:1;min-height:54px;height:auto;}
+  .panel[data-panel="tower"] .axis{flex:none;}
+
+  /* The door bars stand on the floor of theirs. The count above a bar is
+     drawn outside it, so the row keeps that much clear overhead or the
+     numbers land on top of whatever the tile said last. */
+  .panel[data-panel="tower"] .bars{margin-top:auto;flex:0 1 auto;height:auto;
+    padding-top:22px;min-height:70px;max-height:132px;}
+  .panel[data-panel="tower"] .blabels{flex:none;}
+
+  /* The grip circles and the dot map take what is left over. The circles keep
+     their size and spread out into it, rather than capping themselves and
+     leaving the room below the sentence as a hole in the tile. */
+  /* The circles are placed as percentages of this box, so letting it grow
+     without limit walks them apart until they read as three unrelated things
+     rather than one picture. It takes the room going spare up to a point; past
+     that the sentence below takes the rest and sits on the tile's floor. */
+  .panel[data-panel="tower"] .bubbles{flex:1;min-height:138px;max-height:250px;margin-top:0;}
+  .panel[data-panel="tower"] .gripnote{margin-top:auto;padding-top:10px;}
+  .panel[data-panel="tower"] #towerMap svg{flex:1;min-height:0;height:auto;}
+}
+
 </style>
 </head>
 <body>
@@ -477,7 +566,7 @@ a{color:inherit;}
     <div class="grid2">
       <div class="card">
         <div class="chead"><h3>Needs attention</h3><div class="seg"><button class="on" type="button">Worst first</button></div></div>
-        <div id="towerAttention"></div>
+        <div class="tfill" id="towerAttention"></div>
       </div>
       <!-- How much of what the scanner looks for it could actually read. A
            falling number is the early warning that HaTi moved and the panels
@@ -486,10 +575,6 @@ a{color:inherit;}
       <div class="card" id="towerMap"></div>
       <div class="card" id="towerWeight"></div>
     </div>
-
-    <!-- Which way things are moving. Drawn from the archive's measurements, so
-         it needs a few scans' worth of history before it says anything. -->
-    <div class="card" id="trends" hidden></div>
   </section>
 
   <!-- ================================================================ SCREENS -->

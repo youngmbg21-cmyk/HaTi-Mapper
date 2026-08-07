@@ -472,8 +472,9 @@
     var days = new Date(year, month + 1, 0).getDate();
     var today = now.getDate();
 
-    var cells = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+    var dows = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
       .map(function (d) { return '<div class="dow">' + d[0] + '</div>'; }).join('');
+    var cells = '';
     for (var i = 0; i < lead; i++) cells += '<div class="d blank"></div>';
     for (var day = 1; day <= days; day++) {
       var cls = 'd';
@@ -488,6 +489,7 @@
       '<div class="head"><span class="mon">' + esc(monthName) + '</span>' +
       '<button class="iconbtn" type="button" data-p="changes" style="width:30px;height:30px" title="Open the change log" aria-label="Open the change log">' +
       '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17L17 7M9 7h8v8"/></svg></button></div>' +
+      '<div class="dows">' + dows + '</div>' +
       '<div class="days">' + cells + '</div>' +
       '<div class="foot"><div><div class="v">' + (watchData ? changeCount : '—') + ' change' + (changeCount === 1 ? '' : 's') + '</div>' +
       '<div class="l">noticed in the log · teal days moved</div></div>' +
@@ -523,8 +525,10 @@
         '<div><b>' + gave + '</b><span>gave data</span></div></div>' +
         '</div>';
     } else {
-      html += '<div class="note">Nobody has knocked on these doors yet. The Doors screen has a button that sends one plain request to each — ' +
-        'it only ever runs when you press it.</div>';
+      /* Short, because this tile is a fixed height and the sentence is the
+         part of it that would be cut. What the button actually does is said
+         in full on the Doors screen, next to the button itself. */
+      html += '<div class="note">Nobody has knocked on these doors yet — the Doors screen has a button that asks.</div>';
     }
 
     /* Seven readings of how many routes were open, so a door that appeared is
@@ -652,19 +656,22 @@
 
     /* Three circles, sized by what they stand for: what was read, what was
        not, and the warnings raised along the way. */
+    /* Sized to clear the floor of the shortest tile the frame will give this
+       card, so no circle is ever cut off by the edge of its own box. */
+    var miss = 66 + Math.min(34, Math.round(missPct * 1.8));
     html += '<div class="bubbles">' +
-      '<div class="bub" style="left:2%;top:24%;width:118px;height:118px;background:var(--lav);color:var(--onlav);font-size:26px">' +
+      '<div class="bub" style="left:2%;top:22%;width:104px;height:104px;background:var(--lav);color:var(--onlav);font-size:23px">' +
       '<b>' + h.percent + '%</b><span>facts resolved<br>' + h.resolved + ' of ' + h.attempts + '</span></div>' +
-      '<div class="bub" style="right:6%;bottom:2%;width:' + (74 + Math.min(40, missPct * 2)) + 'px;height:' + (74 + Math.min(40, missPct * 2)) + 'px;' +
-      'background:var(--gold);color:var(--ongold);font-size:18px"><b>' + missPct + '%</b><span>not detected</span></div>' +
-      (h.warnings ? '<div class="bub" style="right:20%;top:4%;width:62px;height:62px;background:var(--tile2);color:var(--tx);font-size:14px">' +
+      '<div class="bub" style="right:6%;bottom:2%;width:' + miss + 'px;height:' + miss + 'px;' +
+      'background:var(--gold);color:var(--ongold);font-size:17px"><b>' + missPct + '%</b><span>not detected</span></div>' +
+      (h.warnings ? '<div class="bub" style="right:20%;top:3%;width:56px;height:56px;background:var(--tile2);color:var(--tx);font-size:13px">' +
         '<b>' + h.warnings + '</b><span>warning' + (h.warnings === 1 ? '' : 's') + '</span></div>' : '') +
       '</div>';
 
     var series = trends && trends.points
       ? trends.points.map(function (p) { return p.health; }).filter(function (v) { return typeof v === 'number'; }) : [];
     var was = series.length > 1 ? series[0] : null;
-    html += '<div class="subnum" style="margin-top:8px">' +
+    html += '<div class="subnum gripnote">' +
       (missed === 0
         ? 'Everything it looks for, it found.'
         : missed + ' of the ' + num(h.attempts) + ' things it looks for came back “not detected” or with a warning. ') +
@@ -758,13 +765,13 @@
       (grew == null ? '' : ' · ' + (grew >= 0 ? 'grew ' : 'shrank ') + kb(Math.abs(grew)) + ' over the log') + '</div>';
 
     var max = files.length ? files[0].bytes : 1;
-    html += files.slice(0, 5).map(function (f) {
+    html += '<div class="tfill">' + files.slice(0, 5).map(function (f) {
       var share = f.bytes / max;
       var colour = share > 0.7 ? 'var(--lav)' : share > 0.45 ? 'var(--gold)' : 'var(--tile2)';
       return '<div class="filerow"><span class="sw" style="background:' + colour + '"></span>' +
         '<span class="nm" title="' + esc(f.path) + '">' + esc(f.path) + '</span>' +
         '<span class="kb">' + kb(f.bytes) + '</span></div>';
-    }).join('');
+    }).join('') + '</div>';
 
     $('towerWeight').innerHTML = html;
     var go = $('towerWeight').querySelector('.go');
@@ -1556,118 +1563,16 @@
   /* How much of HaTi the scanner could read now lives on the control tower,
      as the "Scanner grip" card — see renderTowerGrip. */
 
-  /* ==================================================================== */
-  /*  Which way things are moving                                          */
-  /*                                                                       */
-  /*  Six lines, drawn by hand in SVG — no chart library, because this      */
-  /*  service has one runtime dependency and it is going to stay that way.  */
-  /*  The insight is the direction, not the axes, so there are no axes.     */
-  /* ==================================================================== */
-
-  var SPARK_W = 150, SPARK_H = 34;
-
-  function sparkline(values, colour) {
-    var min = Math.min.apply(null, values);
-    var max = Math.max.apply(null, values);
-    var span = (max - min) || 1;
-    var pad = 3;
-    var step = values.length > 1 ? (SPARK_W - pad * 2) / (values.length - 1) : 0;
-
-    var pts = values.map(function (v, i) {
-      var x = pad + i * step;
-      var y = SPARK_H - pad - ((v - min) / span) * (SPARK_H - pad * 2);
-      return { x: x, y: y };
-    });
-    var line = pts.map(function (p) { return p.x.toFixed(1) + ',' + p.y.toFixed(1); }).join(' ');
-    var area = pts[0].x.toFixed(1) + ',' + (SPARK_H - pad) + ' ' + line + ' ' +
-      pts[pts.length - 1].x.toFixed(1) + ',' + (SPARK_H - pad);
-    var last = pts[pts.length - 1];
-
-    var c = colour || 'var(--lav)';
-    return '<svg width="' + SPARK_W + '" height="' + SPARK_H + '" viewBox="0 0 ' + SPARK_W + ' ' + SPARK_H +
-      '" role="img" aria-hidden="true" focusable="false" style="margin:3px 0">' +
-      '<polygon points="' + area + '" fill="' + c + '" opacity=".18"></polygon>' +
-      '<polyline class="line" points="' + line + '" fill="none" stroke="' + c + '" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"></polyline>' +
-      '<circle cx="' + last.x.toFixed(1) + '" cy="' + last.y.toFixed(1) + '" r="2.2" fill="' + c + '"></circle>' +
-      '</svg>';
-  }
-
-  /* Which way, and how much, in words. "Up 4%" is a fact; "a fifth bigger
-     than a month ago" is the thing worth knowing. */
-  function direction(values, days, opts) {
-    var first = values[0], last = values[values.length - 1];
-    if (first === last) return { klass: '', text: 'Unchanged over the last ' + days + ' days.' };
-    var up = last > first;
-    var pct = first === 0 ? null : Math.round(Math.abs(last - first) / Math.abs(first) * 100);
-    var word = up ? (opts.upIsBad ? 'bigger' : 'higher') : (opts.upIsBad ? 'smaller' : 'lower');
-    var body = pct == null
-      ? 'Moved ' + (up ? 'up' : 'down') + ' from nothing over the last ' + days + ' days.'
-      : pct + '% ' + word + ' than ' + days + ' days ago.';
-    // Colour by whether the movement is the direction the owner would want.
-    var bad = opts.upIsBad ? up : !up;
-    return { klass: bad ? 'up' : 'down', text: body };
-  }
-
-  var TREND_SERIES = [
-    { key: 'bytes', label: 'Everything, all together', upIsBad: true, fmt: function (v) { return kb(v); } },
-    { key: 'largest', label: 'The biggest single file', upIsBad: true, fmt: function (v) { return kb(v); } },
-    { key: 'openRoutes', label: 'Doors that need no login', upIsBad: true, fmt: function (v) { return String(v); } },
-    { key: 'gaps', label: 'Things not finished', upIsBad: true, fmt: function (v) { return String(v); } },
-    { key: 'health', label: 'How much the scanner can read', upIsBad: false, fmt: function (v) { return v + '%'; } },
-    { key: 'dailyCostUsd', label: 'A day at the caps, in money', upIsBad: true, fmt: function (v) { return usd(v); } },
-  ];
-
-  function renderTrends(t) {
-    var el = $('trends');
-    if (!t) { el.hidden = true; return; }
-
-    if (!t.enough) {
-      el.innerHTML = '<div class="chead"><h3>Which way things are moving</h3></div>' +
-        '<div class="note">Not enough history yet. Lines need at least three scans that found something different; ' +
-        'the Mapper has ' + t.points.length + '. ' +
-        (t.watchedSince ? 'It has been watching since ' + esc(fmtDate(t.watchedSince, true)) + '. ' : '') +
-        'Come back after a few days and this fills in.</div>';
-      el.hidden = false;
-      return;
-    }
-
-    var cards = TREND_SERIES.map(function (s) {
-      var values = t.points.map(function (p) { return p[s.key]; }).filter(function (v) { return typeof v === 'number'; });
-      if (values.length < 3) {
-        return '<div class="spark">' +
-          '<div class="t">' + esc(s.label) + '</div>' +
-          '<div class="v">' + (values.length ? esc(s.fmt(values[values.length - 1])) : '—') + '</div>' +
-          '<div class="d">Not measured for long enough to draw.</div></div>';
-      }
-      var dir = direction(values, t.days, s);
-      /* "up" here means moving the way the owner would not want, whichever
-         way the number itself went — so it is drawn in the warning colour. */
-      var colour = dir.klass === 'up' ? 'var(--gold)' : dir.klass === 'down' ? 'var(--lav)' : 'var(--tx3)';
-      return '<div class="spark ' + dir.klass + '">' +
-        '<div class="t">' + esc(s.label) + '</div>' +
-        '<div class="v">' + esc(s.fmt(values[values.length - 1])) + '</div>' +
-        sparkline(values, colour) +
-        '<div class="d">' + esc(dir.text) + '</div></div>';
-    }).join('');
-
-    el.innerHTML = '<div class="chead"><h3>Which way things are moving</h3>' +
-      '<span class="badge" style="margin-left:auto">' + t.points.length + ' readings</span></div>' +
-      '<div class="spark-grid">' + cards + '</div>' +
-      '<div class="note">Each line is one reading per scan that found something different, over the last ' + t.days + ' days. ' +
-      'The shape is the point; the numbers above are where each stands now. Drawn from the change log\u2019s archive \u2014 ' +
-      'counts and byte sizes only, no names and no paths.</div>';
-    el.hidden = false;
-  }
-
-
+  /* The measurement series has no card of its own. It is read by four of the
+     tower's tiles — the spend line, the calendar, the "was X% at the start of
+     the log" line and the growth figure — so it is fetched for them and for
+     nothing else. A failure is not worth reporting: each of those tiles is
+     written to stand up without it. */
   function loadTrends() {
     return apiGet('/api/trends?days=90').then(function (t) {
       trends = t;
-      renderTrends(t);
-      /* The tower's chart, calendar and "was X% a week ago" line all read the
-         same series, so they are only truthful once it has arrived. */
       if (scan) renderTower();
-    }, function () { $('trends').hidden = true; });
+    }, function () {});
   }
 
   function renderAll() {

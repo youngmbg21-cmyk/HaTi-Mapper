@@ -459,9 +459,30 @@ try {
     typeSizes.smallest >= 9.5, `smallest rendered text is ${typeSizes.smallest}px`);
   check('The panel intros are readable too', typeSizes.lede >= 12, `${typeSizes.lede}px`);
 
-  const navPinned = await page.evaluate(() => getComputedStyle(document.querySelector('.topbar')).position);
+  /* Asserted as the reader experiences it rather than as a CSS keyword: read
+     to the end of the longest panel and the tabs must not have moved. Inside
+     the frame that is structural — the row is outside the box that scrolls —
+     and outside it the row is pinned. Either mechanism passes; a row that
+     travels up the page does not.
+
+     Not "the row is at zero": a tripwire that has gone off puts its banner
+     above the tabs, which is where an alarm belongs. What may not happen is
+     the row sliding away as you read. */
+  const navPinned = await page.evaluate(async () => {
+    const panel = document.querySelector('.panel:not([hidden])');
+    const top = () => Math.round(document.querySelector('.topbar').getBoundingClientRect().top);
+    const rest = top();
+    panel.scrollTop = panel.scrollHeight;
+    window.scrollTo(0, document.documentElement.scrollHeight);
+    await new Promise(r => setTimeout(r, 60));
+    const read = top();
+    panel.scrollTop = 0;
+    window.scrollTo(0, 0);
+    return { rest, read };
+  });
   check('The tabs are pinned to the top of the window, not left up the page',
-    navPinned === 'sticky', navPinned);
+    navPinned.read === navPinned.rest,
+    `tab row rests at ${navPinned.rest}px, sits at ${navPinned.read}px once you have read to the end`);
 
   /* Raising the type pushed the nine tabs past the width of the column, and a
      sideways-scrolling strip slides the whole row when you click a tab near
@@ -494,96 +515,85 @@ try {
   await page.waitForSelector('#app:not([hidden])', { timeout: 60000 });
   await page.waitForFunction(() => !document.querySelector('#screensBody .sk'), null, { timeout: 60000 });
 
-  /* Where the open panel begins, with room for the pinned tab row above it.
-     Measured off the panel rather than the row: while the row is pinned, both
-     its rect and its offsetTop report the top of the window, which is how an
-     earlier version of this silently asserted nothing at all. */
-  const navLine = () => page.evaluate(() => {
-    const panel = document.querySelector('.panel:not([hidden])');
-    const nav = document.querySelector('.topbar');
-    return Math.max(0, panel.getBoundingClientRect().top + window.scrollY - nav.getBoundingClientRect().height);
-  });
+  /* The requirement is stillness: clicking a tab must leave everything around
+     the panel exactly where it was, so the new panel's heading lands where the
+     old one's was and the eye stays level.
 
-  /* The requirement is stillness: clicking a tab must leave the page exactly
-     where it was, so the new panel's heading lands where the old one's was and
-     the eye stays level.
+     The frame delivers that by construction rather than by correction. The
+     document itself does not scroll at all — the tab row and the stamp are
+     fixed parts of it and whichever panel is open scrolls between them. So
+     the assertions are about the frame holding, not about a scroll position
+     being restored: nothing to restore is a stronger guarantee than restoring
+     it accurately. */
+  const frame = await page.evaluate(() => ({
+    locked: getComputedStyle(document.querySelector('.shell')).overflow === 'hidden',
+    viewport: window.innerHeight,
+  }));
+  check('On a screen with the room for it, the app is a fixed frame', frame.locked,
+    `${frame.viewport}px window`);
 
-     How far down that can be honoured is a property of the shortest panel — no
-     page can hold a position its content cannot reach. So the reach of every
-     panel is measured first, and the test parks inside all of them. The
-     position that matters most is comfortably inside that: the tab row pinned
-     to the top of the window, which is where this is actually read. */
-  const anchor = await navLine();
-  const reach = await page.evaluate(() => {
-    const out = {};
-    const panels = [...document.querySelectorAll('.panel')];
-    const open = panels.find(p => !p.hidden);
-    for (const p of panels) {
-      panels.forEach(x => { x.hidden = x !== p; });
-      out[p.getAttribute('data-panel')] = document.documentElement.scrollHeight - window.innerHeight;
-    }
-    panels.forEach(x => { x.hidden = x !== open; });
-    return out;
-  });
-  const shortestReach = Math.min(...Object.values(reach));
-  check('Every panel can be scrolled at least as far as the pinned tab row',
-    shortestReach >= anchor, `shortest reach ${Math.round(shortestReach)}, tab row rests at ${Math.round(anchor)}`);
-
-  const parked = await page.evaluate(async to => {
-    window.scrollTo(0, to);
-    return window.scrollY;
-  }, Math.min(anchor + 200, shortestReach - 20));
-  await page.waitForTimeout(80);
-  check('And the test is parked well below the top, so this proves something',
-    parked > anchor + 50, `parked at ${Math.round(parked)}, tab row rests at ${Math.round(anchor)}`);
-
-  /* Every tab, a full circuit, from that one position. A single tab that moves
-     the page fails this. */
-  const moved = [];
+  /* Every tab, a full circuit. A single tab that scrolls the document, or that
+     moves the row or the stamp by a pixel, fails this. */
+  const before = await page.evaluate(() => ({
+    nav: Math.round(document.querySelector('.topbar').getBoundingClientRect().top),
+    foot: Math.round(document.querySelector('.footer').getBoundingClientRect().bottom),
+  }));
+  const drifted = [], scrolled = [];
   for (const tab of ['weight', 'cost', 'data', 'blast', 'tower', 'public', 'changes', 'settings', 'screens']) {
     await page.click(`[data-p="${tab}"]`);
     await page.waitForTimeout(90);
-    const at = await page.evaluate(() => window.scrollY);
-    if (Math.abs(at - parked) > 2) moved.push(`${tab} → ${Math.round(at)}`);
+    const at = await page.evaluate(() => ({
+      y: window.scrollY,
+      over: document.documentElement.scrollHeight - window.innerHeight,
+      nav: Math.round(document.querySelector('.topbar').getBoundingClientRect().top),
+      foot: Math.round(document.querySelector('.footer').getBoundingClientRect().bottom),
+    }));
+    if (at.y !== 0 || at.over > 1) scrolled.push(`${tab} → y${at.y} over${at.over}`);
+    if (at.nav !== before.nav || at.foot !== before.foot) drifted.push(`${tab} → nav ${at.nav}, foot ${at.foot}`);
   }
-  check('Clicking any tab leaves the page exactly where it was',
-    moved.length === 0, moved.length ? `moved on ${moved.join(', ')} from ${Math.round(parked)}` : `all nine held ${Math.round(parked)}`);
+  check('No tab makes the page itself scroll', scrolled.length === 0, scrolled.join(', '));
+  check('Clicking any tab leaves the row and the stamp exactly where they were',
+    drifted.length === 0,
+    drifted.length ? drifted.join(', ') : `all nine held nav ${before.nav}, foot ${before.foot}`);
 
-  /* Every panel reserving a screenful is what makes the above possible: a
-     short panel that collapsed the document would drag the reader up with it. */
-  const shortestPanel = await page.evaluate(() => {
-    const panels = [...document.querySelectorAll('.panel')];
-    const open = panels.find(p => !p.hidden);
-    let min = Infinity;
-    for (const p of panels) {
-      panels.forEach(x => { x.hidden = x !== p; });
-      min = Math.min(min, p.getBoundingClientRect().height);
+  /* A panel long enough to scroll keeps its own place. Each panel is its own
+     scrolling box, so leaving one and coming back lands where it was left —
+     without any code having to remember a number. */
+  const kept = await page.evaluate(async () => {
+    const go = n => document.querySelector(`[data-p="${n}"]`).click();
+    const panel = n => document.querySelector(`.panel[data-panel="${n}"]`);
+    /* Whichever panel has the most below its fold, so this proves something. */
+    const names = [...document.querySelectorAll('.panel')].map(p => p.getAttribute('data-panel'));
+    let best = null;
+    for (const n of names) {
+      go(n);
+      const p = panel(n);
+      const over = p.scrollHeight - p.clientHeight;
+      if (!best || over > best.over) best = { name: n, over };
     }
-    panels.forEach(x => { x.hidden = x !== open; });
-    return { min, viewport: window.innerHeight };
+    if (best.over < 60) return { skipped: true, best };
+    go(best.name);
+    panel(best.name).scrollTop = 50;
+    const parked = panel(best.name).scrollTop;
+    go('tower');
+    await new Promise(r => setTimeout(r, 60));
+    go(best.name);
+    return { name: best.name, parked, landed: panel(best.name).scrollTop };
   });
-  check('No panel is short enough to collapse the page under you',
-    shortestPanel.min >= shortestPanel.viewport - 140,
-    `shortest panel ${Math.round(shortestPanel.min)}px against a ${shortestPanel.viewport}px window`);
+  check('A panel you scrolled is where you left it when you come back',
+    !kept.skipped && kept.parked === kept.landed,
+    kept.skipped ? `no panel scrolls at this size` : `"${kept.name}" parked ${kept.parked}, landed ${kept.landed}`);
 
-  /* The one case that cannot be honoured, asserted rather than hidden: from
-     deep inside the longest panel, a shorter one simply has no content down
-     there. The reader must land at the end of it — never back at the top. */
-  const longest = Object.entries(reach).sort((a, b) => b[1] - a[1])[0][0];
-  const shortest = Object.entries(reach).sort((a, b) => a[1] - b[1])[0][0];
-  await page.click(`[data-p="${longest}"]`);
-  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
-  await page.waitForTimeout(90);
-  const deep = await page.evaluate(() => window.scrollY);
-  await page.click(`[data-p="${shortest}"]`);
-  await page.waitForTimeout(90);
-  const landed = await page.evaluate(() => window.scrollY);
-  check('From deeper than a panel reaches, you land at its end — never back at the top',
-    deep > reach[shortest] && Math.abs(landed - reach[shortest]) < 4,
-    `${Math.round(deep)} in "${longest}" → ${Math.round(landed)} in "${shortest}", which reaches ${Math.round(reach[shortest])}`);
-
-  check('And the page still scrolls to the very top when asked',
-    await page.evaluate(() => { window.scrollTo(0, 0); return window.scrollY === 0; }));
+  /* And the tower, the one panel that must never scroll at all. */
+  const towerFits = await page.evaluate(() => {
+    document.querySelector('[data-p="tower"]').click();
+    const p = document.querySelector('.panel[data-panel="tower"]');
+    return { over: p.scrollHeight - p.clientHeight, tiles: p.querySelectorAll('.card, .cal').length };
+  });
+  check('The control tower fits its frame with nothing below the fold',
+    towerFits.over <= 1 && towerFits.tiles === 7,
+    `${towerFits.over}px over, ${towerFits.tiles} tiles`);
+  await page.click('[data-p="screens"]');
 
   /* ---- what each bulky file actually is ----
      A path is an address, not an answer: it tells a developer where to look
@@ -654,21 +664,25 @@ try {
     fixButtons['file-size'].length === scan.weight.overThreshold,
     `${fixButtons['file-size'].length} buttons, ${scan.weight.overThreshold} files over the line`);
 
-  /* ---- which way things are moving ----
+  /* ---- a tower with no history behind it ----
      This Mapper has only ever scanned once, which is the state a brand-new
      install is in. Drawing a line through one point would be a lie, so the
-     strip has to say so. The drawn state is checked below against a second
-     Mapper with a seeded archive. */
-  console.log('\nWhich way things are moving');
+     tiles that draw one have to say so instead. The drawn state is checked
+     below against a second Mapper with a seeded archive. */
+  console.log('\nA tower with no history behind it');
   await page.click('[data-p="tower"]');
-  const freshTrends = await page.evaluate(() => {
-    const el = document.getElementById('trends');
-    return { hidden: el.hidden, text: (el.innerText || '').trim(), charts: el.querySelectorAll('svg').length };
-  });
-  check('A brand-new Mapper shows the strip', !freshTrends.hidden);
-  check('And says it has no history yet rather than drawing a flat line',
-    /Not enough history yet/i.test(freshTrends.text), freshTrends.text.slice(0, 120));
-  check('So nothing is drawn', freshTrends.charts === 0, `${freshTrends.charts} charts`);
+  const freshTower = await page.evaluate(() => ({
+    burn: (document.querySelector('#towerBurn') || {}).innerText || '',
+    lines: document.querySelectorAll('#towerBurn .chartwrap').length,
+    bars: document.querySelectorAll('#towerDoors .bars').length,
+    /* The figures that do not need history must still be there. */
+    big: (document.querySelector('#towerBurn .bignum') || {}).textContent || '',
+  }));
+  check('A brand-new Mapper says it has no history yet rather than drawing a flat line',
+    /at least three scans/i.test(freshTower.burn), freshTower.burn.slice(-120));
+  check('So no spend line is drawn', freshTower.lines === 0, `${freshTower.lines} charts`);
+  check('And no door history is drawn', freshTower.bars === 0, `${freshTower.bars} bar rows`);
+  check('While the figures that need no history are still shown', /\d/.test(freshTower.big), freshTower.big);
 
   /* ---- what it costs to run ---- */
   console.log('\nWhat it costs to run');
@@ -887,10 +901,14 @@ try {
   await page.screenshot({ path: path.join(ROOT, 'test', 'verified.png'), fullPage: true }).catch(() => {});
   await page.close();
 
-  /* ---- the same strip, with history behind it ----
-     A second Mapper whose archive is seeded with six weeks of readings, so the
-     drawn state can be checked the way the owner will actually see it. */
-  console.log('\nWhich way things are moving, with history');
+  /* ---- the tower with history behind it ----
+     A second Mapper whose archive is seeded with six weeks of readings. The
+     measurement series has no card of its own — it is read by four of the
+     tower's tiles — so this is where those tiles are seen in the state they
+     reach after weeks of scanning, rather than the empty one a first run
+     shows. It is also where the tower is measured against the frame, because
+     a full tower is the one that would overflow if anything is going to. */
+  console.log('\nThe tower, with history behind it');
   fs.rmSync(TRENDS_DATA, { recursive: true, force: true });
   fs.mkdirSync(TRENDS_DATA, { recursive: true });
   const readingAt = (daysAgo, over) => ({
@@ -902,7 +920,10 @@ try {
     v: 1,
     rounds: [],
     points: [
-      readingAt(40, { bytes: 300000, largest: 40000, openRoutes: 6, gaps: 9, health: 100, dailyCostUsd: 7 }),
+      /* The oldest reading's grip is deliberately below what the scan finds
+         now, so the tile has a real change to report rather than falling
+         through to its "unchanged" branch and asserting nothing. */
+      readingAt(40, { bytes: 300000, largest: 40000, openRoutes: 6, gaps: 9, health: 88, dailyCostUsd: 7 }),
       readingAt(33, { bytes: 320000, largest: 44000, openRoutes: 6, gaps: 10, health: 99, dailyCostUsd: 7.5 }),
       readingAt(26, { bytes: 351000, largest: 49000, openRoutes: 7, gaps: 10, health: 97, dailyCostUsd: 8 }),
       readingAt(19, { bytes: 372000, largest: 53000, openRoutes: 7, gaps: 11, health: 96, dailyCostUsd: 9 }),
@@ -932,46 +953,64 @@ try {
   await page2.fill('#authPassword', OWNER_PW);
   await page2.fill('#authConfirm', OWNER_PW);
   await page2.click('#authGo');
-  await page2.waitForSelector('#trends .spark-grid', { timeout: 180000 });
+  await page2.waitForSelector('#towerBurn .chartwrap svg', { timeout: 180000 });
 
-  const drawn = await page2.evaluate(() => {
-    const el = document.getElementById('trends');
-    return {
-      charts: el.querySelectorAll('svg').length,
-      lines: el.querySelectorAll('polyline.line').length,
-      points: [...el.querySelectorAll('polyline.line')].map(p => p.getAttribute('points').trim().split(/\s+/).length),
-      labels: [...el.querySelectorAll('.spark .t')].map(e => e.textContent.trim()),
-      values: [...el.querySelectorAll('.spark .v')].map(e => e.textContent.trim()),
-      directions: [...el.querySelectorAll('.spark .d')].map(e => e.textContent.trim()),
-      text: (el.innerText || '').trim(),
-    };
-  });
-  check('Six sparklines are drawn', drawn.charts === 6 && drawn.lines === 6,
-    `${drawn.charts} charts, ${drawn.lines} lines`);
-  /* Six seeded readings plus the one this server took when it started. */
-  check('Each is drawn from every reading in the archive',
-    drawn.points.length === 6 && drawn.points.every(n => n === drawn.points[0] && n >= 6),
-    drawn.points.join(','));
-  check('Weight, biggest file, open doors, gaps, readability and money are all there',
-    ['Everything, all together', 'The biggest single file', 'Doors that need no login',
-     'Things not finished', 'How much the scanner can read', 'A day at the caps, in money']
-      .every(l => drawn.labels.includes(l)), drawn.labels.join(' | '));
-  check('Each carries the value it stands at now', drawn.values.every(v => v && v !== '—'), drawn.values.join(' | '));
-  check('And says which way it is going, in words not axes',
-    drawn.directions.every(d => /% (bigger|smaller|higher|lower) than 90 days ago|Unchanged/.test(d)),
-    drawn.directions.join(' | '));
-  /* Three series whose live value is known from the fixture and which rise
-     across the seeded window: more open doors, more gaps, more money. Each has
-     to be drawn as unwelcome, not merely as movement. */
-  const unwelcome = await page2.$$eval('#trends .spark', els => els
-    .filter(e => e.classList.contains('up'))
-    .map(e => e.querySelector('.t').textContent.trim()));
-  check('Growth in the wrong direction is not drawn as good news',
-    ['Doors that need no login', 'Things not finished', 'A day at the caps, in money']
-      .every(l => unwelcome.includes(l)), unwelcome.join(' | '));
-  check('The strip says the readings are numbers only',
-    /no names and no paths/.test(drawn.text));
-  check('Drawing them raises no console errors', trendErrors.length === 0, trendErrors.slice(0, 3).join(' | '));
+  const drawn = await page2.evaluate(() => ({
+    /* The spend line: one filled area and one stroked line, both built from
+       every reading in the archive. */
+    burnPaths: document.querySelectorAll('#towerBurn .chartwrap svg path').length,
+    burnChip: (document.querySelector('#towerBurn .chip') || {}).textContent || '',
+    /* The door count, one bar per reading, capped at seven. */
+    bars: document.querySelectorAll('#towerDoors .bars .bcol').length,
+    /* The two tiles that put the oldest reading into a sentence. */
+    grip: (document.querySelector('#towerGrip .subnum') || {}).textContent || '',
+    weight: (document.querySelector('#towerWeight .subnum') || {}).textContent || '',
+    /* Days the archive says were scanned, marked on the month. */
+    scanned: document.querySelectorAll('#towerCal .d.scan, #towerCal .d.hot').length,
+  }));
+  check('The spend line is drawn once there are readings', drawn.burnPaths === 2,
+    `${drawn.burnPaths} paths`);
+  check('And is labelled with where it stands now', /\$/.test(drawn.burnChip), drawn.burnChip);
+  check('The door count is drawn as a bar per reading', drawn.bars >= 2 && drawn.bars <= 7,
+    `${drawn.bars} bars`);
+  check('Scanner grip says what it was at the start of the log',
+    /Was \d+% at the start of the log/.test(drawn.grip), drawn.grip.slice(0, 120));
+  check('The total size says which way it moved over the log',
+    /(grew|shrank) [\d.]+ ?[KM]B over the log/.test(drawn.weight), drawn.weight.slice(0, 120));
+  check('The calendar marks the days the archive was scanned', drawn.scanned >= 1,
+    `${drawn.scanned} days marked`);
+
+  /* ---- the tower is one screen, and stays one screen ----
+     The whole point of the control tower is that it is taken in at a glance,
+     which it cannot be if any of it is below the fold. So on a screen with
+     the room for the frame, nothing about it may scroll: not the page, not
+     the panel, and not any tile that holds a fixed list. Three shapes of
+     screen are checked, because a layout that fits one and not the others
+     fits none of them. */
+  for (const size of [{ width: 1920, height: 1080 }, { width: 1440, height: 900 }, { width: 1280, height: 720 }]) {
+    await page2.setViewportSize(size);
+    await page2.waitForTimeout(250);
+    const fit = await page2.evaluate(() => {
+      const panel = document.querySelector('.panel[data-panel="tower"]');
+      const over = [...panel.querySelectorAll('.card, .cal')]
+        .filter(c => c.scrollHeight - c.clientHeight > 1)
+        .map(c => (c.id || c.className) + ' by ' + (c.scrollHeight - c.clientHeight) + 'px');
+      return {
+        page: document.documentElement.scrollHeight - window.innerHeight,
+        panel: panel.scrollHeight - panel.clientHeight,
+        over,
+        /* Every tile must still be drawn — fitting by rendering nothing is
+           not fitting. */
+        tiles: panel.querySelectorAll('.card, .cal').length,
+      };
+    });
+    const px = `${size.width}×${size.height}`;
+    check(`At ${px} the page itself does not scroll`, fit.page <= 1, `${fit.page}px over`);
+    check(`At ${px} the tower does not scroll`, fit.panel <= 1, `${fit.panel}px over`);
+    check(`At ${px} no tile is cut off`, fit.over.length === 0, fit.over.join(' | '));
+    check(`At ${px} all seven tiles are drawn`, fit.tiles === 7, `${fit.tiles} tiles`);
+  }
+  check('Drawing the tower raises no console errors', trendErrors.length === 0, trendErrors.slice(0, 3).join(' | '));
   check('And no policy violations', trendCsp.length === 0, trendCsp.slice(0, 2).join(' | '));
   await page2.close();
 
