@@ -10,10 +10,13 @@
 # login. Set MAPPER_OWNER_EMAIL before the first visit so only you can claim
 # the account.
 #
-# PERSISTENCE: the account, the AI key and the 72-hour change log are written
-# under MAPPER_DATA. Without a disk they are lost on every redeploy. To keep
-# them, add a disk in the dashboard (mount /var/data) and set
-# MAPPER_DATA=/var/data.
+# PERSISTENCE: the account, the AI key and the change log are written under
+# MAPPER_DATA, and the disk below is what keeps them. Without it they live in
+# the service's own directory, which Render replaces on every deploy — so each
+# deploy silently returned the Mapper to a first-ever scan, with nothing to
+# compare the next one against and therefore nothing in the change log. An
+# archive that resets whenever you ship cannot answer "has this been growing
+# for a month", which is most of what it is for.
 services:
   - type: web
     name: hati-mapper
@@ -22,7 +25,18 @@ services:
     buildCommand: npm install
     startCommand: npm start
     healthCheckPath: /api/health
+    # Small on purpose: the whole state is a handful of JSON files, and the
+    # archive is capped in code rather than by the disk running out.
+    disk:
+      name: mapper-state
+      mountPath: /var/data
+      sizeGB: 1
     envVars:
+      # Must match the mount path above. Together these are the difference
+      # between a change log that accumulates and one that starts again every
+      # time you deploy.
+      - key: MAPPER_DATA
+        value: /var/data
       - key: NODE_VERSION
         value: "22"
       - key: HATI_REPO

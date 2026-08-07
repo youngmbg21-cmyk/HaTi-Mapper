@@ -155,6 +155,20 @@ English rather than developer language. It is built the same way as HaTi's own
 Copilot: the model is given tools, fetches real data before answering, and
 finishes by delivering a grounded answer with links to the tab that shows it.
 
+**Two different things are called "changes", and it may not mix them up.** The
+change log is what the Mapper *observed* by comparing one of its own scans with
+the next — a door opened, a file grew. Commits are the git log: the messages
+someone typed when saving work. They are different numbers counting different
+things, and twelve commits say nothing about whether anything was observed to
+move. The assistant once answered a question about the calendar's figure by
+reaching for the commit count and telling the owner the dashboard was wrong,
+when both numbers were right and only one of them was the answer. So the system
+prompt separates them explicitly, the change tool is named as the only source
+of a change count, and an empty log is stated to be a real answer rather than a
+gap to fill from somewhere else. It is told never to call a figure on the
+dashboard wrong on the strength of a different measurement. All of that is
+asserted in `test/chat-loop.mjs`, against what is actually sent to the model.
+
 **It says so while it works.** Fetching real data before answering means a
 question can sit for the better part of a minute, and the answer arrives in one
 piece — there is no progress to stream. So the panel shows a marker with words
@@ -515,12 +529,24 @@ It is written to `MAPPER_DATA` (default `./.mapper-state`), alongside your
 account, the AI key and the day's question count, so all of them survive
 restarts.
 
-**They do not survive a redeploy unless a persistent disk is attached** — and a
-redeploy happens every time this repository changes. Without a disk you would
-have to set your password again after each one. The Settings tab says so on
-screen when that is the case. To fix it permanently: in Render open the service
-→ **Settings → Disks → Add Disk**, mount it at `/var/data`, then add
-`MAPPER_DATA=/var/data` to the environment.
+**A redeploy replaces the service's own directory, so without a persistent disk
+none of it survives one** — and a redeploy happens every time this repository
+changes. `render.yaml` therefore declares a 1 GB disk mounted at `/var/data`
+and sets `MAPPER_DATA` to match, so the blueprint creates a Mapper that keeps
+what it learns.
+
+This is not only about having to set your password again. The change log is
+built by comparing each scan with the one before it, so a wiped directory
+returns the Mapper to a first-ever scan: one reading, nothing to compare
+against, and an empty log. The dashboard then correctly reports zero changes,
+having genuinely observed none — and it would do that again after every deploy,
+which makes a 90-day archive that can never hold more than the time since the
+last one. The failure is quiet, because every number involved is true.
+
+If your service was created before the disk was added to the blueprint, add it
+by hand: in Render open the service → **Settings → Disks → Add Disk**, mount it
+at `/var/data`, then add `MAPPER_DATA=/var/data` to the environment. The
+Settings tab says on screen when the state directory is not writable.
 
 ---
 

@@ -128,6 +128,29 @@ try {
   check('The system prompt carries the real headline numbers', /14 screens/.test(seen[0].system || ''));
   check('The system prompt forbids reaching contract data', /never see|cannot see anything IN it|no customer data/i.test(seen[0].system || ''));
 
+  /* Two different things are called "changes", and the assistant once told the
+     owner the dashboard was wrong by counting the other one — reporting a
+     commit count as a change count and contradicting a figure that was right.
+     The rule has to reach the model, so it is asserted where it is sent. */
+  const sys = seen[0].system || '';
+  const tools = seen[0].tools || [];
+  const named = n => tools.find(t => t.name === n) || {};
+  check('The system prompt separates observed changes from commits',
+    /TWO DIFFERENT THINGS ARE CALLED "CHANGES"/.test(sys));
+  check('And says an empty change log is an answer, not a gap to fill',
+    /Do not reach for the\s+commit count to fill that gap/.test(sys));
+  check('And forbids calling a dashboard figure wrong over the difference',
+    /never\s+tell the user a figure on the dashboard is wrong/i.test(sys));
+  check('The change tool is named as the only source of a change count',
+    /ONLY SOURCE FOR A COUNT OF CHANGES/.test(named('get_changes').description || ''),
+    (named('get_changes').description || '').slice(0, 80));
+  /* Read out of the schema rather than off its JSON, so the assertion is not
+     testing how quotes survive stringifying. */
+  const commitsDesc = named('get_panel').input_schema?.properties?.name?.description || '';
+  check('And the commits option says its count is not a change count',
+    /never report a count of these as "changes"/.test(commitsDesc),
+    commitsDesc.slice(commitsDesc.indexOf('commits ='), 140));
+
   /* The tool result must actually be fed back, not invented. */
   const secondTurn = JSON.stringify(seen[1].messages || []);
   check('The tool result was fed back to the model', /tool_result/.test(secondTurn));
