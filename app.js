@@ -672,17 +672,27 @@
     /* Sized to clear the floor of the shortest tile the frame will give this
        card, so no circle is ever cut off by the edge of its own box. */
     var miss = 66 + Math.min(34, Math.round(missPct * 1.8));
+    /* The complete warning list, so the circle, the popup and the Settings
+       card all count the same thing. */
+    var warnCount = (scan.warnings || []).length;
     html += '<div class="bubbles">' +
       '<div class="bub" style="left:2%;top:22%;width:104px;height:104px;background:var(--lav);color:var(--onlav);font-size:23px">' +
       '<b>' + h.percent + '%</b><span>facts resolved<br>' + h.resolved + ' of ' + h.attempts + '</span></div>' +
       '<div class="bub" style="right:6%;bottom:2%;width:' + miss + 'px;height:' + miss + 'px;' +
       'background:var(--gold);color:var(--ongold);font-size:17px"><b>' + missPct + '%</b><span>not detected</span></div>' +
-      /* A button, not a decoration: these warnings are listed in full under
-         the gear, and a count you cannot get the detail of is an alarm with
-         the label torn off. */
-      (h.warnings ? '<button class="bub gowarn" type="button" title="See what the scan could not work out" ' +
-        'style="right:20%;top:3%;width:56px;height:56px;background:var(--tile2);color:var(--tx);font-size:13px;border:0;cursor:pointer">' +
-        '<b>' + h.warnings + '</b><span>warning' + (h.warnings === 1 ? '' : 's') + '</span></button>' : '') +
+      /* A button, not a decoration: these warnings are listed in full in the
+         popup this opens, and a count you cannot get the detail of is an alarm
+         with the label torn off.
+
+         Counted from scan.warnings — the whole list — not h.warnings, which is
+         only the panel-level ones the health figure is built from. The popup
+         and the Settings card both show scan.warnings, so keying the circle to
+         a different number would open "7 warnings" onto eight. The scan's
+         late-added warnings (a failed commit-history fetch, stale prices) are
+         exactly the ones worth surfacing here. */
+      (warnCount ? '<button class="bub gowarn" type="button" title="See what the scan could not work out" ' +
+        'style="right:20%;top:3%;width:56px;height:56px;font-size:13px;border:0;cursor:pointer">' +
+        '<b>' + warnCount + '</b><span>warning' + (warnCount === 1 ? '' : 's') + '</span></button>' : '') +
       '</div>';
 
     var series = trends && trends.points
@@ -699,11 +709,7 @@
 
     $('towerGrip').innerHTML = html;
     var gowarn = $('towerGrip').querySelector('.gowarn');
-    if (gowarn) gowarn.addEventListener('click', function () {
-      showPanel('settings');
-      var card = $('scanWarnCard');
-      if (card && !card.hidden) card.scrollIntoView({ block: 'start' });
-    });
+    if (gowarn) gowarn.addEventListener('click', openWarnPop);
   }
 
   /* ---- where the weight sits ---- */
@@ -1658,6 +1664,36 @@
      so the one number on the page whose whole job is to say "some of what you
      are reading may be wrong" came with no way to find out which part. The
      answer had been sitting in the payload the entire time. */
+  /* ---- the warnings popup ----
+     Opened from the circle on the grip card. The full list also stays on its
+     Settings card — the popup is for the moment of noticing, the card for
+     whoever goes looking later. */
+  var warnPopOpener = null;   // where focus goes back to on close
+
+  function openWarnPop() {
+    var list = (scan && scan.warnings) || [];
+    if (!list.length) return;
+    warnPopOpener = document.activeElement;
+    $('warnPopCount').textContent = list.length + (list.length === 1 ? ' warning' : ' warnings');
+    $('warnPopBody').innerHTML =
+      '<ul>' + list.map(function (w) { return '<li>' + esc(w) + '</li>'; }).join('') + '</ul>';
+    $('warnPop').hidden = false;
+    $('warnPopClose').focus();
+  }
+
+  function closeWarnPop() {
+    $('warnPop').hidden = true;
+    if (warnPopOpener && warnPopOpener.focus) warnPopOpener.focus();
+    warnPopOpener = null;
+  }
+
+  $('warnPopClose').addEventListener('click', closeWarnPop);
+  // Clicking the dark veil closes; clicking inside the dialog does not.
+  $('warnPop').addEventListener('click', function (e) { if (e.target === $('warnPop')) closeWarnPop(); });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && !$('warnPop').hidden) { e.stopPropagation(); closeWarnPop(); }
+  }, true);
+
   function renderScanWarnings() {
     var list = (scan && scan.warnings) || [];
     $('scanWarnCard').hidden = list.length === 0;

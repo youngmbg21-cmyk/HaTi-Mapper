@@ -178,6 +178,25 @@ a{color:inherit;}
 .bub{position:absolute;border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;}
 .bub b{font-size:inherit;font-weight:700;letter-spacing:-0.02em;}
 .bub span{font-size:9.5px;font-weight:500;opacity:.78;line-height:1.15;padding:0 6px;}
+/* The warnings circle breathes between its resting grey and the warning red —
+   slow, so it reads as "alive and asking" rather than as an emergency strobe.
+   These warnings mean "some of what you are reading may be wrong", which is
+   exactly the one thing on the page that should not sit still and quiet. */
+.bub.gowarn{animation:warnbreathe 2.6s ease-in-out infinite;}
+/* Pulses to a clear alert red with white on it, not the muted --bad badge
+   colour — the point is to be noticed, and in dark mode --bad is a deep
+   near-brown that a resting eye slides off. The red and its white text are
+   fixed rather than tokened because they must stay legible against each other
+   through the whole breath in both themes; only the resting end is themed. */
+@keyframes warnbreathe{
+  0%,100%{background:var(--tile2);color:var(--tx);}
+  50%{background:#dc2626;color:#fff;}
+}
+@media(prefers-reduced-motion:reduce){
+  /* No motion asked for, so it holds the red instead of pulsing to it —
+     same "look at me", no movement. */
+  .bub.gowarn{animation:none;background:#dc2626;color:#fff;}
+}
 
 /* ------------------------------------------------------------- the calendar */
 .cal{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:14px 15px;display:flex;flex-direction:column;margin-bottom:12px;}
@@ -451,6 +470,22 @@ a{color:inherit;}
 .toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);z-index:60;background:var(--tx);color:var(--sh);font-size:13.5px;
   font-weight:600;padding:9px 17px;border-radius:999px;box-shadow:var(--shadow);opacity:0;transition:opacity .18s;pointer-events:none;}
 .toast.on{opacity:1;}
+
+/* ------------------------------------------------------- the warnings popup
+   The circle on the grip card opens this. A popup rather than a jump to
+   Settings, because the question it answers — "wrong HOW?" — belongs at the
+   moment of asking, not three clicks away; the same list also stays on its
+   card under the gear for whoever goes looking. */
+.warnpop-veil{position:fixed;inset:0;z-index:55;background:rgba(2,6,23,.55);display:flex;align-items:center;justify-content:center;padding:20px;}
+.warnpop{width:min(560px,100%);max-height:min(70vh,560px);display:flex;flex-direction:column;background:var(--card);
+  border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow);overflow:hidden;}
+.warnpop .head{flex:none;display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--line);}
+.warnpop .head h3{margin:0;font-size:15px;font-weight:600;}
+.warnpop .head .badge{margin-left:auto;}
+.warnpop .bd{flex:1;min-height:0;overflow-y:auto;padding:6px 18px 14px;}
+.warnpop .bd ul{margin:8px 0 0;padding-left:18px;font-size:13px;color:var(--tx2);line-height:1.6;}
+.warnpop .bd li{margin:7px 0;}
+.warnpop .foot{flex:none;padding:10px 18px 14px;font-size:11.5px;color:var(--tx3);border-top:1px solid var(--line);}
 
 /* ------------------------------------------------------------ locked frame
    The control tower is a wall display: everything it has to say is meant to
@@ -884,6 +919,20 @@ a{color:inherit;}
       <button class="btn btn-primary" type="submit" id="askSend">Ask</button>
     </form>
     <div class="ask-note" id="askNote">It can see how HaTi is built — never what is inside it. No contracts, clients or figures reach it.</div>
+  </div>
+</div>
+
+<!-- The warnings popup, opened from the circle on the grip card. Outside the
+     shell so the frame's overflow rules cannot clip it. -->
+<div class="warnpop-veil" id="warnPop" hidden>
+  <div class="warnpop" role="dialog" aria-modal="true" aria-labelledby="warnPopTitle">
+    <div class="head">
+      <h3 id="warnPopTitle">What this scan could not work out</h3>
+      <span class="badge gold" id="warnPopCount"></span>
+      <button class="ask-x close" id="warnPopClose" title="Close" aria-label="Close">&times;</button>
+    </div>
+    <div class="bd" id="warnPopBody"></div>
+    <div class="foot">Each of these is something the scanner looked for and could not read. They are what the grip figure counts against itself. The same list lives under the gear, on “What this scan could not work out”.</div>
   </div>
 </div>
 

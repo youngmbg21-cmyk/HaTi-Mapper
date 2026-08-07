@@ -277,6 +277,68 @@ try {
   check('The calendar draws a real month', tower.days >= 28, `${tower.days} day cells`);
   check('The total size is shown in KB', /\d+\s*KB/.test(tower.weightBig), tower.weightBig);
 
+  /* ---- the warnings circle: it breathes, and it opens a popup ----
+     The grip figure counts the scan's warnings, and the circle showing that
+     count has to do two things: pulse for attention, and open the full list on
+     click. The list also stays on its Settings card — the popup does not
+     replace it — so both are checked. The fixture always raises at least the
+     "stand-in" warning, so the circle is present in this run. */
+  const warnCircle = await page.$('#towerGrip .gowarn');
+  check('The grip card shows a warnings circle when the scan raised any', !!warnCircle,
+    warnCircle ? 'present' : 'no .gowarn — did the fixture raise no warnings?');
+  if (warnCircle) {
+    const anim = await page.evaluate(() => {
+      const el = document.querySelector('#towerGrip .gowarn');
+      const cs = getComputedStyle(el);
+      return { name: cs.animationName, dur: cs.animationDuration };
+    });
+    check('The circle breathes rather than sitting still',
+      anim.name === 'warnbreathe' && parseFloat(anim.dur) >= 1, `${anim.name} / ${anim.dur}`);
+
+    /* With motion turned off it must not just stop dead as grey — it holds the
+       red instead, so the warning still reads. */
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    const still = await page.evaluate(() => {
+      const cs = getComputedStyle(document.querySelector('#towerGrip .gowarn'));
+      return { name: cs.animationName, bg: cs.backgroundColor };
+    });
+    check('With reduced motion it holds the warning colour instead of pulsing',
+      still.name === 'none' && still.bg === 'rgb(220, 38, 38)', `${still.name} / ${still.bg}`);
+    await page.emulateMedia({ reducedMotion: 'no-preference' });
+
+    /* Closed to start, opens on click, holds the same warnings the payload
+       carries, and the Settings card is left intact underneath. */
+    check('The popup starts closed', await page.$eval('#warnPop', el => el.hidden));
+    await warnCircle.click();
+    await page.waitForSelector('#warnPop:not([hidden])', { timeout: 5000 });
+    const pop = await page.evaluate(() => ({
+      count: (document.getElementById('warnPopCount').textContent || '').trim(),
+      items: document.querySelectorAll('#warnPopBody li').length,
+      focusInside: document.getElementById('warnPop').contains(document.activeElement),
+    }));
+    check('Clicking the circle opens the popup with every warning',
+      pop.items === scan.warnings.length && pop.items > 0,
+      `${pop.items} shown, ${scan.warnings.length} in payload`);
+    check('And the count in its header matches', /^\d+ warning/.test(pop.count), pop.count);
+    check('Focus moves into the dialog', pop.focusInside);
+
+    /* Escape closes it and does not also close anything behind it. */
+    await page.keyboard.press('Escape');
+    await page.waitForFunction(() => document.getElementById('warnPop').hidden, null, { timeout: 5000 });
+    check('Escape closes the popup', await page.$eval('#warnPop', el => el.hidden));
+    check('And the page is still on the control tower behind it',
+      await page.$eval('.panel[data-panel="tower"]', el => !el.hidden));
+
+    /* The Settings card still carries the same list — the popup is an addition,
+       not a move. */
+    await page.evaluate(() => document.querySelector('.tops [data-p="settings"]').click());
+    await page.waitForFunction(() => !document.getElementById('scanWarnCard').hidden, null, { timeout: 5000 });
+    const settingsWarns = await page.$$eval('#scanWarnBody li', els => els.length);
+    check('The full warnings list is still on its Settings card too',
+      settingsWarns === scan.warnings.length, `${settingsWarns} on the card, ${scan.warnings.length} in payload`);
+    await page.evaluate(() => document.querySelector('[data-p="tower"]').click());
+  }
+
   /* ---- 2. all eight panels render with real data ---- */
   console.log('\n2. Every panel');
   /* "Not finished" now lives on the Changes screen alongside last night's

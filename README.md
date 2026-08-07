@@ -49,10 +49,16 @@ the history fetch failing costs the "Code updates" list and nothing else, and
 when even that has to be said, the badge says *why* (hover it for the raw
 error) instead of leaving a mystery.
 
-Everything the scan looked for and could not read is listed in full under the
-gear, on a card of its own — the "Scanner grip" circle counts these warnings,
-and clicking its warnings bubble goes there. An alarm you cannot get the
-detail of is an alarm with the label torn off.
+Everything the scan looked for and could not read is listed in full in two
+places: a card of its own under the gear, and a popup that the "Scanner grip"
+warnings circle opens on click. An alarm you cannot get the detail of is an
+alarm with the label torn off. The circle breathes between its resting grey and
+a clear alert red — slowly, so it reads as "alive and asking" rather than as an
+emergency strobe — because these warnings mean "some of what you are reading
+may be wrong", which is the one thing on the page that should not sit still and
+quiet. With reduced motion requested it holds the red instead of pulsing. The
+circle counts the whole warning list, the same list the popup and the Settings
+card show, so the number you click is the number you get.
 
 Everything but one panel is read from HaTi's **source code**. Only "Money"
 needs anything from a running HaTi, and all it asks for is caps and a count.
