@@ -21,18 +21,15 @@
  */
 
 export const SCREEN_COPY = {
-  dashboard: 'Portfolio dashboard — KPIs, stage breakdown, what needs attention',
-  pipeline:  'Kanban board — drag contracts between lifecycle stages',
-  advice:    'Legal services pipeline — intake, scoping, delivery, rate card',
-  workspace: 'Read, edit, review, comment, share and sign a single contract',
-  register:  'Every contract in one table; search, filter, sort, export to CSV',
+  dashboard: 'Home — the portfolio at a glance: what needs attention, what is due, what moved',
+  register:  'Contracts — every contract in one table; open one for its document, negotiation and signing',
   calendar:  'Renewals, expiries and notice deadlines by date',
-  migration: 'Bulk import of an existing portfolio, with the review queue',
-  templates: 'Built-in Kenyan templates, your own uploads, sample contracts',
-  playbook:  'Clause library and per-type standards; portfolio deviations',
-  reports:   'Portfolio reporting across streams, stages and value',
-  intel:     'AI contract graph; ask a question, the map filters and re-clusters',
-  team:      'Members, roles, approval gate, reminders, AI keys and caps',
+  intel:     'Insights — how the portfolio is behaving, with the contract graph you can ask questions of',
+  templates: 'The paper you draft from: your company standards, counterparty paper, and HaTi’s own',
+  team:      'Members, roles, the approval gate, reminders, and the AI keys and caps',
+  playbook:  'Our standards — the clause library and negotiation playbook every review checks against',
+  advice:    'Advice Desk — client requests come in here, get scoped, and get delivered',
+  migration: 'Import contracts — a whole back-catalogue at once, extracted by Copilot and reviewed by a person',
 };
 
 /* The menu's own sections, in the owner's words.
@@ -50,11 +47,9 @@ export const SCREEN_COPY = {
  * "works without logging in".
  */
 export const GROUP_COPY = {
-  main:   'Seeing the portfolio',
-  work:   'Working on one contract',
-  advice: 'Advice and reporting',
-  admin:  'Admin',
-  public: 'The open doors',
+  work:     'The day-to-day work',
+  settings: 'Standards, people and setup',
+  public:   'The open doors',
 };
 
 /* Screens reached by URL hash rather than by a nav entry — no login needed. */
@@ -114,16 +109,43 @@ export const FILE_COPY = {
  * and an entry for a table that no longer exists comes back as a warning.
  */
 export const TABLE_COPY = {
-  contracts:   'One row per contract: who it is with, what stage it is at, what it is worth, and the text itself.',
-  versions:    'One row each time a draft was saved, with the seal that proves what the wording was at that moment.',
-  shares:      'One row each time a contract was sent out for signature: which contract, to whom, the unguessable code, and whether it has been used.',
-  audit:       'The record of who did what and when. This is the evidence behind every signature, not a log you can trim.',
-  comments:    'Remarks left on a contract while it was being reviewed.',
-  obligations: 'The dates a contract commits you to — payments due, notice deadlines, renewal windows.',
-  templates:   'The contract templates you have made, and the fill-in fields defined on each.',
-  settings:    'A name-and-value store. Anything HaTi needs to remember that is not a contract ends up here.',
-  users:       'One row per person on the workspace, their role, and the scrambled form of their password.',
-  sessions:    'One row per signed-in browser, and when that sign-in stops working.',
+  /* The contracts themselves, and everything hanging off one. */
+  contracts:               'One row per contract: who it is with, what stage it is at, what it is worth, when it expires, and the document itself.',
+  files:                   'The uploaded documents, held whole — the PDFs and Word files people drop in, kept as they arrived.',
+  templates:               'The paper you draft from: your own templates and the ones HaTi ships, with what each is for.',
+  template_versions:       'Each published draft of a template, so a template can change without changing the contracts already made from it.',
+  template_blocks:         'A template broken into its parts, in order — the clauses and paragraphs a draft is assembled from.',
+  template_fields:         'The fill-in fields on a template: what to ask for, what kind of answer it takes, and whether a person has checked it.',
+
+  /* Sending a contract out, and everything that comes back. */
+  shares:                  'One row each time a contract was sent out for signature — the unguessable link, and what came back on it.',
+  share_responses:         'What a counterparty sent back on a share link, and whether it has been applied to the contract yet.',
+  share_payload_history:   'What the counterparty was actually shown, each time, and when they opened it. This is the record of what they saw.',
+  share_messages:          'The back-and-forth with a counterparty on a share link, kept by topic.',
+  share_otp:               'The one-time codes emailed to a counterparty to prove they are who the link was sent to.',
+  engagement:              'Who opened a shared contract and when — the trail behind "have they looked at it yet?".',
+  activation:              'The milestones a contract passed and when it first passed each one.',
+
+  /* People, and getting into the workspace. */
+  users:                   'One row per person on the workspace, their role, and the scrambled form of their password.',
+  sessions:                'One row per signed-in browser, so signing out somewhere can end that sign-in and no other.',
+  resets:                  'The single-use, expiring links emailed out when someone has forgotten their password.',
+
+  /* Work coming in, and work going out. */
+  advice_requests:         'Requests that came in through the Advice Desk: what was asked for, who asked, and where it has got to.',
+  batches:                 'One row per bulk import: when it ran, who started it, and what happened to each row in it.',
+  outbox:                  'Every email HaTi has tried to send, whether it went, and who carried it.',
+  reminders:               'A note that a particular reminder has already gone out, so nobody is emailed the same thing twice.',
+
+  /* What the AI did, and what it cost. */
+  copilot_log:             'Every question put to the Copilot and the answer it gave, with the contracts it cited.',
+  ai_spend:                'The running total of what the AI has cost, by day and by feature. This is the real bill, not an estimate.',
+
+  /* Settings, and the odds and ends. */
+  settings:                'A name-and-value store. Anything HaTi needs to remember that is not a contract ends up here.',
+  store:                   'A second name-and-value store, for the things the front end keeps between visits.',
+  org_branding:            'Your company’s name, logo, registration number and footer — what appears on the paper you send out.',
+  org_profile_values:      'The details about your company that get filled into a template automatically.',
 };
 
 export const FEATURE_COPY = {
@@ -136,4 +158,5 @@ export const FEATURE_COPY = {
   ocr:         'Read text off a scanned page',
   blanks:      'Propose fill-in fields for a template',
   chat:        'Answer questions about the portfolio, citing contracts',
+  template_convert: 'Turn an uploaded document into a template you can draft from',
 };

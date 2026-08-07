@@ -900,6 +900,16 @@ of a similar-looking name, and if the `asOf` date is more than 90 days old the
 panel says the prices may have moved. Update it by checking Anthropic's pricing
 page, changing the numbers, and changing `asOf`.
 
+**How the Mapper knows an endpoint costs money.** HaTi tags every paid route
+with `aiFeature('name')` in its middleware chain — that tag is what its own
+spend ledger and budget guard key on — so a route carrying it is a paid route
+by the product's own definition, wherever in the API it lives. The Mapper used
+to look for routes under `/api/ai/` whose handler contained an Anthropic call
+instead, and got three answers wrong against the real HaTi: it missed a paid
+endpoint outside that prefix entirely, reported a paid one as free because its
+Anthropic call sits in a helper, and reported a free admin route as paid. All
+three understated or muddled what the product costs. See `BUGLOG.md`.
+
 ### `data/copy.js` — the plain-English phrasebook
 
 The sentence explaining what a person *does* on a screen, and what an AI

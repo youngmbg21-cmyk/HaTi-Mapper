@@ -10,16 +10,14 @@ function api(path, body) {
 
 function setView(view) {
   if (view === "dashboard") renderDashboard();
-  else if (view === "pipeline") renderPipeline();
   else if (view === "register") renderRegister();
   else if (view === "calendar") renderCalendar();
-  else if (view === "templates") renderLibrary();
-  else if (view === "playbook") renderPlaybook();
-  else if (view === "migration") renderMigration();
   else if (view === "intel") renderIntelligence();
-  else if (view === "advice") renderAdvice();
-  else if (view === "reports") renderReports();
+  else if (view === "templates") renderLibrary();
   else if (view === "team") renderSettings();
+  else if (view === "playbook") renderPlaybook();
+  else if (view === "advice") renderAdvice();
+  else if (view === "migration") renderMigration();
   else renderWorkspace();
 }
 

@@ -114,7 +114,7 @@ try {
   script = [
     { content: [text('Let me look.'), toolUse('get_overview', {})] },
     { content: [toolUse('deliver_answer', {
-      answer: 'Your platform has **14 screens**.\n\n- Nine of them call the AI\n- Fifteen doors need no login',
+      answer: 'Your platform has **11 screens**.\n\n- Ten of them call the AI\n- Eighteen doors need no login',
       sources: [{ panel: 'screens', note: 'the full list' }, { panel: 'public' }],
       watch_out: 'One paid AI feature is never called.',
     })] },
@@ -125,7 +125,13 @@ try {
   check('The tools were offered to the model', Array.isArray(seen[0].tools) && seen[0].tools.length >= 5, `${seen[0].tools?.length} tools`);
   check('deliver_answer is one of them', (seen[0].tools || []).some(t => t.name === 'deliver_answer'));
   check('The system prompt tells it who it is talking to', /NOT a developer/.test(seen[0].system || ''));
-  check('The system prompt carries the real headline numbers', /14 screens/.test(seen[0].system || ''));
+  /* Read from the scan rather than written as a literal. Pinning "14 screens"
+     asserted the fixture's shape at the time the test was written, so the
+     check failed the moment the stand-in was reshaped — while the thing it
+     exists to prove, that the real count reaches the model, was still true. */
+  check('The system prompt carries the real headline numbers',
+    new RegExp(`${scanRes.body.screens.length} screens`).test(seen[0].system || ''),
+    `expected ${scanRes.body.screens.length} screens`);
   check('The system prompt forbids reaching contract data', /never see|cannot see anything IN it|no customer data/i.test(seen[0].system || ''));
 
   /* Two different things are called "changes", and the assistant once told the
@@ -168,9 +174,11 @@ try {
   /* The tool result must actually be fed back, not invented. */
   const secondTurn = JSON.stringify(seen[1].messages || []);
   check('The tool result was fed back to the model', /tool_result/.test(secondTurn));
-  check("The fed-back result holds real scanned data", /\\"screens\\":14/.test(secondTurn), secondTurn.slice(0, 200));
+  check('The fed-back result holds real scanned data',
+    new RegExp(`\\\\"screens\\\\":${scanRes.body.screens.length}`).test(secondTurn),
+    `expected screens:${scanRes.body.screens.length} — ` + secondTurn.slice(0, 160));
 
-  check('The answer is passed through', /14 screens/.test(r1.body.answer));
+  check('The answer is passed through', /11 screens/.test(r1.body.answer));
   check('Sources become links to real tabs', r1.body.sources?.length === 2 && r1.body.sources[0].tab === 'screens', JSON.stringify(r1.body.sources));
   check('A watch-out is carried through', r1.body.watchOut === 'One paid AI feature is never called.');
   check('Which tools ran is reported', (r1.body.toolsUsed || []).includes('get_overview'), JSON.stringify(r1.body.toolsUsed));

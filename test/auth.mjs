@@ -967,13 +967,17 @@ try {
     byPath['server/server.js'].from === 'routes' &&
     byPath['server/server.js'].does.includes(`all ${full.public.totalRoutes} of them`),
     byPath['server/server.js'].does);
+  /* Any file the scan described from a screen, rather than one named here.
+     Pinning a path asserted which file happened to render a screen when the
+     test was written, and broke when the stand-in's menu was reshaped — while
+     the property it exists to prove was still true of a different file. */
+  const fromScreen = sizedFiles.find(f => f.from === 'screens');
   check('A screen’s own module is named after the screen',
-    byPath['js/views/contract.js'].from === 'screens' &&
-    /screen$/.test(byPath['js/views/contract.js'].name),
-    byPath['js/views/contract.js'].name);
+    !!fromScreen && /screen$/.test(fromScreen.name),
+    fromScreen ? `${fromScreen.path} — ${fromScreen.name}` : 'no file was described from a screen');
   check('And says what a person does there, in the screen’s own words',
-    byPath['js/views/contract.js'].does === full.screens.find(s => s.module === 'js/views/contract.js').does,
-    byPath['js/views/contract.js'].does);
+    !!fromScreen && fromScreen.does === (full.screens.find(s => s.module === fromScreen.path) || {}).does,
+    fromScreen ? fromScreen.does : 'n/a');
   check('A file the dependency map names is the parts it holds',
     byPath['js/core.js'].from === 'map' && /Signature seal/.test(byPath['js/core.js'].name),
     `${byPath['js/core.js'].name} — ${byPath['js/core.js'].does}`);

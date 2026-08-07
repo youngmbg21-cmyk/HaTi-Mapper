@@ -460,6 +460,64 @@ name, and the design replaced those with plain chips and a single bulk button.
 That would have quietly removed the ability to ask about one name. The chips
 became the buttons, so the design's shape and the capability both survive.
 
+## Reading the real HaTi — three ways the money panel was wrong
+
+The Mapper had been reading the stand-in. Pointed at the live HaTi it produced
+34 warnings, which is the mechanism working: the hand-written phrasebook
+described a product that had moved on. Most were straightforward — HaTi's menu
+now has two sections rather than four, three screens are gone, and the database
+has 26 tables where it had 10. Those were rewritten from HaTi's own source.
+
+Four were not that, and all four made the "Where the money goes" panel
+under-report what the product costs.
+
+**A paid endpoint the scanner could not see at all.** HaTi tags every route
+that spends money with `aiFeature('name')`. The Mapper instead looked for
+routes whose path starts `/api/ai/` and whose handler contains a literal
+`anthropicMessages(` call. `/api/templates/upload` is tagged
+`aiFeature('template_convert')` and lives outside that prefix, so it appeared
+on no panel at all — and it turns out to be the single most expensive feature
+HaTi has. The day's ceiling was short by its share. The test is now the tag,
+wherever the route lives, because where a route costs money is HaTi's to
+declare and it declares it there.
+
+**A paid endpoint reported as free.** `/api/ai/playbook` reaches Anthropic
+through a helper rather than calling it in the handler, so the literal-call
+test found nothing and filed it under "costs nothing".
+
+**A free endpoint reported as paid.** `/api/ai/log` is an admin read of the
+Copilot history and calls nothing, but a route's body is taken as everything
+up to the next route, and it had swallowed a neighbour that does call
+Anthropic. It appeared as a feature with no description and no cost ceiling —
+two more warnings, both about a thing that should not have been there.
+
+**And underneath one of them, a real parser bug.** Following the helper still
+did not work, and the reason was `functionBody()`: it took the first `{` after
+the function's name as the start of the body. That is right until a parameter
+is destructured — `async function aiPlaybookVerdicts(key, { text, kind })`
+hands back `" text, kind "` as the whole body, so every fact the caller wanted
+to read out of it came back missing. It walks the parameter list first now.
+This one was worth the most: it is a general-purpose helper, and anything else
+reading a function with a destructured parameter was quietly getting nonsense.
+
+**What it looks like fixed.** Against the live HaTi: zero warnings, grip 100%,
+ten paid features found instead of nine-with-one-wrong, and a day's ceiling
+that is materially higher than before because it now includes an endpoint that
+was invisible. The number went up because the old one was wrong.
+
+All four are pinned in `test/verify.mjs`, and the stand-in was reshaped to
+match HaTi's current form — including a helper with a destructured parameter, a
+tier chosen inside the call, an untagged admin route under `/api/ai/`, and a
+tagged route outside it — so the suite exercises each path rather than trusting
+the fix.
+
+**Two tests that had pinned a number rather than a property.** Reshaping the
+stand-in broke a check asserting "14 screens" and another asserting a
+particular file rendered a particular screen. Neither property had stopped
+being true; both had been written against the fixture's shape at the time
+rather than against the scan, so they now read the real count and pick whatever
+file the scan actually described from a screen.
+
 ## Nothing was abandoned
 
 Rule 4 of the brief covers the case where an item breaks verification and

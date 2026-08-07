@@ -627,6 +627,32 @@ try {
   check('The spend panel says live values are unavailable', /code defaults, not live values/i.test(cost.notice), cost.notice.slice(0, 100));
   check('The spend panel still shows the code defaults', cost.rows >= 5, `${cost.rows} cap rows`);
   check('The AI feature list still renders without HaTi', cost.features >= scan.ai.features.length, `${cost.features} rows`);
+
+  /* ---- which endpoints count as paid ----
+     Three ways this went wrong against the real HaTi, each of which quietly
+     changed what the money panel said the product costs. A paid route is
+     whatever HaTi itself tags with aiFeature(); nothing else. */
+  const feat = n => scan.ai.features.find(f => f.feature === n);
+  check('A paid endpoint is found by HaTi\'s own tag, wherever it lives',
+    !!feat('template_convert') && (feat('template_convert').routes || []).some(r => !r.startsWith('/api/ai/')),
+    JSON.stringify((feat('template_convert') || {}).routes));
+  check('And one whose Anthropic call is inside a helper is still priced',
+    !!feat('playbook') && feat('playbook').tiers.length > 0 && feat('playbook').maxTokens > 0,
+    `tiers=${(feat('playbook') || {}).tiers} max=${(feat('playbook') || {}).maxTokens}`);
+  check('Even when that helper takes a destructured parameter',
+    (feat('playbook') || {}).maxTokens === 3000, `${(feat('playbook') || {}).maxTokens}`);
+  check('A tier chosen inside the call itself is resolved, not reported unknown',
+    !!feat('chat') && feat('chat').tiers.length === 2, (feat('chat') || {}).tiers?.join('+'));
+  check('An admin route under /api/ai/ that calls nothing is not a paid feature',
+    !scan.ai.features.some(f => (f.routes || []).includes('/api/ai/log')) &&
+      scan.ai.nonBillingAiRoutes.some(r => r.path === '/api/ai/log'),
+    scan.ai.nonBillingAiRoutes.map(r => r.path).join(', '));
+  check('Two routes billed under one feature are one row, not two',
+    scan.ai.features.length === new Set(scan.ai.features.map(f => f.feature)).size,
+    scan.ai.features.map(f => f.feature).join(', '));
+  check('And nothing in the scan is left without a plain-English description',
+    !scan.warnings.some(w => /no plain-English description/.test(w)),
+    scan.warnings.filter(w => /plain-English/.test(w)).slice(0, 2).join(' | ') || 'none');
   check('And the caps card says the figures are the code\'s, not the live site\'s',
     /code defaults, not live values/i.test(cost.notice));
   // The other seven panels were all asserted non-empty above, with no HaTi running.
