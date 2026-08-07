@@ -11,7 +11,7 @@ code:
 | **Screens** | Every screen in the product, what a person does there, and the file it lives in |
 | **Money** | Every feature that calls Anthropic, which model, which cap, which screens use it — and roughly what it costs |
 | **Doors** | Everything that works without logging in — and, on request, whether the live site really behaves that way |
-| **Changes** | Last night's report, what is still not finished, what the Mapper has watched move over 72 hours or up to 90 days, and recent commits |
+| **Changes** | Last night's report, what is still not finished, what the Mapper has watched move over 72 hours or up to 90 days, and recent code updates |
 | **What breaks what** | Pick a piece of data, see everything that depends on it — and what changing it can break that is already signed |
 | **Where things are kept** | Every database table and what is inside it |
 | **Getting bulky** | File sizes, and the names published on `window` that nothing references |
@@ -494,7 +494,7 @@ with the git commits from the same window, how far the scanner's grip slipped,
 and how much the whole thing grew. A quiet night says so plainly, because "no
 session ran last night" is worth knowing too.
 
-**The night's changes are numbered.** Git hands its commits over newest-first,
+**The night's code updates are numbered.** Git hands its commits over newest-first,
 which is the wrong way round for a report about a night's work. They are turned
 into the order the work actually happened and numbered from one, so number 1 is
 where the session started and the last number is where it left off. The date

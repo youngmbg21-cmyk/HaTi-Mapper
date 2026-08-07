@@ -593,8 +593,15 @@ try {
   check('The open door is the first area listed', dg.sections[0].kind === 'public', dg.sections.map(s => s.kind).join(','));
   check('Each area is grouped once, not repeated per scan',
     new Set(dg.sections.map(s => s.kind)).size === dg.sections.length, dg.sections.map(s => s.kind).join(','));
+  /* The two halves are named differently on purpose. "Changes" is what the
+     Mapper observed by comparing its own scans; a save is a code update. They
+     were both called changes, which put this headline at odds with the tower's
+     calendar — the calendar counting only the first while the sentence added
+     the second in. Both numbers were right; only the word was wrong. */
   check('The headline says how much moved, in words',
-    /3 changes across 3 areas and 1 commit in the last 24 hours\./.test(dg.headline), dg.headline);
+    /3 changes across 3 areas and 1 code update in the last 24 hours\./.test(dg.headline), dg.headline);
+  check('And does not call a save a change',
+    !/\d+ commits?\b/.test(dg.headline) && /1 code update/.test(dg.headline), dg.headline);
   check('And flags the ones worth looking at first',
     dg.seriousCount === 1 && /One of them is worth looking at first\./.test(dg.headline), dg.headline);
   check('The scanner\'s slip over the window is carried',

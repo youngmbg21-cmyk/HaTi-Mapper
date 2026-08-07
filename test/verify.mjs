@@ -884,6 +884,46 @@ try {
   check('The "Last night" card renders', digestCard.length > 40, `${digestCard.length} chars`);
   check('And it is not an error', !(await page.$('#digestBody .note.bad')));
 
+  /* ---- one word, one meaning ----
+     Two different things were both called "changes": what the Mapper observed
+     by comparing its own scans, and how many times someone saved work. The
+     tower's calendar counts the first, this card was printing the second under
+     the same word, and the two sat on screen contradicting each other while
+     both were right. It also taught the assistant the wrong vocabulary, which
+     then told the owner the dashboard was wrong.
+
+     So "changes" is reserved for what the Mapper observed. Saves are code
+     updates, here and in the emailed digest. */
+  const wording = await page.evaluate(() => {
+    const commitBlock = document.querySelector('#digestBody .commits');
+    return {
+      heading: (commitBlock?.querySelector('h5')?.textContent || '').trim(),
+      shaTitle: commitBlock?.querySelector('.commit2 .h')?.getAttribute('title') || '',
+      badge: (document.getElementById('digestBadge')?.textContent || '').trim(),
+      /* The card listing the git log, on the same screen. */
+      panelHeading: [...document.querySelectorAll('.panel[data-panel="changes"] .chead h3')]
+        .map(h => h.textContent.trim()),
+      foot: (document.querySelector('#digestBody')?.textContent || ''),
+    };
+  });
+  check('The numbered list of saves is called code updates, not changes',
+    /code updates?, in the order they happened/.test(wording.heading), wording.heading);
+  check('And nothing in that heading calls them changes',
+    !/change/i.test(wording.heading), wording.heading);
+  check('A save\'s reference number is labelled a code update',
+    /code update/.test(wording.shaTitle), wording.shaTitle);
+  check('The git-log card is named for what it holds',
+    wording.panelHeading.includes('Code updates'), wording.panelHeading.join(' | '));
+  /* The badge counted observed changes and saves added together and called the
+     total "changes" — the single number most directly at odds with the
+     calendar. It may say "changes" only about the ones actually observed. */
+  check('The badge does not call saves changes',
+    !/change/i.test(wording.badge) || /code update|·/.test(wording.badge) || wording.badge === 'busy night',
+    wording.badge);
+  check('Where the text explains the git log, it says code updates',
+    !/The changes above come straight from/.test(wording.foot),
+    (wording.foot.match(/The .{0,18} above come straight from/) || ['(not shown)'])[0]);
+
   /* The night's changes are numbered in the order the work happened, so the
      card reads as a story rather than a pile. Story order is the assertion
      that matters: number 1 has to be the oldest, not the newest. */

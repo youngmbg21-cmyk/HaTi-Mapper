@@ -1382,9 +1382,21 @@
     }
 
     /* "Busy" is not a field the server sends — it is simply how many things
-       moved, which is the only thing that word could honestly mean here. */
-    var moved = d.sections.reduce(function (n, s) { return n + s.events.length; }, 0) + d.commits.length;
-    $('digestBadge').textContent = moved >= 6 ? 'busy night' : moved + ' change' + (moved === 1 ? '' : 's');
+       moved, which is the only thing that word could honestly mean here.
+
+       How busy a night was fairly counts both what the Mapper saw and what was
+       saved to the repository. Labelling that total "N changes" did not: the
+       calendar counts only the first of those, so the two sat on screen
+       disagreeing while both were right. The badge now names whichever it is
+       counting, and only says "changes" when it means them. */
+    var observed = d.sections.reduce(function (n, s) { return n + s.events.length; }, 0);
+    var moved = observed + d.commits.length;
+    var badge = observed && d.commits.length
+      ? observed + ' change' + (observed === 1 ? '' : 's') + ' · ' + d.commits.length + ' update' + (d.commits.length === 1 ? '' : 's')
+      : observed
+        ? observed + ' change' + (observed === 1 ? '' : 's')
+        : d.commits.length + ' code update' + (d.commits.length === 1 ? '' : 's');
+    $('digestBadge').textContent = moved >= 6 ? 'busy night' : badge;
     $('digestBadge').className = 'badge' + (moved >= 4 ? ' lav' : '');
     $('digestBadge').hidden = false;
 
@@ -1403,13 +1415,17 @@
        above them because "since midnight" is relative and a date is not. */
     if (d.commits.length) {
       html += '<div class="commits" style="margin-top:12px;border-top:1px solid var(--line);padding-top:10px">' +
-        '<h5>The ' + d.commits.length + (d.commits.length === 1 ? ' change' : ' changes') +
+        /* "Code updates", not "changes". These are times someone saved work,
+           read out of GitHub's record — not things the Mapper watched move.
+           Calling both "changes" is what left this card and the tower's
+           calendar contradicting each other in the same word. */
+        '<h5>The ' + d.commits.length + (d.commits.length === 1 ? ' code update' : ' code updates') +
         ', in the order they happened</h5>' +
         '<div class="day">' + esc(fmtDate(d.commits[0].date)) + '</div>' +
         d.commits.map(function (c) {
           return '<div class="commit2"><span class="n">' + c.n + '</span>' +
             '<span class="t">' + esc(c.subject) + '</span>' +
-            '<span class="h" title="The reference number for this change">' + esc(c.sha) + '</span></div>';
+            '<span class="h" title="The reference number for this code update">' + esc(c.sha) + '</span></div>';
         }).join('') + '</div>';
     }
 
@@ -1427,7 +1443,7 @@
        own observations only exist once it has looked. Say which is which. */
     if (d.scanCount === 0) {
       foot.push(d.commits.length
-        ? 'The changes above come straight from GitHub’s record. The Mapper itself has not taken a look yet ' +
+        ? 'The code updates above come straight from GitHub’s record. The Mapper itself has not taken a look yet ' +
           d.label + ' — anything it notices of its own will appear here after the next scan.'
         : 'The Mapper has not taken a look yet ' + d.label + '.');
     } else {
@@ -1498,9 +1514,6 @@
     var w = scan.weight;
     var max = w.files.length ? w.files[0].bytes : 1;
 
-    /* A path is an address, not an answer. Each row leads with what the file
-       IS and demotes the address to a chip, because the person reading this
-       does not write code and should not have to decode one. */
     /* A path is an address, not an answer. Each row leads with what the file
        IS and demotes the address to a chip, because the person reading this
        does not write code and should not have to decode one. */
