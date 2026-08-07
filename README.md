@@ -155,6 +155,24 @@ English rather than developer language. It is built the same way as HaTi's own
 Copilot: the model is given tools, fetches real data before answering, and
 finishes by delivering a grounded answer with links to the tab that shows it.
 
+**It does not look like the page under it.** The panel floats over the
+dashboard and is built from the same card and tile tokens as everything
+beneath it, which left it reading as one more card rather than as something
+that had opened on top. Its two ends — the title bar and the strip holding the
+question box — are banded green so the edges are obvious at a glance. The
+middle is deliberately left plain: the conversation is what should be read,
+not the frame around it. The field you type into keeps its own background for
+the same reason, and the Ask button swaps its two colours over, since green on
+green is no button at all.
+
+The band has its own colour token rather than borrowing the accent green,
+because it carries body text and the accent does not have to. In the light
+theme near-white on the accent reaches only 3.6:1, under the line for text
+that size; the band is two steps darker and clears it at 5.3:1. Both themes
+are asserted in `test/verify.mjs` as measured contrast ratios — the styling
+here has been lost once already, and "it looked fine" is what let that
+through.
+
 **Two different things are called "changes", and it may not mix them up.** The
 change log is what the Mapper *observed* by comparing one of its own scans with
 the next — a door opened, a file grew. Commits are the git log: the messages

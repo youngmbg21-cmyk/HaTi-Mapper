@@ -445,6 +445,69 @@ try {
     answered.bg !== 'rgba(0, 0, 0, 0)' && answered.bg !== 'transparent', answered.bg);
 
   await page.unroute('**/api/chat');
+
+  /* ---- the panel does not look like the page under it ----
+     The assistant floats over the dashboard and is built from the same card
+     and tile tokens as everything beneath it, so it read as one more card.
+     Its two ends are banded green to fix that, which is only worth anything if
+     the band is actually a different colour from the page and the text on it
+     is legible — in both themes, since a colour chosen against one of them is
+     a colour untested against the other. Checked as ratios rather than by eye,
+     because "it looked fine" is how the styling got lost the first time. */
+  console.log('\nThe assistant does not blend into the page');
+  const contrast = (fg, bg) => {
+    const lum = c => {
+      const [r, g, b] = c.match(/[\d.]+/g).slice(0, 3).map(Number).map(v => {
+        const s = v / 255;
+        return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+      });
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    };
+    const [hi, lo] = [lum(fg), lum(bg)].sort((a, b) => b - a);
+    return (hi + 0.05) / (lo + 0.05);
+  };
+
+  for (const theme of ['dark', 'light']) {
+    /* Dispatched rather than clicked: the panel is open on top of the top
+       bar, so a real click would land on the panel. */
+    if (theme === 'light') { await page.evaluate(() => document.getElementById('themeBtn').click()); await page.waitForTimeout(300); }
+    const p = await page.evaluate(() => {
+      const cs = s => getComputedStyle(document.querySelector(s));
+      return {
+        headBg: cs('.ask-head').backgroundColor, title: cs('.ask-head h3').color,
+        icon: cs('.ask-x').color,
+        footBg: cs('.ask-foot').backgroundColor, note: cs('.ask-note').color,
+        sendBg: cs('#askSend').backgroundColor, sendFg: cs('#askSend').color,
+        inputBg: cs('#askInput').backgroundColor, inputFg: cs('#askInput').color,
+        page: cs('body').backgroundColor, card: cs('.ask').backgroundColor,
+      };
+    });
+    check(`In ${theme}, both ends of the panel are banded`,
+      p.headBg === p.footBg && p.headBg !== p.page && p.headBg !== p.card,
+      `head ${p.headBg}, foot ${p.footBg}, panel ${p.card}`);
+    /* The field is the one thing that must not be part of the band — you have
+       to be able to see where to type. */
+    check(`In ${theme}, the text field keeps its own background`,
+      p.inputBg !== p.footBg && contrast(p.inputBg, p.footBg) >= 3,
+      `field ${p.inputBg} on ${p.footBg}, ${contrast(p.inputBg, p.footBg).toFixed(2)}:1`);
+    check(`In ${theme}, the Ask button is visible against the band`,
+      contrast(p.sendBg, p.footBg) >= 3,
+      `${contrast(p.sendBg, p.footBg).toFixed(2)}:1`);
+    for (const [what, fg, bg, want] of [
+      ['the title', p.title, p.headBg, 4.5],
+      ['the panel controls', p.icon, p.headBg, 3],
+      ['the note under the field', p.note, p.footBg, 3],
+      ['the Ask label', p.sendFg, p.sendBg, 4.5],
+      ['what you type', p.inputFg, p.inputBg, 4.5],
+    ]) {
+      const r = contrast(fg, bg);
+      check(`In ${theme}, ${what} is legible where it sits`, r >= want,
+        `${r.toFixed(2)}:1, wanted ${want}:1`);
+    }
+  }
+  await page.evaluate(() => document.getElementById('themeBtn').click());   // back to the theme the run started in
+  await page.waitForTimeout(300);
+
   await page.evaluate(() => document.getElementById('askClear').click());
   await page.waitForTimeout(200);
   await page.keyboard.press('Escape');

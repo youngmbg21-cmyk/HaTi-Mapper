@@ -20,6 +20,10 @@ body{
   --tx:#f1f5f9; --tx2:#94a3b8; --tx3:#64748b;
   --lav:#2dd4bf; --lavd:#14b8a6; --gold:#f59e0b;
   --onlav:#042f2e; --ongold:#3b2503;
+  /* The assistant's two green bands. Its own token because it carries body
+     text, which the accent green does not have to elsewhere — see the light
+     theme, where it has to be darker than --lav to hold white legibly. */
+  --askband:var(--lav);
   --good:#123f31; --goodtx:#6ee7b7; --bad:#46201f; --badtx:#fca5a5;
   --shadow:0 8px 40px -8px rgba(0,0,0,.55);
   --font:"IBM Plex Sans",system-ui,-apple-system,sans-serif;
@@ -30,6 +34,11 @@ body.light{
   --tx:#0f172a; --tx2:#475569; --tx3:#94a3b8;
   --lav:#0d9488; --lavd:#99f6e4; --gold:#d97706;
   --onlav:#f0fdfa; --ongold:#fffbeb;
+  /* Two steps darker than --lav: near-white on --lav reaches only 3.6:1, which
+     is under the line for text this size. This clears it at 5.3:1, and being
+     deeper it also does the job the colour is there for — the panel reading as
+     something that has opened over the page rather than another card on it. */
+  --askband:#0f766e;
   --good:#d1fae5; --goodtx:#065f46; --bad:#fee2e2; --badtx:#991b1b;
   --shadow:0 8px 40px -14px rgba(15,23,42,.28);
 }
@@ -345,15 +354,25 @@ a{color:inherit;}
   display:flex;flex-direction:column;background:var(--card);border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow);overflow:hidden;}
 .ask.expanded{width:min(760px,calc(100vw - 40px));height:min(86vh,calc(100vh - 40px));}
 .ask.expanded .msg{max-width:76%;}
-.ask-head{flex:none;display:flex;align-items:flex-start;gap:10px;padding:13px 16px;border-bottom:1px solid var(--line);}
-.ask-head h3{margin:0;font-size:15px;font-weight:600;}
-.ask-head .brain{display:flex;align-items:center;gap:5px;font-size:11.5px;color:var(--tx3);margin-top:2px;}
-.ask-head .brain i{width:6px;height:6px;border-radius:50%;background:var(--tx3);display:block;}
-.ask-head .brain.live i{background:var(--lav);}
+/* The panel floats over the dashboard and is built from the same card, line
+   and tile tokens as everything under it, which left it reading as one more
+   card rather than as a thing that had opened on top. Its two ends are green
+   so the edges of the panel are obvious at a glance. The middle stays plain:
+   the conversation is what should be read, not the frame around it. */
+.ask-head{flex:none;display:flex;align-items:flex-start;gap:10px;padding:13px 16px;
+  background:var(--askband);color:var(--onlav);}
+.ask-head h3{margin:0;font-size:15px;font-weight:600;color:var(--onlav);}
+.ask-head .brain{display:flex;align-items:center;gap:5px;font-size:11.5px;color:var(--onlav);opacity:.82;margin-top:2px;}
+/* On green the live dot can no longer be green, so the two states differ by
+   weight instead of by colour. */
+.ask-head .brain i{width:6px;height:6px;border-radius:50%;background:var(--onlav);opacity:.45;display:block;}
+.ask-head .brain.live i{opacity:1;}
 .ask-acts{margin-left:auto;flex:none;display:flex;align-items:center;gap:2px;}
-.ask-x{flex:none;display:inline-flex;align-items:center;justify-content:center;background:none;border:0;color:var(--tx3);cursor:pointer;
+.ask-x{flex:none;display:inline-flex;align-items:center;justify-content:center;background:none;border:0;color:var(--onlav);cursor:pointer;
   line-height:1;padding:5px;border-radius:6px;}
-.ask-x:hover{background:var(--tile);color:var(--tx);}
+/* A wash rather than a token, because it has to darken a green that is deep
+   in one theme and bright in the other. */
+.ask-x:hover{background:rgba(0,0,0,.16);color:var(--onlav);}
 .ask-x.close{font-size:19px;padding:2px 8px;}
 .ask-feed{flex:1;overflow-y:auto;padding:14px 16px;display:flex;flex-direction:column;gap:12px;}
 .msg{max-width:92%;font-size:14px;line-height:1.6;}
@@ -391,11 +410,19 @@ a{color:inherit;}
 .sugg button{font-family:var(--font);font-size:12.5px;color:var(--tx2);background:var(--tile);border:1px solid var(--line);border-radius:12px;
   padding:7px 12px;cursor:pointer;text-align:left;}
 .sugg button:hover{color:var(--tx);border-color:var(--tx3);}
-.ask-foot{flex:none;border-top:1px solid var(--line);padding:11px 14px;}
+.ask-foot{flex:none;padding:11px 14px;background:var(--askband);color:var(--onlav);}
 .ask-form{display:flex;gap:8px;align-items:flex-end;}
-.ask-form textarea{flex:1;font-family:var(--font);font-size:14px;color:var(--tx);background:var(--tile);border:1px solid var(--line);
+/* The one thing here that stays as it was. A field you type into should look
+   like a field you type into, and on green that means keeping its own ground
+   rather than borrowing the band's. */
+.ask-form textarea{flex:1;font-family:var(--font);font-size:14px;color:var(--tx);background:var(--card);border:1px solid transparent;
   border-radius:12px;padding:9px 12px;resize:none;max-height:110px;line-height:1.5;}
-.ask-note{font-size:11px;color:var(--tx3);margin-top:7px;line-height:1.45;}
+.ask-form textarea::placeholder{color:var(--tx3);}
+/* Green on green is no button at all, so it swaps its two colours over and
+   keeps the same pair. */
+.ask-foot .btn-primary{background:var(--onlav);border-color:var(--onlav);color:var(--askband);}
+.ask-foot .btn-primary:hover{background:var(--card);border-color:var(--card);color:var(--askband);}
+.ask-note{font-size:11px;color:var(--onlav);opacity:.85;margin-top:7px;line-height:1.45;}
 .keybox{padding:14px 16px;border-bottom:1px solid var(--line);font-size:13px;color:var(--tx2);line-height:1.55;}
 .keybox h4{margin:0 0 6px;font-size:14px;font-weight:600;color:var(--tx);}
 .keybox ol{margin:9px 0;padding-left:19px;}
