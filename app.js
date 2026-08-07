@@ -405,10 +405,12 @@
       '<div><span class="bignum">' + (spend == null ? '—' : usd(spend)) + '</span>' +
       (ceiling == null ? '' : '<span class="delta flat">max ' + usd(ceiling) + '</span>') +
       '<div class="subnum">a whole day at HaTi\'s own caps — a roof, not a bill</div></div>' +
-      '<div><span class="bignum">' + (used == null ? '—' : num(used)) + '</span>' +
-      (limit == null ? '' : '<span class="delta ' + (used != null && used / limit > 0.7 ? 'bad' : 'good') + '">of ' + num(limit) + '</span>') +
+      '<div><span class="bignum">' + (used == null ? num(limit) : num(used)) + '</span>' +
+      (used == null
+        ? '<span class="delta flat">the cap</span>'
+        : (limit == null ? '' : '<span class="delta ' + (used / limit > 0.7 ? 'bad' : 'good') + '">of ' + num(limit) + '</span>')) +
       '<div class="subnum">' + (used == null
-        ? 'AI requests today — needs a running HaTi to count'
+        ? 'AI requests a day at most — counting today\u2019s needs a running HaTi'
         : 'AI requests against the daily cap') + '</div></div>' +
       '</div>';
 
@@ -653,9 +655,9 @@
     html += '<div class="bubbles">' +
       '<div class="bub" style="left:2%;top:24%;width:118px;height:118px;background:var(--lav);color:var(--onlav);font-size:26px">' +
       '<b>' + h.percent + '%</b><span>facts resolved<br>' + h.resolved + ' of ' + h.attempts + '</span></div>' +
-      '<div class="bub" style="right:6%;bottom:2%;width:' + (56 + Math.min(46, missPct * 2)) + 'px;height:' + (56 + Math.min(46, missPct * 2)) + 'px;' +
+      '<div class="bub" style="right:6%;bottom:2%;width:' + (74 + Math.min(40, missPct * 2)) + 'px;height:' + (74 + Math.min(40, missPct * 2)) + 'px;' +
       'background:var(--gold);color:var(--ongold);font-size:18px"><b>' + missPct + '%</b><span>not detected</span></div>' +
-      (h.warnings ? '<div class="bub" style="right:18%;top:6%;width:56px;height:56px;background:var(--tile2);color:var(--tx);font-size:13px">' +
+      (h.warnings ? '<div class="bub" style="right:20%;top:4%;width:62px;height:62px;background:var(--tile2);color:var(--tx);font-size:14px">' +
         '<b>' + h.warnings + '</b><span>warning' + (h.warnings === 1 ? '' : 's') + '</span></div>' : '') +
       '</div>';
 
@@ -697,24 +699,37 @@
       .sort(function (a, b) { return b.bytes - a.bytes; }).slice(0, 6);
     var total = areas.reduce(function (n, a) { return n + a.bytes; }, 0) || 1;
 
-    /* Three columns, each packed top-down in proportion to its share. */
-    var COLS = [[6, 118], [132, 92], [232, 102]];
-    var rects = '';
-    var colTotals = [0, 0, 0];
-    areas.forEach(function (a, i) { colTotals[i % 3] += a.bytes; });
-    var cursor = [14, 14, 14];
-    areas.forEach(function (a, i) {
-      var c = i % 3;
-      var height = Math.max(24, Math.round((a.bytes / (colTotals[c] || 1)) * 140));
-      var fill = a.bytes / total > 0.3 ? 'dotsL' : a.bytes / total > 0.18 ? 'dotsG' : 'dots';
-      rects += '<text x="' + (COLS[c][0] + 6) + '" y="' + (cursor[c] - 4) + '" font-size="10" fill="var(--tx3)" font-family="IBM Plex Mono">' +
-        esc(a.name) + ' · ' + kb(a.bytes) + '</text>' +
-        '<rect x="' + COLS[c][0] + '" y="' + cursor[c] + '" width="' + COLS[c][1] + '" height="' + height + '" rx="9" fill="url(#' + fill + ')"/>';
-      cursor[c] += height + 22;
+    /* Rows of at most three, each row as tall as its share of the whole and
+       each field as wide as its share of its row. Laid out from the numbers
+       rather than from fixed coordinates, so two folders fill the box exactly
+       as convincingly as six and nothing can collide with a label. */
+    var W = 340, LABEL = 13, GAP = 8;
+    var rows = [];
+    for (var i = 0; i < areas.length; i += 3) rows.push(areas.slice(i, i + 3));
+    var bodyH = 150 - (rows.length - 1) * GAP - rows.length * LABEL;
+
+    var rects = '', y = LABEL;
+    rows.forEach(function (row) {
+      var rowBytes = row.reduce(function (n, a) { return n + a.bytes; }, 0) || 1;
+      var h = Math.max(30, Math.round((rowBytes / total) * bodyH));
+      var x = 0;
+      var usable = W - (row.length - 1) * GAP;
+      row.forEach(function (a, j) {
+        var w = j === row.length - 1
+          ? W - x
+          : Math.max(58, Math.round((a.bytes / rowBytes) * usable));
+        var share = a.bytes / total;
+        var fill = share > 0.3 ? 'dotsL' : share > 0.18 ? 'dotsG' : 'dots';
+        rects +=
+          '<text x="' + (x + 3) + '" y="' + (y - 4) + '" font-size="10" fill="var(--tx3)" font-family="IBM Plex Mono">' +
+          esc(a.name) + ' · ' + kb(a.bytes) + '</text>' +
+          '<rect x="' + x + '" y="' + y + '" width="' + Math.max(30, w) + '" height="' + h + '" rx="9" fill="url(#' + fill + ')"/>';
+        x += w + GAP;
+      });
+      y += h + LABEL + GAP;
     });
 
-    var tall = Math.max.apply(null, cursor) + 4;
-    html += '<svg viewBox="0 0 340 ' + tall + '" width="100%" height="' + Math.min(tall, 200) + '" role="img" ' +
+    html += '<svg viewBox="0 0 ' + W + ' ' + y + '" width="100%" height="' + Math.min(y, 200) + '" role="img" ' +
       'aria-label="Dot map of HaTi\'s weight by folder">' +
       '<defs>' +
       '<pattern id="dots" width="7" height="7" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1.5" fill="var(--tx3)" opacity=".55"/></pattern>' +
@@ -1338,6 +1353,7 @@
 
     if (d.quiet) {
       $('digestBadge').hidden = true;
+      $('digestLede').hidden = false;
       body.innerHTML = '<div class="note"><b>Nothing moved ' + esc(d.label) + '.</b> No screens, no addresses, no tables, no commits. ' +
         'If a session was supposed to run, that is worth knowing too.</div>';
       return;
@@ -1345,8 +1361,8 @@
 
     /* "Busy" is not a field the server sends — it is simply how many things
        moved, which is the only thing that word could honestly mean here. */
-    var moved = d.sections.reduce(function (n, s) { return n + s.events.length; }, 0);
-    $('digestBadge').textContent = moved >= 4 ? 'busy night' : moved + ' event' + (moved === 1 ? '' : 's');
+    var moved = d.sections.reduce(function (n, s) { return n + s.events.length; }, 0) + d.commits.length;
+    $('digestBadge').textContent = moved >= 6 ? 'busy night' : moved + ' change' + (moved === 1 ? '' : 's');
     $('digestBadge').className = 'badge' + (moved >= 4 ? ' lav' : '');
     $('digestBadge').hidden = false;
 
@@ -1398,7 +1414,9 @@
     }
     html += '<div class="foot">' + esc(foot.join(' ')) + '</div>';
     body.innerHTML = html;
-    $('digestLede').textContent = foot.join(' ');
+    /* The footer says everything the intro would have, so the intro steps
+       aside rather than repeating it word for word. */
+    $('digestLede').hidden = true;
   }
 
   function loadDigest() {
