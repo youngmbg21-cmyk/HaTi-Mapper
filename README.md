@@ -10,8 +10,8 @@ code:
 | **Control tower** | The morning question — is anything wrong? Spend, the scan calendar, open doors, what needs attention, how much of HaTi the scanner could read, and where the weight sits |
 | **Screens** | Every screen in the product, what a person does there, and the file it lives in |
 | **Money** | Every feature that calls Anthropic, which model, which cap, which screens use it — and roughly what it costs |
-| **Doors** | Everything that works without logging in — and, on request, whether the live site really behaves that way |
-| **Changes** | Last night's report, what is still not finished, what the Mapper has watched move over 72 hours or up to 90 days, and recent code updates |
+| **Doors** | Everything that works without logging in — the code's promise about each one beside what the live site actually did |
+| **Changes** | Last night's report with the code updates folded in, what is still not finished, and what the Mapper has watched move over 72 hours or up to 90 days |
 | **What breaks what** | Pick a piece of data, see everything that depends on it — and what changing it can break that is already signed |
 | **Where things are kept** | Every database table and what is inside it |
 | **Getting bulky** | File sizes, and the names published on `window` that nothing references |
@@ -19,6 +19,14 @@ code:
 
 There is also an **assistant** — a chat panel that can explain any of it in plain
 English. It reads the same data the tabs show and nothing else.
+
+**Every tab but the control tower opens with its answer.** A row of counters
+across the top — the number, a traffic light saying whether that number is
+fine, and where the Mapper has a reading from a week ago, which way it has
+moved — then the detail under it. The counters are drawn by one shared piece of
+code, so a colour means the same thing on every screen, and the week-on-week
+arrow is left off entirely rather than drawn as a zero when there is nothing to
+compare against.
 
 **The control tower is a summary, never a second source.** Every figure on it
 is read from the same scan the panels below are drawn from, so the two can
@@ -876,7 +884,9 @@ parser guessing at them would produce a confident, wrong diagram.
 
 Validated per scan: every subsystem's `file` must still exist, every `proof`
 identifier must still appear in the source, every `field` an item names must
-still appear, and every subsystem id an item points at must be defined.
+still appear, every subsystem id an item points at must be defined, and every
+subsystem must sit in one of the three groups the panel draws — a subsystem
+with no group would silently vanish off the board, so it says so instead.
 
 ### `data/pricing.js` — what Anthropic charges
 
@@ -901,9 +911,21 @@ The same file also holds `FILE_COPY`, but it is deliberately tiny — see
 [Getting bulky](#getting-bulky-says-what-each-file-is) for why almost nothing
 needs writing there.
 
-Validated per scan: an entry for a screen, feature or file that no longer
-exists is reported as stale, and a screen or feature with no entry renders as
-"not detected" rather than silently blank.
+It also holds two additions the redesigned tabs needed, both the same shape:
+derived structure, written names.
+
+- **`GROUP_COPY`** — HaTi's menu wraps its buttons in sections, so *which*
+  section a screen sits in is read off the markup. What the markup does not
+  carry is what to call each one: it says `work`, not "Working on one
+  contract". The ids are derived, the names are written here.
+- **`TABLE_COPY`** — a table's name, its columns and the line it is declared on
+  are all read out of the `CREATE TABLE` statements. What a person cannot get
+  from that is what the table is *for*. "contracts, twelve columns" is a
+  schema, not an answer.
+
+Validated per scan: an entry for a screen, feature, file, menu section or table
+that no longer exists is reported as stale, and anything with no entry renders
+as "not detected" rather than silently blank.
 
 ### Where the scan says "not detected"
 

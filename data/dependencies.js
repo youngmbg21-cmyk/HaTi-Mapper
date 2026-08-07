@@ -22,41 +22,52 @@
  */
 
 export const DEPENDENCIES = {
+  /* The three parts of HaTi a subsystem can belong to. Every subsystem below
+     carries a `group`, so the panel reads as an anatomy — the document, the
+     proof, and where it shows up — rather than as an alphabet of thirty tiles.
+     Which group a subsystem is in is a judgement, like everything else in this
+     file; the scan validates that every group named below exists here. */
+  groups: [
+    { id: 'doc',  title: 'The document itself' },
+    { id: 'sign', title: 'Signing, and the proof' },
+    { id: 'show', title: 'Where it shows up' },
+  ],
+
   /* The subsystems that read HaTi's data. `file` and `proof` are the anchors
      the scan checks: if either stops existing, this entry is stale. */
   subsystems: [
-    { id: 'render',   title: 'Document viewer',    desc: 'Draws the contract on screen',      file: 'js/views/contract.js',  proof: 'docBodyHtml' },
-    { id: 'edit',     title: 'Editor',             desc: 'Changing the wording',              file: 'js/views/contract.js',  proof: 'openEditDocModal' },
-    { id: 'version',  title: 'Version history',    desc: 'Every saved draft',                 file: 'js/versioning.js',      proof: 'captureVersion' },
-    { id: 'compare',  title: 'Compare',            desc: 'Diff between two versions',         file: 'js/versioning.js',      proof: 'openCompareModal' },
-    { id: 'seal',     title: 'Signature seal',     desc: 'Proof of what was signed',          file: 'js/core.js',            proof: 'sealString' },
-    { id: 'ai',       title: 'AI clause review',   desc: 'Quotes the text back to you',       file: 'js/playbook.js',        proof: 'runPlaybookReview' },
-    { id: 'extract',  title: 'Detail extraction',  desc: 'Dates, value, parties',             file: 'js/metadata.js',        proof: 'extractMetadata' },
-    { id: 'portal',   title: 'Share portal',       desc: 'What the counterparty sees',        file: 'js/views/portal.js',    proof: 'portalEntry' },
-    { id: 'pdf',      title: 'PDF export',         desc: 'And the evidence pack',             file: 'js/views/portal.js',    proof: 'exportPDF' },
-    { id: 'register', title: 'Register & filters', desc: 'The main contract table',           file: 'js/views/register.js',  proof: 'renderRegister' },
-    { id: 'kpi',      title: 'Home KPIs',          desc: 'Counts and the attention list',     file: 'js/views/home.js',      proof: 'renderDashboard' },
-    { id: 'remind',   title: 'Renewal reminders',  desc: '90 / 60 / 30 day emails',           file: 'server/server.js',      proof: 'runReminders' },
-    { id: 'cal',      title: 'Calendar',           desc: 'Expiries and deadlines',            file: 'js/views/calendar.js',  proof: 'renderCalendar' },
-    { id: 'wizard',   title: 'New contract wizard',desc: 'Starting from a template',          file: 'js/wizard.js',          proof: 'openWizard' },
-    { id: 'blanks',   title: 'Add blanks',         desc: 'Fill-in fields on templates',       file: 'js/views/library.js',   proof: 'openBlanksEditor' },
-    { id: 'dedupe',   title: 'Duplicate check',    desc: 'Skips files already imported',      file: 'js/dedupe.js',          proof: 'simhash64' },
+    { id: 'render', group: 'doc',   title: 'Document viewer',    desc: 'Draws the contract on screen',      file: 'js/views/contract.js',  proof: 'docBodyHtml' },
+    { id: 'edit', group: 'doc',     title: 'Editor',             desc: 'Changing the wording',              file: 'js/views/contract.js',  proof: 'openEditDocModal' },
+    { id: 'version', group: 'doc',  title: 'Version history',    desc: 'Every saved draft',                 file: 'js/versioning.js',      proof: 'captureVersion' },
+    { id: 'compare', group: 'doc',  title: 'Compare',            desc: 'Diff between two versions',         file: 'js/versioning.js',      proof: 'openCompareModal' },
+    { id: 'seal', group: 'sign',     title: 'Signature seal',     desc: 'Proof of what was signed',          file: 'js/core.js',            proof: 'sealString' },
+    { id: 'ai', group: 'doc',       title: 'AI clause review',   desc: 'Quotes the text back to you',       file: 'js/playbook.js',        proof: 'runPlaybookReview' },
+    { id: 'extract', group: 'doc',  title: 'Detail extraction',  desc: 'Dates, value, parties',             file: 'js/metadata.js',        proof: 'extractMetadata' },
+    { id: 'portal', group: 'sign',   title: 'Share portal',       desc: 'What the counterparty sees',        file: 'js/views/portal.js',    proof: 'portalEntry' },
+    { id: 'pdf', group: 'sign',      title: 'PDF export',         desc: 'And the evidence pack',             file: 'js/views/portal.js',    proof: 'exportPDF' },
+    { id: 'register', group: 'show', title: 'Register & filters', desc: 'The main contract table',           file: 'js/views/register.js',  proof: 'renderRegister' },
+    { id: 'kpi', group: 'show',      title: 'Home KPIs',          desc: 'Counts and the attention list',     file: 'js/views/home.js',      proof: 'renderDashboard' },
+    { id: 'remind', group: 'show',   title: 'Renewal reminders',  desc: '90 / 60 / 30 day emails',           file: 'server/server.js',      proof: 'runReminders' },
+    { id: 'cal', group: 'show',      title: 'Calendar',           desc: 'Expiries and deadlines',            file: 'js/views/calendar.js',  proof: 'renderCalendar' },
+    { id: 'wizard', group: 'show',   title: 'New contract wizard',desc: 'Starting from a template',          file: 'js/wizard.js',          proof: 'openWizard' },
+    { id: 'blanks', group: 'show',   title: 'Add blanks',         desc: 'Fill-in fields on templates',       file: 'js/views/library.js',   proof: 'openBlanksEditor' },
+    { id: 'dedupe', group: 'show',   title: 'Duplicate check',    desc: 'Skips files already imported',      file: 'js/dedupe.js',          proof: 'simhash64' },
 
     /* Added after the first pass: the map was seeded from the mockup and
        stopped at the document. These are the rest of HaTi's moving parts. */
-    { id: 'approvals',title: 'Approval gate',      desc: 'Who must sign off before signing',  file: 'js/approvals.js',       proof: 'buildApprovalChain' },
-    { id: 'signers',  title: 'Signing order',      desc: 'Who signs, and in what order',      file: 'js/approvals.js',       proof: 'signerPlan' },
-    { id: 'oblig',    title: 'Obligations',        desc: 'Payment dates, notice deadlines',   file: 'js/obligations.js',     proof: 'renderObligationsSection' },
-    { id: 'clauses',  title: 'Clause library',     desc: 'Your standards for each type',      file: 'js/playbook.js',        proof: 'clauseLibrary' },
-    { id: 'copilot',  title: 'The Copilot',        desc: 'The chat assistant inside HaTi',    file: 'js/ai.js',              proof: 'copilotAsk' },
-    { id: 'graph',    title: 'Contract graph',     desc: 'The map on the Intel screen',       file: 'js/views/intelligence.js', proof: 'buildGraphModel' },
-    { id: 'ocr',      title: 'Reading scans',      desc: 'Text off a photographed page',      file: 'js/ocr.js',             proof: 'ocrDocument' },
-    { id: 'migrate',  title: 'Bulk import',        desc: 'Bringing a back catalogue in',      file: 'js/views/migration.js', proof: 'migProcessFiles' },
-    { id: 'reports',  title: 'Reports',            desc: 'Portfolio reporting',               file: 'js/views/reports.js',   proof: 'computeReports' },
-    { id: 'queue',    title: 'The queue board',    desc: 'Contracts by lifecycle stage',      file: 'js/views/queue.js',     proof: 'renderPipeline' },
-    { id: 'family',   title: 'Amendments',         desc: 'A contract and its amendments',     file: 'js/family.js',          proof: 'effectiveExpiry' },
-    { id: 'audit',    title: 'Audit trail',        desc: 'The record of what happened',       file: 'js/core.js',            proof: 'logAudit' },
-    { id: 'sigpad',   title: 'Signature capture',  desc: 'The drawn or typed mark',           file: 'js/signature.js',       proof: 'openSignaturePad' },
+    { id: 'approvals', group: 'sign',title: 'Approval gate',      desc: 'Who must sign off before signing',  file: 'js/approvals.js',       proof: 'buildApprovalChain' },
+    { id: 'signers', group: 'sign',  title: 'Signing order',      desc: 'Who signs, and in what order',      file: 'js/approvals.js',       proof: 'signerPlan' },
+    { id: 'oblig', group: 'show',    title: 'Obligations',        desc: 'Payment dates, notice deadlines',   file: 'js/obligations.js',     proof: 'renderObligationsSection' },
+    { id: 'clauses', group: 'doc',  title: 'Clause library',     desc: 'Your standards for each type',      file: 'js/playbook.js',        proof: 'clauseLibrary' },
+    { id: 'copilot', group: 'show',  title: 'The Copilot',        desc: 'The chat assistant inside HaTi',    file: 'js/ai.js',              proof: 'copilotAsk' },
+    { id: 'graph', group: 'show',    title: 'Contract graph',     desc: 'The map on the Intel screen',       file: 'js/views/intelligence.js', proof: 'buildGraphModel' },
+    { id: 'ocr', group: 'doc',      title: 'Reading scans',      desc: 'Text off a photographed page',      file: 'js/ocr.js',             proof: 'ocrDocument' },
+    { id: 'migrate', group: 'show',  title: 'Bulk import',        desc: 'Bringing a back catalogue in',      file: 'js/views/migration.js', proof: 'migProcessFiles' },
+    { id: 'reports', group: 'show',  title: 'Reports',            desc: 'Portfolio reporting',               file: 'js/views/reports.js',   proof: 'computeReports' },
+    { id: 'queue', group: 'show',    title: 'The queue board',    desc: 'Contracts by lifecycle stage',      file: 'js/views/queue.js',     proof: 'renderPipeline' },
+    { id: 'family', group: 'show',   title: 'Amendments',         desc: 'A contract and its amendments',     file: 'js/family.js',          proof: 'effectiveExpiry' },
+    { id: 'audit', group: 'sign',    title: 'Audit trail',        desc: 'The record of what happened',       file: 'js/core.js',            proof: 'logAudit' },
+    { id: 'sigpad', group: 'sign',   title: 'Signature capture',  desc: 'The drawn or typed mark',           file: 'js/signature.js',       proof: 'openSignaturePad' },
   ],
 
   /* Each data item: what reads it, and where changing it can break something

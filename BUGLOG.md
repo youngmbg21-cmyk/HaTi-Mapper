@@ -420,6 +420,46 @@ also the more honest test: resize a page in the *same* signed-in context,
 because the property being checked is that this app has one layout and one
 panel rather than a separate mobile screen.
 
+## The tab redesign — four things that went wrong
+
+**Three collisions with class names the page already used.** The redesign added
+a set of shared pieces — a counter row, a group board, a measured bar — and
+three of their class names were already taken. `.bcol` and `.bar` belong to the
+control tower's own bar chart, and `.who` is the signed-in-user chip in the top
+bar. The symptom in each case was a layout that looked deliberate and was not:
+the group columns bottom-aligned themselves because `.bcol` carries
+`justify-content:flex-end` for the tower's bars, and the feature rows laid
+themselves out horizontally because `.who` is a flex row. I spent a while
+reading my own grid rules for a bug that was in someone else's. The fix was to
+rename mine — `.gcol`, `.mbar`, `.rwho` — and the lesson is that in a
+single-stylesheet app a new class name needs a grep before it needs a rule.
+
+**Renaming one occurrence too many.** The `.bcol` rename was done with a
+string replace across `app.js`, which caught both the new group columns and the
+tower's own bar columns. The tower kept rendering — it just lost its bar
+layout — so nothing failed, and the only reason it was caught was a screenshot
+of a tab that was not being worked on. A blind replace across a file is not a
+rename.
+
+**A catch that reported every fault as a network failure.** After the Changes
+tab lost its fourth card, `setLoading()` still tried to write into the element
+that had gone, threw, and the page reported *"The server did not answer"* — so
+the first place I looked was the server, which was fine. That handler wrapped
+the whole of boot, including the page's own drawing code, and flattened both
+into one message. It now distinguishes the two: a genuine failure to reach the
+server still says so, and a fault in the page is re-thrown so it reaches the
+console as itself. This is the second time in this project a catch-all message
+has cost more time than the bug behind it.
+
+**A test that was asserting the old layout, and one that was right to.** Most
+of the suite's failures after the redesign were simply pinned markup — `tbody
+tr` where there are now ranked rows, `#publicBody` where there is now one
+merged list — and updating them to the new shapes is what a redesign means. One
+was not: the suite asserted a fix-prompt button for every unused published
+name, and the design replaced those with plain chips and a single bulk button.
+That would have quietly removed the ability to ask about one name. The chips
+became the buttons, so the design's shape and the capability both survive.
+
 ## Nothing was abandoned
 
 Rule 4 of the brief covers the case where an item breaks verification and

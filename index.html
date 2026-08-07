@@ -109,6 +109,10 @@ a{color:inherit;}
 .grid2{display:grid;grid-template-columns:1.05fr .85fr 1.25fr .9fr;gap:12px;margin-bottom:12px;}
 .grid3{display:grid;grid-template-columns:1.9fr 1fr;gap:12px;margin-bottom:12px;align-items:start;}
 .grid4{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;align-items:start;}
+/* Three of equal weight. .grid3 is 1.9fr/1fr — a wide panel beside a rail —
+   which is a different shape and was quietly stacking a third card. */
+.trio{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:12px;align-items:start;}
+@media(max-width:1100px){.trio{grid-template-columns:1fr;}}
 @media(max-width:1100px){.grid2{grid-template-columns:1fr 1fr;}}
 @media(max-width:980px){.grid1{grid-template-columns:1fr 1fr;}.grid3,.grid4{grid-template-columns:1fr;}}
 @media(max-width:640px){.grid1,.grid2,.grid3,.grid4{grid-template-columns:1fr;}}
@@ -262,6 +266,8 @@ a{color:inherit;}
 .gline .dot{flex:none;width:8px;height:8px;border-radius:50%;margin-top:5px;background:var(--tile2);}
 .gline .dot.hi{background:#ef4444;}
 .gline .dot.md{background:var(--gold);}
+/* The text takes the room so an action on the end of the row can sit right. */
+.gline > div{flex:1;min-width:0;}
 .gline b{display:block;font-size:12.5px;font-weight:600;line-height:1.35;}
 .gline > div > span{display:block;font-size:11px;color:var(--tx3);margin-top:1px;line-height:1.45;}
 .evrow{display:flex;gap:9px;align-items:flex-start;padding:5px 0;}
@@ -293,6 +299,181 @@ a{color:inherit;}
 .tbl .dim{color:var(--tx2);}
 .tbl .r{text-align:right;font-family:var(--mono);white-space:nowrap;}
 
+/* ==========================================================================
+   THE REDESIGNED TABS
+   ==========================================================================
+   Seven panels were rebuilt to one shape: the answer arrives first, as a row
+   of counters across the top, and the detail sits under it. Everything below
+   is shared by more than one of them, which is the point — a fix to a row or
+   a bar lands on every tab that uses it, and the tabs cannot drift apart the
+   way seven private layouts did. */
+
+/* ---- the counter row every redesigned tab opens with ---- */
+.sums{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:14px;}
+@media(max-width:1100px){.sums{grid-template-columns:repeat(2,minmax(0,1fr));}}
+@media(max-width:640px){.sums{grid-template-columns:1fr;}}
+.sum{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:15px 17px;min-width:0;}
+.sum .top{display:flex;align-items:center;gap:9px;flex-wrap:wrap;}
+/* The traffic light. Green is "as it should be", gold "worth a look", red
+   "something is wrong" — the same three the tower uses, so the colours mean
+   one thing across the whole app. */
+.sum .tl{width:8px;height:8px;border-radius:50%;background:var(--lav);flex:none;}
+.sum .tl.warn{background:var(--gold);} .sum .tl.bad{background:var(--badtx);}
+.sum .n{font-size:27px;font-weight:700;letter-spacing:-0.03em;line-height:1.05;}
+.sum .cap{font-size:12.5px;color:var(--tx2);line-height:1.5;margin-top:6px;}
+.sum .cap b{color:var(--tx);font-weight:600;}
+/* Week on week. It only ever appears when there is a real earlier reading to
+   compare against — never as a zero, which would read as "no change" when it
+   means "nothing to compare". */
+.trend{font-family:var(--mono);font-size:10px;font-weight:600;border-radius:999px;padding:2px 7px;white-space:nowrap;
+  background:var(--tile2);color:var(--tx3);}
+.trend.up{background:var(--bad);color:var(--badtx);}
+.trend.down{background:var(--good);color:var(--goodtx);}
+.trend.flat{background:var(--tile2);color:var(--tx3);}
+
+/* A heading's second line: what the panel is, in ordinary words, beside what
+   it is called. Muted and small so it never competes with the heading. */
+.sublab{font-size:12px;color:var(--tx3);line-height:1.4;}
+
+/* ---- a label over a group of things ---- */
+.glab{font-family:var(--mono);font-size:9.5px;font-weight:600;letter-spacing:.11em;text-transform:uppercase;color:var(--tx3);margin-bottom:8px;}
+
+/* ---- the group board on Screens ---- */
+/* One column per menu section, however many HaTi's menu has — four in the
+   design, five in the product today, and it must not wrap a fifth onto a
+   second row and leave a hole where the fourth should be. */
+.board{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px;align-items:start;}
+@media(max-width:640px){.board{grid-template-columns:1fr;}}
+.gcol{min-width:0;display:flex;flex-direction:column;gap:8px;align-self:start;}
+/* The stripe down the left says whether a screen needs a login; the bar along
+   the bottom is how much code sits behind it. Both are the same two facts the
+   table below carries, drawn rather than written. */
+.scard{background:var(--tile);border-radius:12px;padding:10px 12px 0;border-left:3px solid var(--lav);overflow:hidden;}
+.scard.open{border-left-color:var(--gold);}
+.scard .t{font-size:12.5px;font-weight:600;display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
+.scard .d{font-size:11px;color:var(--tx3);line-height:1.4;margin-top:2px;}
+.scard .wt{height:3px;border-radius:3px;background:var(--tile2);margin:9px -12px 0;}
+.scard .wt i{display:block;height:100%;background:var(--lav);}
+.scard.open .wt i{background:var(--gold);}
+
+/* ---- a ranked row with a bar: money features, heavy files ---- */
+.rank{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1.35fr) auto;gap:14px;align-items:center;
+  padding:13px 0;border-bottom:1px solid var(--line);}
+.rank:last-child{border-bottom:0;}
+@media(max-width:900px){.rank{grid-template-columns:1fr;gap:8px;}}
+.rank .rwho{min-width:0;}
+.rank .rwho b{font-size:13.5px;font-weight:600;display:block;}
+.rank .rwho .d{font-size:11.5px;color:var(--tx3);line-height:1.45;margin-top:2px;}
+.rank .rwho .m{margin-top:5px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
+.rank .amt{text-align:right;font-family:var(--mono);white-space:nowrap;min-width:88px;}
+.rank .amt .v{font-size:15px;font-weight:600;}
+.rank .amt .s{font-size:10.5px;color:var(--tx3);display:block;margin-top:2px;}
+@media(max-width:900px){.rank .amt{text-align:left;}}
+
+/* The bar, and the line it is measured against. The marker is what turns
+   "over the line" from a badge into a position — you can see how far over. */
+.mbar{position:relative;height:22px;border-radius:7px;background:var(--tile2);overflow:hidden;}
+.mbar i{display:block;height:100%;background:var(--lav);border-radius:7px 0 0 7px;transition:width .35s;}
+.mbar i.over{background:var(--gold);}
+.mbar i.none{background:var(--badtx);}
+.mbar .mark{position:absolute;top:0;bottom:0;width:2px;background:var(--card);opacity:.85;}
+.barnote{font-size:11px;color:var(--tx3);margin-top:5px;line-height:1.45;}
+
+/* ---- doors: one row per door, code's claim beside the live verdict ---- */
+.door{display:flex;gap:12px;align-items:flex-start;background:var(--tile);border-radius:14px;padding:12px 14px;margin-bottom:8px;}
+.door.bad{background:var(--bad);}
+/* Nothing guarding an address is not a surprise — the code says so — but it
+   is not a clean bill of health either. Its own middle state. */
+.door.warn{background:var(--gold);}
+.door .ic{flex:none;width:30px;height:30px;border-radius:9px;display:flex;align-items:center;justify-content:center;
+  background:var(--good);color:var(--goodtx);}
+.door.bad .ic{background:rgba(0,0,0,.16);color:var(--badtx);}
+.door.warn .ic{background:rgba(0,0,0,.16);color:var(--ongold);}
+.door.warn .bd b,.door.warn .bd .d,.door.warn .bd .w{color:var(--ongold);}
+.door.warn .bd .w .codechip{background:rgba(0,0,0,.16);color:var(--ongold);}
+.door .bd{flex:1;min-width:0;}
+.door .bd b{font-size:13.5px;font-weight:600;}
+.door .bd .d{font-size:12px;color:var(--tx2);line-height:1.5;margin-top:2px;}
+.door.bad .bd .d{color:var(--badtx);}
+.door .bd .w{margin-top:7px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:11px;color:var(--tx3);}
+.door .rt{flex:none;display:flex;flex-direction:column;align-items:flex-end;gap:7px;}
+
+/* ---- the change timeline ---- */
+.tl2{display:grid;grid-template-columns:132px 12px 1fr;gap:0 12px;}
+@media(max-width:720px){.tl2{grid-template-columns:1fr;}.tl2 .rail{display:none;}}
+.tl2 .when{text-align:right;font-family:var(--mono);font-size:10.5px;color:var(--tx3);line-height:1.5;padding:10px 0;}
+.tl2 .when b{display:block;color:var(--tx2);font-weight:600;font-size:11px;}
+/* One continuous line with a dot per round, so the rounds read as a sequence
+   rather than as a stack of unrelated cards. */
+.tl2 .rail{position:relative;}
+.tl2 .rail:before{content:"";position:absolute;left:5px;top:0;bottom:0;width:2px;background:var(--line);}
+.tl2 .rail i{position:absolute;left:1px;top:15px;width:10px;height:10px;border-radius:50%;background:var(--tx3);border:2px solid var(--card);}
+.tl2 .rail i.bad{background:var(--badtx);} .tl2 .rail i.warn{background:var(--gold);}
+.tl2 .evs{padding:10px 0;min-width:0;}
+.tl2 .ev{display:flex;gap:9px;align-items:baseline;margin-bottom:6px;font-size:12.5px;line-height:1.5;}
+.tl2 .ev:last-child{margin-bottom:0;}
+.tl2 .ev .x{color:var(--tx2);min-width:0;}
+.tl2 .ev .x b{color:var(--tx);font-weight:600;}
+
+/* ---- storage cards ---- */
+.tcards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;}
+@media(max-width:900px){.tcards{grid-template-columns:1fr;}}
+.tcard{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px 16px;min-width:0;}
+.tcard .h{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap;}
+.tcard .h b{font-size:14px;font-weight:600;}
+.tcard .h .sub{font-size:11.5px;color:var(--tx3);}
+/* The file and line are an address, not the answer, so they sit in the corner
+   in mono and get out of the way of the sentence. */
+.tcard .h .src{margin-left:auto;font-family:var(--mono);font-size:10.5px;color:var(--tx3);}
+.tcard .say{font-size:12.5px;color:var(--tx2);line-height:1.55;margin-top:7px;}
+.tcard .say b{color:var(--badtx);font-weight:600;}
+.chips{display:flex;flex-wrap:wrap;gap:5px;margin-top:10px;}
+
+/* ---- the red card that carries the one thing worth doing ---- */
+.warncard{display:flex;gap:13px;align-items:flex-start;background:var(--bad);color:var(--badtx);border-radius:18px;padding:15px 17px;margin-bottom:14px;}
+.warncard .ic{flex:none;width:32px;height:32px;border-radius:10px;background:rgba(0,0,0,.16);display:flex;align-items:center;justify-content:center;}
+.warncard .bd{flex:1;min-width:0;}
+.warncard .bd b{font-size:14px;font-weight:600;color:var(--badtx);display:block;}
+.warncard .bd .d{font-size:12.5px;line-height:1.55;margin-top:3px;}
+.warncard .bd .d code{font-family:var(--mono);font-size:11.5px;background:rgba(0,0,0,.16);border-radius:5px;padding:1px 5px;}
+
+/* ---- "can these numbers be trusted?" ---- */
+.trust{display:flex;gap:11px;align-items:flex-start;background:var(--tile);border-radius:13px;padding:11px 13px;margin-bottom:8px;}
+.trust:last-child{margin-bottom:0;}
+.trust .tl{width:8px;height:8px;border-radius:50%;background:var(--lav);flex:none;margin-top:6px;}
+.trust .tl.warn{background:var(--gold);} .trust .tl.bad{background:var(--badtx);}
+.trust .bd{flex:1;min-width:0;}
+.trust .bd b{font-size:12.5px;font-weight:600;display:block;}
+.trust .bd span{font-size:11.5px;color:var(--tx3);line-height:1.45;display:block;margin-top:1px;}
+
+/* ---- the seven-day bars, and the proportional split ---- */
+.days7{display:flex;align-items:flex-end;gap:8px;height:120px;margin:14px 0 10px;}
+.days7 .d7{flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:7px;height:100%;min-width:0;}
+.days7 .d7 i{display:block;width:100%;max-width:46px;border-radius:7px;background:var(--tile2);transition:height .35s;}
+.days7 .d7.top i{background:var(--gold);} .days7 .d7.now i{background:var(--lav);}
+.days7 .d7 span{font-family:var(--mono);font-size:9.5px;letter-spacing:.06em;color:var(--tx3);text-transform:uppercase;}
+.split{display:flex;height:11px;border-radius:6px;overflow:hidden;background:var(--tile2);margin-bottom:11px;}
+.split i{display:block;height:100%;}
+.legend{display:flex;flex-direction:column;gap:7px;}
+.legend .lg{display:flex;align-items:center;gap:9px;font-size:12.5px;color:var(--tx2);}
+.legend .lg i{width:10px;height:10px;border-radius:3px;flex:none;}
+.legend .lg .p{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--tx3);}
+
+/* ---- orphan chips, grouped by the file they come from ---- */
+.ocards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;}
+@media(max-width:900px){.ocards{grid-template-columns:1fr;}}
+.ocard{background:var(--tile);border-radius:13px;padding:11px 13px;min-width:0;}
+.ocard .f{font-family:var(--mono);font-size:11px;color:var(--tx3);margin-bottom:8px;}
+/* A chip that is also its own button. It looks like the chip beside it until
+   you point at it, because a wall of buttons reads as a demand. */
+.chipbtn{cursor:pointer;border:1px solid transparent;font-family:var(--mono);}
+.chipbtn:hover{border-color:var(--lav);color:var(--tx);}
+
+/* A quiet link-shaped control for "show the rest" — it reveals what is
+   already on the page rather than going anywhere, so it is not a button. */
+.showall{background:none;border:0;font-family:var(--font);font-size:12.5px;font-weight:600;color:var(--lav);
+  cursor:pointer;padding:2px 0;text-decoration:underline;text-underline-offset:2px;}
+
 /* ------------------------------------------------------------ what breaks */
 .picks2{display:flex;flex-direction:column;gap:6px;}
 .pick2{text-align:left;font-family:var(--font);font-size:13px;font-weight:600;color:var(--tx2);background:var(--tile);border:1px solid transparent;
@@ -301,6 +482,8 @@ a{color:inherit;}
 .pick2[aria-pressed="true"]{background:var(--lav);color:var(--onlav);}
 .pick2 small{display:block;font-family:var(--mono);font-size:9.5px;font-weight:400;opacity:.7;margin-top:2px;}
 .deps2{display:grid;grid-template-columns:repeat(auto-fill,minmax(148px,1fr));gap:7px;align-content:start;}
+/* On the board the tiles stack inside their group's column instead. */
+.gcol .dep2{margin:0;}
 .dep2{border-radius:12px;padding:9px 11px;background:var(--tile);transition:opacity .2s,background .2s;}
 .dep2 .t{font-size:12.5px;font-weight:600;}
 .dep2 .d{font-size:11px;color:var(--tx3);margin-top:1px;line-height:1.4;}
@@ -311,7 +494,7 @@ a{color:inherit;}
 .dep2.on.risk{background:var(--bad);}
 .dep2.on.risk .t{color:var(--badtx);}
 .dep2.on.risk .d{color:var(--badtx);opacity:.78;}
-.blastwrap{display:grid;grid-template-columns:220px 1fr;gap:14px;align-items:start;}
+.blastwrap{display:grid;grid-template-columns:240px 1fr;gap:14px;align-items:start;}
 @media(max-width:720px){.blastwrap{grid-template-columns:1fr;}}
 .keyline{display:flex;flex-wrap:wrap;gap:8px 18px;align-items:center;margin-bottom:12px;font-size:12px;color:var(--tx2);}
 .keyline .sw{display:inline-block;width:22px;height:13px;border-radius:4px;vertical-align:-2px;margin-right:6px;}
@@ -723,7 +906,31 @@ a{color:inherit;}
   <!-- ================================================================ SCREENS -->
   <section class="panel" data-panel="screens" hidden>
     <div class="ph"><h2>Every screen in HaTi</h2><span id="screensLede">Reading the nav and the view modules…</span></div>
-    <div class="card tblwrap"><div id="screensBody"></div></div>
+    <div class="sums" id="screensSums"></div>
+    <!-- The menu, drawn. Columns are HaTi's own nav sections in its own order;
+         the stripe says whether a screen needs a login and the bar under it is
+         how much code sits behind it. -->
+    <div class="card">
+      <div class="chead"><h3>How HaTi is put together</h3>
+        <span class="sublab">the bar under each screen is how much code sits behind it</span>
+        <span class="keyline" style="margin:0 0 0 auto">
+          <span><span class="sw" style="background:var(--lav)"></span>needs a login</span>
+          <span><span class="sw" style="background:var(--gold)"></span>open to anyone</span>
+        </span>
+      </div>
+      <div class="board" id="screensBoard"></div>
+    </div>
+    <div class="card tblwrap">
+      <div class="chead"><h3>The detail, screen by screen</h3>
+        <span class="sublab">the same table, heaviest first</span>
+        <div class="seg" id="screensSort" role="group" aria-label="How to order the table">
+          <button type="button" data-s="size" aria-pressed="true">Heaviest first</button>
+          <button type="button" data-s="group" aria-pressed="false">By group</button>
+          <button type="button" data-s="az" aria-pressed="false">A–Z</button>
+        </div>
+      </div>
+      <div id="screensBody"></div>
+    </div>
     <div class="card" id="streamsCard" hidden>
       <div class="chead"><h3>Value streams</h3></div>
       <div id="streamsBody"></div>
@@ -732,14 +939,31 @@ a{color:inherit;}
 
   <!-- ================================================================== MONEY -->
   <section class="panel" data-panel="cost" hidden>
-    <div class="ph"><h2>Where the money goes</h2><span>every feature that calls Anthropic, which model, and the caps that apply</span></div>
+    <div class="ph"><h2>Where the money goes</h2><span>a roof, never a bill — every figure assumes a request uses its whole allowance</span></div>
+    <!-- Three cards across the top: the day's ceiling with today's usage, the
+         week in bars, and whether the numbers behind them can be trusted at
+         all. That last one used to be buried in prose under the table. -->
+    <div class="trio">
+      <div class="card" id="moneyRoof"></div>
+      <div class="card" id="moneyWeek"></div>
+      <div class="card" id="moneyTrust"></div>
+    </div>
     <div class="grid3">
-      <div class="card tblwrap"><div id="costBody"></div></div>
+      <div class="card">
+        <div class="chead"><h3>What each feature costs, dearest first</h3>
+          <span class="sublab">the bar is the cost of one use, against the dearest</span>
+        </div>
+        <div id="costBody"></div>
+      </div>
       <div>
         <div class="card">
-          <div class="chead"><h3>Caps in force right now</h3><span class="badge" id="capsLive" style="margin-left:auto">from the code</span></div>
+          <div class="chead"><h3>The taps you can turn</h3><span class="badge" id="capsLive" style="margin-left:auto">from the code</span></div>
           <div id="capsBody"></div>
           <div class="note" id="capsLede">Set in Team &amp; Settings. Asking the running HaTi…</div>
+        </div>
+        <div class="card" id="moneySplitCard" hidden>
+          <div class="chead"><h3>Where the spend sits</h3></div>
+          <div id="moneySplit"></div>
         </div>
       </div>
     </div>
@@ -747,42 +971,50 @@ a{color:inherit;}
 
   <!-- ================================================================== DOORS -->
   <section class="panel" data-panel="public" hidden>
-    <div class="ph"><h2>Open to the public</h2><span id="publicLede">Everything that works without logging in. Worth knowing exactly what they are.</span></div>
-    <div class="grid4">
-      <div class="card">
-        <div class="chead"><h3>Knocking on the doors</h3>
-          <span class="state" id="doorsState" style="margin-left:auto"></span>
-          <button class="btn" id="doorsGo" type="button">Check the live site</button>
+    <div class="ph"><h2>Doors</h2><span id="publicLede">everything that works without logging in — what the code says, and what the live site actually did</span></div>
+    <!-- These two lists used to sit side by side describing the same doors
+         twice: what the code promises on the right, what the live site
+         answered on the left. They are one list now, joined on the address, so
+         each door is one row carrying both. -->
+    <div class="trio" id="doorsSums"></div>
+    <div class="card">
+      <div class="chead"><h3>Every door, surprises first</h3>
+        <span class="sublab">what the code promises, beside what the live site did</span>
+        <div class="seg" id="doorsFilter" role="group" aria-label="Which doors to show">
+          <button type="button" data-f="all" aria-pressed="true">All</button>
+          <button type="button" data-f="surprise" aria-pressed="false">Surprises only</button>
+          <button type="button" data-f="unknocked" aria-pressed="false">Never knocked</button>
         </div>
-        <!-- The list beside this is what the code says. This asks the live
-             site. Owner-triggered only — nothing here ever runs on its own. -->
-        <div id="doorsBody"></div>
       </div>
-      <div class="card">
-        <div class="chead"><h3>Open by design</h3></div>
-        <div id="publicBody"></div>
-      </div>
+      <div id="doorsBody"></div>
+      <div class="note" id="doorsNote"></div>
     </div>
   </section>
 
   <!-- ================================================================ CHANGES -->
   <section class="panel" data-panel="changes" hidden>
-    <div class="ph"><h2>What changed</h2><span>last night's report, the watch log, and what is still not finished</span></div>
+    <div class="ph"><h2>What changed</h2><span>last night's work, what is still unfinished, and everything the Mapper has watched move</span></div>
+    <div class="sums" id="changesSums"></div>
     <div class="grid4">
       <!-- The question actually asked every morning: what did last night's
-           session do? The same events as below, grouped into one report. -->
+           session do? The commits that used to sit in a fourth card of their
+           own are folded in here — they are part of this answer, not a second
+           answer to the same question. -->
       <div class="card">
-        <div class="chead"><h3>Last night</h3><span class="badge" id="digestBadge" style="margin-left:auto" hidden></span></div>
+        <div class="chead"><h3>Last night, in order</h3><span class="badge" id="digestBadge" style="margin-left:auto" hidden></span></div>
         <div id="digestBody"></div>
         <div class="note" id="digestLede">Everything that moved since midnight, in one place.</div>
       </div>
       <div class="card">
-        <div class="chead"><h3>Not finished yet</h3><span class="badge" id="gapsBadge" style="margin-left:auto" hidden></span></div>
+        <div class="chead"><h3>Still not finished</h3>
+          <span class="sublab" style="margin-left:auto">ranked where the documents say so</span>
+        </div>
         <div id="gapsBody"></div>
       </div>
     </div>
     <div class="card">
       <div class="chead"><h3>What the Mapper has watched change</h3>
+        <span class="sublab">its own observations — not the same thing as code updates</span>
         <!-- How far back to look. 72 hours is the working set; anything longer
              is served from the archive. -->
         <div class="seg" id="watchRange" role="group" aria-label="How far back to look">
@@ -795,44 +1027,40 @@ a{color:inherit;}
       <div id="watchBody"></div>
       <div class="note" id="watchLede">Every time this page scans HaTi it compares what it finds with last time. Anything that moved is written down here.</div>
     </div>
-    <div class="card">
-      <!-- Named for what it holds rather than "what changed in the code",
-           which read as a second answer to the question the card above it
-           already answers. These are saves; that one is observations. -->
-      <div class="chead"><h3>Code updates</h3></div>
-      <div id="changesBody"></div>
-      <div class="note">Every time someone saved work on HaTi, newest first, read from the repository's own record.
-        This is not the same as the list above it: that one is what the Mapper noticed change between its own looks,
-        and this one is what was written down at the time. A busy day here can leave nothing there, and the other way round.</div>
-    </div>
   </section>
 
   <!-- ======================================================= WHAT BREAKS WHAT -->
   <section class="panel" data-panel="blast" hidden>
-    <div class="ph"><h2>What breaks what</h2><span>pick something to see everything that depends on it — red means it can break something already signed</span></div>
-    <div class="card">
-      <div class="keyline">
-        <span><span class="sw" style="background:var(--lav)"></span><b>Reads it</b> — uses this data</span>
-        <span><span class="sw" style="background:var(--bad)"></span><b>Can break something already signed</b></span>
-        <span><span class="sw" style="background:var(--tile);opacity:.4"></span>Not affected</span>
-      </div>
-      <div id="blastBody"></div>
-      <div class="note" id="blastNote" hidden></div>
-    </div>
+    <div class="ph"><h2>What breaks what</h2><span>pick a piece of information on the left; everything that touches it lights up</span></div>
+    <!-- The two counts come before the picture, because they are the answer
+         and the picture is only the evidence for it. -->
+    <div id="blastBody"></div>
   </section>
 
   <!-- ================================================= WHERE THINGS ARE KEPT -->
   <section class="panel" data-panel="data" hidden>
-    <div class="ph"><h2>Where things are kept</h2><span>server mode stores everything in one SQLite file; static mode keeps it in the browser</span></div>
-    <div class="card tblwrap"><div id="dataBody"></div></div>
+    <div class="ph"><h2>Where things are kept</h2><span id="dataLede">every table in HaTi's database, what is inside it, and the one thing worth changing</span></div>
+    <div class="sums" id="dataSums"></div>
+    <!-- Cards, not a table. A table of tables reads like a database tool, and
+         the person reading this does not write code. -->
+    <div id="dataBody"></div>
   </section>
 
   <!-- ========================================================== GETTING BULKY -->
   <section class="panel" data-panel="weight" hidden>
-    <div class="ph"><h2>Getting bulky</h2><span>files past roughly 60&nbsp;KB get hard to work on, and hard for an AI session to hold in mind</span></div>
-    <div class="card"><div id="weightBody"></div></div>
+    <div class="ph"><h2>Getting bulky</h2><span>which parts of HaTi have outgrown comfortable, and what to do about it</span></div>
+    <div class="sums" id="weightSums"></div>
     <div class="card">
-      <div class="chead"><h3>Attached to <code class="codechip">window</code> but never used</h3></div>
+      <div class="chead"><h3>The heavy end</h3>
+        <span class="sublab" id="weightLede">the line is where a file gets hard to hold in mind</span>
+      </div>
+      <div id="weightBody"></div>
+    </div>
+    <div class="card">
+      <div class="chead"><h3 id="orphanTitle">Names nothing uses</h3>
+        <span class="sublab">published so other code can call them — and no other code does</span>
+        <span id="orphanAct" style="margin-left:auto"></span>
+      </div>
       <div id="orphanBody"></div>
       <div class="note">HaTi shares everything through <code>window</code>, which makes "is this reachable from anywhere?" a cheap question to ask. These names are exported and then referenced nowhere else in the repository.</div>
     </div>

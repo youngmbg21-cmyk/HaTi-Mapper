@@ -349,9 +349,8 @@ try {
     ['data', 'dataBody', 8],
     ['blast', 'blastBody', 8],
     ['changes', 'gapsBody', 4],
-    ['public', 'publicBody', 8],
-    ['changes', 'changesBody', 4],
-    ['weight', 'weightBody', 8],
+    ['public', 'doorsBody', 8],
+    ['weight', 'weightBody', 4],
   ];
   /* Numbers and strings that only ever existed in the hardcoded mockup. If any
      of them survives, something is still fake. */
@@ -365,7 +364,7 @@ try {
     await page.waitForSelector(`#${bodyId}`, { state: 'attached' });
     const info = await page.$eval(`#${bodyId}`, (el, min) => ({
       text: el.innerText.trim(),
-      rows: el.querySelectorAll('tr, .gline, .caprow, .knock2, .filerow, .dep2, .evrow').length,
+      rows: el.querySelectorAll('tr, .gline, .caprow, .knock2, .filerow, .dep2, .evrow, .rank, .door, .tcard, .scard, .ocard, .commit2, .trust').length,
       skeleton: !!el.querySelector('.sk'),
       errored: !!el.querySelector('.note.bad'),
     }), minRows);
@@ -378,6 +377,26 @@ try {
   for (const leftover of MOCKUP_LEFTOVERS) {
     check(`No mockup value survives: "${leftover.slice(0, 40)}"`, !wholePage.includes(leftover));
   }
+
+  /* ---- every panel survives a phone ----
+     This app has one layout rather than a desktop screen and a mobile screen,
+     so a panel that overflows sideways at 390px is a bug on the only screen
+     there is. Counter rows, ranked rows with bars, group boards and card grids
+     all have to fold, and a wide table inside a panel has to scroll inside its
+     own box rather than pushing the page. */
+  console.log('\nOn a phone');
+  await page.setViewportSize({ width: 390, height: 780 });
+  for (const [tab] of PANELS) {
+    await page.click(`[data-p="${tab}"]`);
+    await page.waitForTimeout(150);
+    const over = await page.evaluate(() => ({
+      doc: document.documentElement.scrollWidth,
+      win: window.innerWidth,
+    }));
+    check(`Panel "${tab}" does not push the page sideways on a phone`,
+      over.doc <= over.win + 1, `${over.doc}px of content in a ${over.win}px window`);
+  }
+  await page.setViewportSize({ width: 1440, height: 1000 });
 
   /* ---- Settings and the assistant panel, driven through the real controls ----
      These are clicked rather than called, because the bug this guards against
@@ -603,11 +622,13 @@ try {
   const cost = await page.evaluate(() => ({
     notice: (document.getElementById('capsLede') || {}).innerText || '',
     rows: document.querySelectorAll('#capsBody .caprow').length,
-    features: document.querySelectorAll('#costBody tbody tr').length,
+    features: document.querySelectorAll('#costBody .rank').length,
   }));
   check('The spend panel says live values are unavailable', /code defaults, not live values/i.test(cost.notice), cost.notice.slice(0, 100));
   check('The spend panel still shows the code defaults', cost.rows >= 5, `${cost.rows} cap rows`);
   check('The AI feature list still renders without HaTi', cost.features >= scan.ai.features.length, `${cost.features} rows`);
+  check('And the caps card says the figures are the code\'s, not the live site\'s',
+    /code defaults, not live values/i.test(cost.notice));
   // The other seven panels were all asserted non-empty above, with no HaTi running.
   check('The other seven panels rendered with no HaTi running', true,
     'checks under "2. Every panel" all ran against a server with HATI_URL unset');
@@ -817,14 +838,19 @@ try {
      common knowledge. */
   console.log('\nWhat the bulky files are');
   await page.click('[data-p="weight"]');
-  await page.waitForSelector('#weightBody tbody tr', { timeout: 20000 });
-  const fileRows = await page.evaluate(() => [...document.querySelectorAll('#weightBody tbody tr')].map(el => ({
-    name: (el.querySelector('td b') || {}).textContent || '',
+  await page.waitForSelector('#weightBody .rank', { timeout: 20000 });
+  /* The panel leads with the heaviest few and keeps the long tail behind a
+     toggle, so the whole list has to be asked for before it can be checked. */
+  const showAll = await page.$('#weightBody button[data-act="weight"]');
+  if (showAll) { await showAll.click(); await page.waitForTimeout(200); }
+  const fileRows = await page.evaluate(() => [...document.querySelectorAll('#weightBody .rank')].map(el => ({
+    name: (el.querySelector('.rwho b') || {}).textContent || '',
     path: (el.querySelector('.codechip') || {}).textContent || '',
-    says: (el.querySelector('.subnum') || {}).textContent || '',
-    big: !!el.querySelector('.badge.gold'),
-    fill: (el.querySelector('td span[style*="width"]') || {}).getAttribute
-      ? el.querySelector('td span[style*="width"]').getAttribute('style') : '',
+    says: (el.querySelector('.rwho .d') || {}).textContent || '',
+    big: !!el.querySelector('.mbar i.over'),
+    fill: (el.querySelector('.mbar i') || {}).getAttribute
+      ? el.querySelector('.mbar i').getAttribute('style') : '',
+    mark: !!el.querySelector('.mbar .mark'),
   })));
   check('Every file is listed as a thing, not only as a path',
     fileRows.length === scan.weight.files.length && fileRows.every(r => r.name.trim().length > 2),
@@ -841,6 +867,8 @@ try {
   check('The path is still there for whoever wants it',
     fileRows.every(r => /\.js$/.test(r.path.trim())), fileRows[0].path);
   check('The bars still draw', fileRows.every(r => /width:\s*[\d.]+%/.test(r.fill || '')), fileRows[0].fill);
+  check('And every bar carries the comfortable line as a position, not a badge',
+    fileRows.every(r => r.mark), `${fileRows.filter(r => !r.mark).length} bars without the line`);
   check('Files past the line are marked as past it',
     fileRows.filter(r => r.big).length === scan.weight.overThreshold,
     `${fileRows.filter(r => r.big).length} of ${scan.weight.overThreshold}`);
@@ -851,7 +879,7 @@ try {
   check('And says what the colouring means, in words',
     /outgrown comfortable/.test(weightText));
   check('No row is described by a path alone',
-    !/^\s*js\/views\//m.test(await page.$eval('#weightBody tbody tr td b', el => el.textContent)));
+    !/^\s*js\/views\//m.test(await page.$eval('#weightBody .rank .rwho b', el => el.textContent)));
 
   /* ---- draft a fix prompt ----
      The button has to be on the findings themselves, where the owner is
@@ -869,7 +897,7 @@ try {
     fixButtons['ai-unused'].length >= 1, fixButtons['ai-unused'].join(', ') || 'none');
   check('So does every gap the documents admit to',
     fixButtons.gap.length >= scan.gaps.gaps.length, `${fixButtons.gap.length} of ${scan.gaps.gaps.length}`);
-  check('So does every name published and never used',
+  check('So does every name published and never used, one chip each',
     fixButtons.orphan.length === scan.weight.orphans.length,
     `${fixButtons.orphan.length} of ${scan.weight.orphans.length}`);
   check('And the button carries the real identifier, not a row number',
@@ -902,16 +930,26 @@ try {
   /* ---- what it costs to run ---- */
   console.log('\nWhat it costs to run');
   await page.click('[data-p="cost"]');
-  await page.waitForSelector('#costBody table');
+  await page.waitForSelector('#costBody .rank');
   const costPanel = await page.textContent('#costBody');
+  /* The day's ceiling and the trust notes moved out of a paragraph under the
+     table and onto their own cards at the top of the panel, so they are
+     asserted where they now live. */
+  const moneyTop = await page.evaluate(() => ({
+    roof: (document.getElementById('moneyRoof') || {}).innerText || '',
+    trust: (document.getElementById('moneyTrust') || {}).innerText || '',
+  }));
   check('The spend panel now shows money, not just counts', /\$\d/.test(costPanel), costPanel.slice(0, 80));
   check('With a per-use figure for every feature',
-    (costPanel.match(/if one person hits the cap/g) || []).length >= scan.ai.features.length - 1,
-    `${(costPanel.match(/if one person hits the cap/g) || []).length} rows priced`);
-  check('And a whole-day ceiling', /A whole day, at the limits the code sets/.test(costPanel));
+    (costPanel.match(/at the cap/g) || []).length >= scan.ai.features.length - 1,
+    `${(costPanel.match(/at the cap/g) || []).length} rows priced`);
+  check('And a whole-day ceiling, leading the panel', /The most today could cost/.test(moneyTop.roof) && /\$\d/.test(moneyTop.roof),
+    moneyTop.roof.slice(0, 80));
   check('The honesty label is on the page, not just in the payload',
-    /rough ceiling, not a bill/.test(costPanel));
-  check('So is when the prices were last checked', /Prices last checked/.test(costPanel));
+    /rough ceiling, not a bill/.test(moneyTop.trust), moneyTop.trust.slice(-90));
+  check('So is when the prices were last checked', /Prices checked/.test(moneyTop.trust));
+  check('And whether the caps came from the live site or from the code',
+    /Caps read from/.test(moneyTop.trust));
 
   /* ---- tripwires ---- */
   console.log('\nTripwires');
@@ -993,8 +1031,16 @@ try {
     !/change/i.test(wording.heading), wording.heading);
   check('A save\'s reference number is labelled a code update',
     /code update/.test(wording.shaTitle), wording.shaTitle);
-  check('The git-log card is named for what it holds',
-    wording.panelHeading.includes('Code updates'), wording.panelHeading.join(' | '));
+  /* The git log is folded into the night's report rather than sitting in a
+     card of its own — a second card listing the same commits read as a second,
+     disagreeing answer. The vocabulary rule it enforced still holds: no
+     heading on this screen may call a save a "change". */
+  check('No card on the Changes screen calls a save a change',
+    wording.panelHeading.every(h => !/\bchanges?\b/i.test(h) || /watched change/i.test(h)),
+    wording.panelHeading.join(' | '));
+  check('And the folded-in git log is still named for what it holds',
+    /code updates?/i.test(wording.foot) || /code updates?/i.test(wording.heading),
+    wording.heading);
   /* The badge counted observed changes and saves added together and called the
      total "changes" — the single number most directly at odds with the
      calendar. It may say "changes" only about the ones actually observed. */
@@ -1372,29 +1418,46 @@ try {
   await page3.click('#authGo');
   await page3.waitForSelector('#app:not([hidden])', { timeout: 180000 });
   await page3.click('[data-p="public"]');
-  await page3.waitForSelector('#doorsGo:not([disabled])', { timeout: 30000 });
+  await page3.waitForSelector('button[data-act="knock"]', { timeout: 30000 });
 
-  const beforePress = await page3.$eval('#doorsState', el => el.textContent.trim());
+  /* The two lists are merged now, so the code's claim about every door is on
+     screen before anything is knocked on. What must be true before the press
+     is that no door carries a live verdict yet. */
+  const beforePress = await page3.evaluate(() => ({
+    card: (document.getElementById('doorsSums') || {}).innerText || '',
+    verdicts: [...document.querySelectorAll('#doorsBody .door .badge')].map(b => b.textContent.trim()),
+  }));
   check('The button says what pressing it will do, before it is pressed',
-    /Not asked yet/.test(beforePress) && /at most 30/.test(beforePress) && /half a second apart/.test(beforePress),
-    beforePress);
+    /Never knocked/.test(beforePress.card) && /30 at most/.test(beforePress.card) && /0\.5 seconds apart/.test(beforePress.card),
+    beforePress.card.replace(/\n/g, ' ').slice(0, 160));
   check('And nothing has been sent to the live site yet',
-    (await page3.$eval('#doorsBody', el => el.innerHTML)) === '');
+    beforePress.verdicts.length > 0 && beforePress.verdicts.every(v => v === 'not knocked'),
+    beforePress.verdicts.join(', ').slice(0, 120));
 
-  await page3.click('#doorsGo');
-  await page3.waitForSelector('#doorsBody .knock2', { timeout: 60000 });
+  await page3.click('button[data-act="knock"]');
   /* The throttle means the last row lands seconds after the first, so wait for
      the run to finish rather than for the first row to appear. */
-  await page3.waitForFunction(() => !document.getElementById('doorsGo').disabled, null, { timeout: 60000 });
+  await page3.waitForFunction(
+    () => [...document.querySelectorAll('#doorsBody .door .badge')].some(b => b.textContent.trim() !== 'not knocked'),
+    null, { timeout: 60000 });
+  await page3.waitForFunction(
+    () => !!document.querySelector('#doorsSums button[data-act="knock"]') &&
+      /Last checked/.test(document.getElementById('doorsSums').innerText),
+    null, { timeout: 60000 });
 
   const knocked = await page3.evaluate(() => {
-    const rows = [...document.querySelectorAll('#doorsBody .knock2')].map(el => ({
+    const rows = [...document.querySelectorAll('#doorsBody .door')].map(el => ({
       verdict: el.querySelector('.badge').textContent.trim(),
       cls: el.className,
-      address: el.querySelector('.codechip').textContent.trim(),
+      address: (el.querySelector('.codechip') || {}).textContent.trim(),
       says: [...el.querySelectorAll('.d')].map(d => d.textContent.trim()).join(' '),
     }));
-    return { rows, text: document.getElementById('doorsBody').innerText.trim() };
+    return {
+      rows,
+      text: document.getElementById('doorsBody').innerText.trim() + ' ' +
+        (document.getElementById('doorsNote') || {}).innerText + ' ' +
+        (document.getElementById('doorsSums') || {}).innerText,
+    };
   });
 
   const verdictOf = a => (knocked.rows.find(r => r.address === a) || {}).verdict;
@@ -1408,8 +1471,11 @@ try {
     verdictOf('GET /api/advice/rates') === 'no answer', verdictOf('GET /api/advice/rates'));
   check('The two surprises are drawn as surprises, not as ordinary rows',
     ['GET /api/status', 'GET /api/pulse'].every(a =>
-      /surprise/.test((knocked.rows.find(r => r.address === a) || {}).cls || '')),
+      /\bbad\b/.test((knocked.rows.find(r => r.address === a) || {}).cls || '')),
     knocked.rows.map(r => `${r.address}=${r.cls}`).join(' | '));
+  check('And they are sorted to the top, above the doors that behaved',
+    knocked.rows.slice(0, 2).every(r => /\bbad\b/.test(r.cls)),
+    knocked.rows.slice(0, 3).map(r => r.address).join(' | '));
   check('Anything that would have written data is shown as left alone, with the reason',
     knocked.rows.some(r => r.address === 'POST /api/advice/request' &&
       r.verdict === 'left alone' && /would write data/.test(r.says)),

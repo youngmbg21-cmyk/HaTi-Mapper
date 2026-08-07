@@ -536,6 +536,79 @@ tag boundary.
 
 ---
 
+## The tab redesign — seven panels rebuilt
+
+The owner supplied a design for every tab but the control tower, with a build
+note in each panel saying what to change and which existing function to change
+it in. All seven were rebuilt against those notes.
+
+**One shape across all of them.** Each tab now opens with a row of counters —
+the number, a traffic light, and a week-on-week arrow where the archive
+actually holds a reading from a week ago — and the detail sits under it. The
+answer arrives before the evidence. The counters, the bars, the ranked rows,
+the card grids and the timeline are all shared code, so a fix to any of them
+lands on every tab that uses it. Seven private layouts is how they drifted
+apart in the first place.
+
+- **Screens** — four counters, then a board of HaTi's own menu sections in
+  HaTi's own order, each screen a card whose left stripe says whether it needs
+  a login and whose bottom bar is how much code sits behind it. The table stays,
+  with the size column drawn as a bar and three orderings.
+- **Money** — the day's ceiling moved out of a paragraph under the table and
+  became the headline, with today's usage bar beside it. Seven days of bars
+  from the existing archive. The feature table became ranked rows, dearest
+  first, with "used by" folded into the row instead of a second table row. And
+  a "Can these numbers be trusted?" card: how old the price list is, whether
+  any model in use has no price, and whether the caps came from the live site
+  or from the code — three facts that already existed as clauses nobody read.
+- **Doors** — the two cards that drew the same doors twice, side by side, are
+  one list joined on the address. Each door is one row carrying the code's
+  claim and the live verdict together, sorted surprises first, then addresses
+  with no guard, then the rest.
+- **Changes** — four panels became three. The code updates are folded into the
+  night's report rather than repeating it in a card of their own, with the
+  older ones behind a toggle. A red card names the heaviest thing the Mapper
+  observed and, where a commit subject shares a distinctive word with it, the
+  update that most likely caused it — a lead, said as a lead. The watch log
+  became a timeline with the round's time and version on a rail down the left.
+- **What breaks what** — same picks, same on/risk/off logic. The tiles are
+  grouped into HaTi's three parts so the grid reads as an anatomy, the two
+  counts come before the picture, and the sentence the panel exists to deliver
+  is a red card rather than a grey footnote.
+- **What's stored** — cards, not a table of tables. Each card leads with what
+  the thing holds in a sentence and demotes the file and line to the corner.
+  The one storage warning is a red card at the top with the button that does
+  something about it.
+- **Getting bulky** — "over the line" was a badge, which says only yes or no.
+  It is a position now: the line is drawn on every bar, so how far over is
+  visible. Four rows and a Show all, because the long tail is never the answer.
+  The orphan list became chips grouped by file, with one button that drafts a
+  prompt for all of them.
+
+**Three things the design needed that did not exist.** Two hand-written maps in
+`data/copy.js` — the names of HaTi's menu sections, and a plain sentence per
+database table — and a `group` on every subsystem in `data/dependencies.js`.
+All three follow the pattern the rest of those files already use: the structure
+is derived, only the wording is written, and the scan validates every entry on
+every run so a stale one shows up as a warning rather than as a confident
+wrong answer.
+
+**Two findings gained a fix button** because the design put one there and there
+was nothing behind it: a door that behaved differently from its own code, and
+all the unused published names at once.
+
+### What was left out, and why
+
+- **The control tower is untouched**, as asked.
+- **The design's sample figures are not in the product.** It was a picture of
+  the structure, drawn with invented numbers; every figure on the real tabs is
+  read from the scan, and where the Mapper has no reading the panel says so
+  rather than drawing the design's placeholder. That is why several panels look
+  emptier against the test fixture than the design does — one scan of a
+  stand-in has no week of history to draw.
+
+---
+
 ## Before this run — what the platform already was
 
 Everything from here down describes the rounds that came before the July 2026

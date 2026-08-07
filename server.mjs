@@ -1002,7 +1002,10 @@ app.post('/api/chat', requireAuth, rateLimit('chat', 40, 15 * 60 * 1000), async 
   const restateReq = req.body?.restate;
   let convo;
   if (draftReq && typeof draftReq.kind === 'string') {
-    const finding = describeFinding(scan, draftReq.kind, String(draftReq.id || ''));
+    /* The last live door knock is not part of the scan, so it is handed in
+       separately — the "door" finding is precisely a disagreement between the
+       two and cannot be described from either alone. */
+    const finding = describeFinding(scan, draftReq.kind, String(draftReq.id || ''), { doors: lastDoorCheck });
     if (finding.error) return res.status(404).json({ error: finding.error });
     convo = [{ role: 'user', content: draftInstruction(scan, finding, register) }];
   } else if (restateReq && typeof restateReq.answer === 'string' && restateReq.answer.trim()) {

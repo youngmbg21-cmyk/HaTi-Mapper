@@ -350,7 +350,7 @@
 
   function setLoading() {
     TOWER_IDS.concat(['screensBody', 'costBody', 'dataBody', 'blastBody', 'gapsBody',
-      'publicBody', 'changesBody', 'weightBody', 'orphanBody', 'watchBody', 'digestBody'])
+      'doorsBody', 'weightBody', 'orphanBody', 'watchBody', 'digestBody'])
       .forEach(function (id) { $(id).innerHTML = skeleton(5); });
     $('capsBody').innerHTML = skeleton(4);
     $('screensBody').innerHTML = skeleton(6) +
@@ -823,49 +823,139 @@
   }
 
   /* ---- 1. screens ---- */
+  /* ==================================================================== */
+  /*  The counter row every redesigned tab opens with                      */
+  /*                                                                       */
+  /*  The answer arrives before the picture. Each card is a number, a       */
+  /*  traffic light saying whether that number is fine, and — where the     */
+  /*  Mapper genuinely has an earlier reading to compare against — how it   */
+  /*  has moved in a week. Where it has no such reading the arrow is        */
+  /*  omitted entirely rather than drawn as a zero, because "no change"     */
+  /*  and "nothing to compare with" are different facts.                    */
+  /* ==================================================================== */
+
+  /* A reading from roughly a week ago, out of the archive the sparklines
+     already use. Null when the archive does not go back that far. */
+  function weekAgo(field) {
+    var pts = (trends && trends.points) || [];
+    var cutoff = Date.now() - 7 * 24 * 3600 * 1000;
+    var best = null;
+    for (var i = 0; i < pts.length; i++) {
+      var v = pts[i][field];
+      if (typeof v !== 'number' || !isFinite(v)) continue;
+      if (new Date(pts[i].at).getTime() > cutoff) break;
+      best = v;
+    }
+    return best;
+  }
+
+  /* The arrow. `worseIsUp` says which direction is bad news, because a rising
+     open-door count and a rising grip percentage mean opposite things. */
+  function trendChip(field, now, opts) {
+    if (typeof now !== 'number' || !isFinite(now)) return '';
+    var then = weekAgo(field);
+    if (then == null) return '';
+    var diff = now - then;
+    var o = opts || {};
+    if (Math.abs(diff) < (o.epsilon || 0.5)) {
+      return '<span class="trend flat" title="Unchanged since a week ago">same as last week</span>';
+    }
+    var rising = diff > 0;
+    var bad = o.worseIsUp === false ? !rising : rising;
+    var shown = o.format ? o.format(Math.abs(diff)) : String(Math.round(Math.abs(diff)));
+    return '<span class="trend ' + (bad ? 'up' : 'down') + '" title="Against the Mapper’s reading from about a week ago">' +
+      (rising ? '▲' : '▼') + ' ' + esc(shown) + '</span>';
+  }
+
+  /* One card. `tone` is 'ok' | 'warn' | 'bad' — the same three the tower uses,
+     so a colour means one thing everywhere on this page. */
+  function sumCard(n, tone, caption, extra) {
+    return '<div class="sum"><div class="top">' +
+      '<span class="tl' + (tone === 'bad' ? ' bad' : tone === 'warn' ? ' warn' : '') + '"></span>' +
+      '<span class="n">' + n + '</span>' + (extra || '') + '</div>' +
+      '<div class="cap">' + caption + '</div></div>';
+  }
+
+  /* ---- 1. every screen in HaTi ---- */
+
+  var screensSort = 'size';
+
   function renderScreens() {
     var multiScreen = (scan.moduleFacts || []).filter(function (m) { return m.multiScreen; });
     var multiJob = (scan.moduleFacts || []).filter(function (m) { return m.multiJob; });
+    var open = scan.screens.filter(function (s) { return s.entry === 'hash'; });
+    var unresolved = scan.screens.filter(function (s) { return !s.module; });
+    var shared = scan.screens.filter(function (s) { return (s.sharedWith || []).length; });
+    var grip = scan.health && scan.health.percent != null ? scan.health.percent : null;
 
     $('screensLede').textContent =
-      scan.screens.length + ' screens, ' + scan.streams.length + ' built-in value streams. ' +
-      'The file each one lives in is on the right.';
+      scan.screens.length + ' screens, ' + open.length + ' of them reachable without a login. ' +
+      'Grouped by the job they do.';
 
-    var rows = scan.screens.map(function (s) {
-      var flags = '';
-      if (s.sharedWith && s.sharedWith.length) {
-        flags += ' <span class="badge" title="This module also renders: ' + esc(s.sharedWith.join(', ')) + '">shares its file</span>';
-      }
-      if (s.entry === 'hash') flags += ' <span class="badge lav" title="Reached by a URL hash, not a nav entry">no login</span>';
-      return '<tr>' +
-        '<td><b>' + esc(s.label) + '</b>' + flags + '</td>' +
-        '<td class="dim">' + (s.does ? esc(s.does) : nd()) + '</td>' +
-        '<td>' + (s.module ? '<span class="codechip">' + esc(s.module.replace(/^js\//, '')) + '</span>' : nd()) + '</td>' +
-        '<td class="r">' + (s.bytes != null ? kb(s.bytes) : '—') + '</td>' +
-        '</tr>';
+    /* ---- the four counters ---- */
+    $('screensSums').innerHTML =
+      sumCard(scan.screens.length, unresolved.length ? 'warn' : 'ok',
+        unresolved.length
+          ? '<b>' + unresolved.length + ' could not be traced to a file.</b> The rest were found where the menu says they are.'
+          : 'Every screen the menu can open was found in a file. Nothing is hiding.',
+        unresolved.length ? '' : '<span class="trend flat">all matched</span>') +
+      sumCard(open.length, open.length ? 'warn' : 'ok',
+        open.length
+          ? 'Open without a login: ' + esc(open.map(function (s) { return s.label; }).join(', ')) +
+            '. Expected — one more would not be.'
+          : 'Nothing works without logging in.',
+        trendChip('hashRoutes', open.length, { epsilon: 0.5 })) +
+      sumCard(shared.length, shared.length ? 'warn' : 'ok',
+        shared.length
+          ? 'Screens sharing a file with another screen. Change one, risk the other.'
+          : 'No screen shares its file with another. A change to one cannot reach another.') +
+      sumCard(grip == null ? '—' : grip + '%', grip == null ? 'warn' : grip < 90 ? 'bad' : grip < 95 ? 'warn' : 'ok',
+        'Of this page could be read from HaTi’s own code. Anything it could not read is listed under the gear.',
+        trendChip('health', grip, { worseIsUp: false, epsilon: 0.5, format: function (d) { return Math.round(d) + '%'; } }));
+
+    /* ---- the board: HaTi's own menu sections, in HaTi's own order ---- */
+    var maxBytes = scan.screens.reduce(function (n, s) { return Math.max(n, s.bytes || 0); }, 0) || 1;
+    var groups = scan.screenGroups || [];
+
+    $('screensBoard').innerHTML = groups.map(function (g) {
+      var mine = scan.screens.filter(function (s) { return (s.group || 'other') === g.id; });
+      return '<div class="gcol"><div class="glab">' + esc(g.label) + '</div>' +
+        mine.map(function (s) {
+          var isOpen = s.entry === 'hash';
+          var w = ((s.bytes || 0) / maxBytes) * 100;
+          return '<div class="scard' + (isOpen ? ' open' : '') + '">' +
+            '<div class="t">' + esc(s.label) +
+            (isOpen ? '<span class="badge gold">no login</span>' : '') +
+            ((s.sharedWith || []).length
+              ? '<span class="badge" title="This file also draws: ' + esc(s.sharedWith.join(', ')) + '">shares its file</span>'
+              : '') +
+            '</div>' +
+            '<div class="d">' + (s.does ? esc(s.does) : nd()) + '</div>' +
+            '<div class="wt" title="' + (s.bytes != null ? esc(kb(s.bytes)) + ' of code behind this screen' : 'size not detected') + '">' +
+            '<i style="width:' + w.toFixed(1) + '%"></i></div></div>';
+        }).join('') + '</div>';
     }).join('');
 
-    var html =
-      '<table class="tbl"><thead><tr><th style="width:190px">Screen</th><th>What a person does here</th>' +
-      '<th style="width:190px">Lives in</th><th class="r" style="width:70px">Size</th></tr></thead>' +
-      '<tbody>' + rows + '</tbody></table>';
+    renderScreensTable();
 
-    if (multiScreen.length || multiJob.length) {
-      var bits = [];
-      multiScreen.forEach(function (m) {
-        bits.push('<div style="margin-bottom:4px"><b>' + esc(m.module.replace(/^js\//, '')) + '</b> backs ' +
-          m.screens.length + ' screens — ' + esc(m.screens.join(' and ')) + '.</div>');
-      });
-      multiJob.forEach(function (m) {
-        bits.push('<div style="margin-bottom:4px"><b>' + esc(m.module.replace(/^js\//, '')) + '</b> carries ' +
-          m.sections.length + ' separate jobs in one file, by its own section headings — ' +
-          esc(m.sections.map(function (s) { return s.replace(/^VIEW:\s*/, ''); }).join('; ')) +
-          ' — across ' + kb(m.bytes) + ' and ' + m.exportCount + ' exported names.</div>');
-      });
-      html += '<div class="note">' + bits.join('') + '</div>';
+    /* The two facts that need a sentence rather than a shape. They sit under
+       the table because they are about files, which is what the table is
+       about — not about screens, which is what the board above is about. */
+    var bits = [];
+    multiScreen.forEach(function (m) {
+      bits.push('<div style="margin-bottom:4px"><b>' + esc(m.module.replace(/^js\//, '')) + '</b> backs ' +
+        m.screens.length + ' screens — ' + esc(m.screens.join(' and ')) +
+        ' — so a change meant for one lands on the other.</div>');
+    });
+    multiJob.forEach(function (m) {
+      bits.push('<div style="margin-bottom:4px"><b>' + esc(m.module.replace(/^js\//, '')) + '</b> carries ' +
+        m.sections.length + ' separate jobs in one file, by its own section headings — ' +
+        esc(m.sections.map(function (s) { return s.replace(/^VIEW:\s*/, ''); }).join('; ')) +
+        ' — across ' + kb(m.bytes) + ' and ' + m.exportCount + ' exported names.</div>');
+    });
+    if (bits.length) {
+      $('screensBody').insertAdjacentHTML('beforeend', '<div class="note"><b>Worth knowing.</b> ' + bits.join('') + '</div>');
     }
-
-    $('screensBody').innerHTML = html;
 
     /* Value streams get their own card, because they are a different question
        from "which screen lives where". */
@@ -877,6 +967,60 @@
       (scan.customStreamsNote ? '<div class="note">' + esc(scan.customStreamsNote) + '</div>' : '');
     $('streamsCard').hidden = false;
   }
+
+  /* The table under the board. Same fields it has always carried; the size
+     column is drawn as a bar as well as written, so "which is the heavy one"
+     is answered by looking rather than by reading five numbers. */
+  function renderScreensTable() {
+    var list = scan.screens.slice();
+    var order = (scan.screenGroups || []).map(function (g) { return g.id; });
+    if (screensSort === 'size') {
+      list.sort(function (a, b) { return (b.bytes || 0) - (a.bytes || 0); });
+    } else if (screensSort === 'az') {
+      list.sort(function (a, b) { return String(a.label).localeCompare(String(b.label)); });
+    } else {
+      list.sort(function (a, b) {
+        var d = order.indexOf(a.group || 'other') - order.indexOf(b.group || 'other');
+        return d !== 0 ? d : (b.bytes || 0) - (a.bytes || 0);
+      });
+    }
+    var max = list.reduce(function (n, s) { return Math.max(n, s.bytes || 0); }, 0) || 1;
+
+    $('screensBody').innerHTML =
+      '<table class="tbl"><thead><tr><th style="width:190px">Screen</th><th>What a person does here</th>' +
+      '<th style="width:160px">Lives in</th><th style="width:180px">Size</th></tr></thead><tbody>' +
+      list.map(function (s) {
+        var flags = '';
+        if ((s.sharedWith || []).length) {
+          flags += ' <span class="badge" title="This file also draws: ' + esc(s.sharedWith.join(', ')) + '">shares its file</span>';
+        }
+        if (s.entry === 'hash') flags += ' <span class="badge gold" title="Reached by a URL hash, not a menu button">no login</span>';
+        /* A screen whose file is drawn by another screen higher up the table
+           says so rather than repeating the same bar and the same number. */
+        var dupe = s.bytes != null && (s.sharedWith || []).length &&
+          list.some(function (o) { return o !== s && o.module === s.module && list.indexOf(o) < list.indexOf(s); });
+        return '<tr>' +
+          '<td><b>' + esc(s.label) + '</b>' + flags + '</td>' +
+          '<td class="dim">' + (s.does ? esc(s.does) : nd()) + '</td>' +
+          '<td>' + (s.module ? '<span class="codechip">' + esc(s.module.replace(/^js\//, '')) + '</span>' : nd()) + '</td>' +
+          '<td>' + (s.bytes == null
+            ? '<span class="nd">—</span>'
+            : dupe
+              ? '<span class="nd">shares the file above</span>'
+              : '<div style="display:flex;align-items:center;gap:9px">' +
+                '<div class="mbar" style="flex:1;height:8px"><i style="width:' + (((s.bytes / max) * 100).toFixed(1)) + '%"></i></div>' +
+                '<span class="mono" style="font-size:12px;white-space:nowrap">' + esc(kb(s.bytes)) + '</span></div>') +
+          '</td></tr>';
+      }).join('') + '</tbody></table>';
+  }
+
+  $('screensSort').addEventListener('click', function (e) {
+    var b = e.target.closest('button[data-s]');
+    if (!b || !scan) return;
+    screensSort = b.getAttribute('data-s');
+    this.querySelectorAll('button').forEach(function (x) { x.setAttribute('aria-pressed', String(x === b)); });
+    renderScreensTable();
+  });
 
   /* ---- 2. where the money goes ---- */
 
@@ -897,92 +1041,234 @@
   }
 
   function renderCost() {
-    var rows = scan.ai.features.map(function (f) {
-      var tiers = f.tiers.length
-        ? f.tiers.map(function (t) {
-            return '<span class="badge ' + (t === 'deep' ? 'gold' : 'lav') + '">' + esc(t) + '</span>';
-          }).join(' ')
-        : nd();
-      var models = f.models.length
-        ? f.models.map(function (m) { return '<span class="codechip">' + esc(m) + '</span>'; }).join('<br>')
-        : nd();
-      var used = f.usedBy.length
-        ? f.usedBy.map(function (c) { return esc(callSiteName(c)); }).join(', ')
-        : '<span class="nd">not called from the front end</span> ' + fixButton('ai-unused', f.feature);
-      /* What one use of this feature could cost at most. Never a bill — the
-         assumption behind it is printed under the table. */
-      var c = costFor(f.feature);
-      var money;
-      if (!c || c.perRequestUsd == null) {
-        money = nd(c && c.unpricedModels.length ? 'price not on file' : 'no ceiling in the code');
-      } else {
-        money = '<b>' + esc(usd(c.perRequestUsd)) + '</b>' +
-          (c.perWindowUsd != null
-            ? '<div class="subnum">' + esc(usd(c.perWindowUsd)) + ' if one person hits the cap</div>'
-            : '');
-      }
-
-      return '<tr>' +
-        '<td><b>' + esc(f.label || f.feature) + '</b>' +
-        '<div class="subnum">' + (f.does ? esc(f.does) : nd()) + '</div>' +
-        '<div style="margin-top:4px"><span class="codechip">' + esc(f.route) + '</span></div></td>' +
-        '<td>' + tiers + '</td>' +
-        '<td>' + models + '</td>' +
-        '<td class="r">' + (f.cap == null ? '—' : num(f.cap)) + '</td>' +
-        '<td class="r">' + money + '</td>' +
-        '</tr>' +
-        '<tr><td colspan="5" style="padding-top:0">' +
-        '<span class="subnum">Used by: ' + used + '</span></td></tr>';
-    }).join('');
-
-    var html = '<table class="tbl"><thead><tr><th style="width:210px">Feature</th><th style="width:64px">Tier</th><th style="width:150px">Model</th>' +
-      '<th class="r" style="width:88px">Cap / ' + (scan.ai.windowMinutes || 15) + ' min</th>' +
-      '<th class="r" style="width:120px">Per use</th></tr></thead><tbody>' + rows + '</tbody></table>';
-
-    html += renderCostNote();
-
-    if (scan.ai.nonBillingAiRoutes && scan.ai.nonBillingAiRoutes.length) {
-      html += '<div class="note">Another ' + scan.ai.nonBillingAiRoutes.length + ' routes sit under <code>/api/ai/</code> ' +
-        'but never call Anthropic — they read and set configuration, so they cost nothing: ' +
-        scan.ai.nonBillingAiRoutes.map(function (r) { return '<span class="codechip">' + esc(r.label || r.path) + '</span>'; }).join(' ') + '.</div>';
-    }
-    $('costBody').innerHTML = html;
+    renderMoneyRoof();
+    renderMoneyWeek();
+    renderMoneyTrust();
+    renderMoneyFeatures();
+    renderMoneySplit();
     renderCaps();
   }
 
-  /* The honesty label, the day's ceiling, and whether the price list itself is
-     still trustworthy. All three belong together — a number without them is
-     the thing this panel was careful not to become. */
-  function renderCostNote() {
-    var c = scan.cost;
-    if (!c) return '';
-    var out = '<div class="note">';
+  /* ---- the headline: the most today could cost, and how much is used ----
 
-    if (c.dailyCeilingUsd != null) {
-      out += '<b>A whole day, at the limits the code sets: at most about ' + esc(usd(c.dailyCeilingUsd)) + '.</b> ' +
-        'That is ' + num(c.dailyLimit) + ' requests, every one of them the most expensive kind (' + esc(c.dearest) + '). ' +
-        (c.dailyMixedUsd != null
-          ? 'Spread across the features more evenly it is nearer ' + esc(usd(c.dailyMixedUsd)) + '. '
+     The day's ceiling used to be the first sentence of a paragraph under the
+     table. It is the number the whole panel exists to give, so it leads. */
+  function renderMoneyRoof() {
+    var c = scan.cost || {};
+    var live = pulse && pulse.available && pulse.usage;
+    var html = '<div class="chead"><h3>The most today could cost</h3>' +
+      trendChip('dailyCostUsd', c.dailyCeilingUsd, {
+        epsilon: 0.005,
+        format: function (d) { return usd(d).replace('$', '$') + ' on last week'; },
+      }).replace('<span class="trend', '<span style="margin-left:auto" class="trend') + '</div>';
+
+    if (c.dailyCeilingUsd == null) {
+      html += '<div class="note"><b>A daily total could not be worked out.</b> ' +
+        'That needs both a daily request limit in HaTi’s code and a price on file for at least one model it uses. ' +
+        'Nothing is guessed in its place.</div>';
+      $('moneyRoof').innerHTML = html;
+      return;
+    }
+
+    html += '<div class="bignum">' + esc(usd(c.dailyCeilingUsd)) + '</div>' +
+      '<div class="cap" style="font-size:12.5px;color:var(--tx2);margin-top:8px;line-height:1.5">' +
+      'If all ' + num(c.dailyLimit) + ' of today’s allowed requests were the dearest kind (' + esc(c.dearest || 'unknown') + ').' +
+      (c.dailyMixedUsd != null
+        ? ' Spread evenly across the features it is nearer <b>' + esc(usd(c.dailyMixedUsd)) + '</b>.'
+        : '') + '</div>';
+
+    /* Used so far today. This is the one figure on the panel that is a real
+       count rather than a ceiling, and it only exists when HaTi is answering. */
+    if (live && pulse.usage.dailyLimit) {
+      var used = pulse.usage.count || 0;
+      var lim = pulse.usage.dailyLimit;
+      var frac = Math.min(used / lim, 1);
+      html += '<div style="margin-top:16px;display:flex;align-items:baseline;gap:10px;font-size:11.5px;color:var(--tx3)">' +
+        '<span>Used so far today</span>' +
+        '<span style="margin-left:auto" class="mono">' + num(used) + ' of ' + num(lim) + ' requests</span></div>' +
+        '<div class="mbar" style="height:9px;margin-top:6px"><i class="' + (frac > 0.7 ? 'over' : '') +
+        '" style="width:' + (frac * 100).toFixed(1) + '%"></i></div>' +
+        (c.dailyCeilingUsd != null
+          ? '<div class="barnote">About <b>' + esc(usd(c.dailyCeilingUsd * frac)) + '</b> of the roof used.</div>'
           : '');
     } else {
-      out += '<b>A daily total could not be worked out.</b> ' +
-        'That needs both a daily request limit in the code and a price for at least one model in use. ';
+      html += '<div class="note" style="margin-top:14px">Counting what has actually been used today needs a running HaTi to ask. ' +
+        esc((pulse && pulse.reason) || 'The Mapper could not reach it.') + '</div>';
+    }
+    $('moneyRoof').innerHTML = html;
+  }
+
+  /* ---- the week in bars, from the readings the archive already holds ---- */
+  function renderMoneyWeek() {
+    var pts = ((trends && trends.points) || [])
+      .filter(function (p) { return typeof p.dailyCostUsd === 'number' && isFinite(p.dailyCostUsd); })
+      .slice(-7);
+
+    var html = '<div class="chead"><h3>The last seven days</h3>' +
+      '<span class="sublab" style="margin-left:auto">daily ceiling</span></div>';
+
+    if (pts.length < 2) {
+      html += '<div class="note">The Mapper records one reading each time a scan finds something different, and it has ' +
+        pts.length + '. A week of bars fills in after a few days of scanning.</div>';
+      $('moneyWeek').innerHTML = html;
+      return;
     }
 
-    out += esc(c.assumption);
+    var top = Math.max.apply(null, pts.map(function (p) { return p.dailyCostUsd; })) || 1;
+    var dearestIdx = pts.reduce(function (bi, p, i) { return p.dailyCostUsd > pts[bi].dailyCostUsd ? i : bi; }, 0);
 
-    if (c.modelsWithoutPrice.length) {
-      out += ' <span style="color:var(--badtx)">' + c.modelsWithoutPrice.length + ' model' +
-        (c.modelsWithoutPrice.length === 1 ? ' has' : 's have') + ' no price on file — ' +
-        c.modelsWithoutPrice.map(function (m) { return esc(m); }).join(', ') +
-        '. Nothing is guessed for them.</span>';
+    html += '<div class="days7">' + pts.map(function (p, i) {
+      var isNow = i === pts.length - 1;
+      var h = Math.max(6, (p.dailyCostUsd / top) * 100);
+      var d = new Date(p.at);
+      return '<div class="d7' + (isNow ? ' now' : i === dearestIdx ? ' top' : '') + '" title="' +
+        esc(fmtDate(p.at, true)) + ' — ' + esc(usd(p.dailyCostUsd)) + ' a day at the caps">' +
+        '<i style="height:' + h.toFixed(1) + '%"></i>' +
+        '<span>' + esc(isNow ? 'now' : d.toLocaleString('en-GB', { weekday: 'short' })) + '</span></div>';
+    }).join('') + '</div>';
+
+    html += '<div class="barnote">' +
+      (dearestIdx === pts.length - 1
+        ? 'The latest reading is the highest of the seven.'
+        : esc(fmtDate(pts[dearestIdx].at)) + ' carried the highest ceiling of the seven, at ' +
+          esc(usd(pts[dearestIdx].dailyCostUsd)) + ' a day.') +
+      ' Each bar is what a whole day at HaTi’s caps would have cost on that reading — not what was spent.</div>';
+    $('moneyWeek').innerHTML = html;
+  }
+
+  /* ---- can these numbers be trusted? ----
+
+     Three facts that decide whether anything else on this panel means what it
+     says: how old the price list is, whether any model in use has no price at
+     all, and whether the caps came from the running product or from its code.
+     All three existed already, as clauses in a paragraph nobody read. */
+  function renderMoneyTrust() {
+    var c = scan.cost || {};
+    var live = pulse && pulse.available;
+    var rows = '';
+
+    var ageTone = c.stale ? 'warn' : 'ok';
+    rows += '<div class="trust"><span class="tl ' + ageTone + '"></span><div class="bd">' +
+      '<b>Prices checked ' + (c.ageDays == null ? 'at an unknown date' : c.ageDays + ' day' + (c.ageDays === 1 ? '' : 's') + ' ago') + '</b>' +
+      '<span>' + (c.stale
+        ? 'Written down by hand and good for 90 days. These are past that, so they may be out of date.'
+        : 'They are written down by hand in data/pricing.js and good for 90 days.') + '</span></div></div>';
+
+    var noPrice = (c.modelsWithoutPrice || []);
+    rows += '<div class="trust"><span class="tl ' + (noPrice.length ? 'warn' : 'ok') + '"></span><div class="bd">' +
+      '<b>' + (noPrice.length
+        ? noPrice.length + ' model' + (noPrice.length === 1 ? ' has' : 's have') + ' no price on file'
+        : 'Every model in use has a price on file') + '</b>' +
+      '<span>' + (noPrice.length
+        ? esc(noPrice.join(', ')) + ' — nothing is guessed for ' + (noPrice.length === 1 ? 'it' : 'them') + ', so any feature using ' +
+          (noPrice.length === 1 ? 'it' : 'them') + ' shows no figure at all.'
+        : 'Nothing on this panel is an unpriced guess.') + '</span></div></div>';
+
+    rows += '<div class="trust"><span class="tl ' + (live ? 'ok' : 'warn') + '"></span><div class="bd">' +
+      '<b>' + (live ? 'Caps read from the live site' : 'Caps read from the code, not the live site') + '</b>' +
+      '<span>' + (live
+        ? esc(fmtDate(pulse.fetchedAt, true)) + ', from build ' + esc(pulse.version || 'unknown') + '.'
+        : esc((pulse && pulse.reason) || 'The Mapper could not reach the running HaTi.') +
+          ' The figures below are HaTi’s code defaults, which may not be what is running.') + '</span></div></div>';
+
+    $('moneyTrust').innerHTML = '<div class="chead"><h3>Can these numbers be trusted?</h3></div>' + rows +
+      '<div class="barnote" style="margin-top:10px">' + esc(c.assumption || '') + '</div>';
+  }
+
+  /* ---- every feature, dearest first ----
+
+     One row per feature rather than two: the "Used by" line that used to be a
+     second table row is folded into the row it belongs to. */
+  function renderMoneyFeatures() {
+    var priced = scan.ai.features.map(function (f) {
+      var c = costFor(f.feature);
+      return { f: f, c: c, per: c && c.perRequestUsd != null ? c.perRequestUsd : null };
+    }).sort(function (a, b) {
+      if (a.per == null && b.per == null) return 0;
+      if (a.per == null) return 1;
+      if (b.per == null) return -1;
+      return b.per - a.per;
+    });
+
+    var top = priced.reduce(function (n, x) { return Math.max(n, x.per || 0); }, 0) || 1;
+
+    var html = priced.map(function (x) {
+      var f = x.f, c = x.c;
+      var used = f.usedBy.length
+        ? 'Used on ' + esc(f.usedBy.map(function (s) { return callSiteName(s); })
+          .filter(function (v, i, a) { return a.indexOf(v) === i; }).join(' and '))
+        : '<span style="color:var(--badtx)">Nothing on the front end calls this</span>';
+
+      var barW = x.per == null ? 6 : Math.max(3, (x.per / top) * 100);
+      var barCls = x.per == null ? 'none' : (f.tiers.indexOf('deep') > -1 ? 'over' : '');
+
+      return '<div class="rank">' +
+        '<div class="rwho"><b>' + esc(f.label || f.feature) + '</b>' +
+        '<div class="d">' + used + '</div>' +
+        '<div class="m"><span class="codechip">' + esc(f.route) + '</span>' +
+        '<span style="font-size:11px;color:var(--tx3)">' +
+        (f.cap == null ? 'no cap detected' : 'capped at ' + num(f.cap) + ' per ' + (scan.ai.windowMinutes || 15) + ' min') +
+        '</span></div></div>' +
+        '<div><div class="mbar" style="height:10px"><i class="' + barCls + '" style="width:' + barW.toFixed(1) + '%"></i></div>' +
+        '<div class="barnote">' +
+        (f.tiers.length
+          ? f.tiers.map(function (t) { return '<span class="badge ' + (t === 'deep' ? 'gold' : 'lav') + '">' + esc(t) + '</span>'; }).join(' ')
+          : nd()) +
+        ' <span class="mono" style="margin-left:6px">' + (f.models.length ? esc(f.models.join(' / ')) : esc('model not detected')) + '</span>' +
+        '</div></div>' +
+        '<div class="amt">' +
+        (x.per == null
+          ? '<span class="nd">' + (c && c.unpricedModels.length ? 'no price' : 'no ceiling') + '</span>' +
+            (f.usedBy.length ? '' : '<div style="margin-top:5px">' + fixButton('ai-unused', f.feature) + '</div>')
+          : '<span class="v">' + esc(usd(x.per)) + '</span>' +
+            (c.perWindowUsd != null ? '<span class="s">' + esc(usd(c.perWindowUsd)) + ' at the cap</span>' : '') +
+            (f.usedBy.length ? '' : '<div style="margin-top:5px">' + fixButton('ai-unused', f.feature) + '</div>')) +
+        '</div></div>';
+    }).join('');
+
+    if (scan.ai.nonBillingAiRoutes && scan.ai.nonBillingAiRoutes.length) {
+      html += '<div class="note">Another ' + scan.ai.nonBillingAiRoutes.length + ' route' +
+        (scan.ai.nonBillingAiRoutes.length === 1 ? '' : 's') + ' under <code>/api/ai/</code> never call Anthropic — ' +
+        'they read and set configuration, so they cost nothing: ' +
+        scan.ai.nonBillingAiRoutes.map(function (r) { return '<span class="codechip">' + esc(r.label || r.path) + '</span>'; }).join(' ') + '.</div>';
     }
+    $('costBody').innerHTML = html;
+  }
 
-    out += '<div class="subnum" style="margin-top:6px">Prices last checked ' + esc(fmtDate(c.asOf)) +
-      ' and written down by hand in <code>data/pricing.js</code>.' +
-      (c.stale ? ' <b style="color:var(--gold)">That is over ' + c.ageDays + ' days ago — they may be out of date.</b>' : '') +
-      '</div></div>';
-    return out;
+  /* ---- where the spend sits ----
+
+     Which features the ceiling is actually made of. Weighted by what one use
+     costs times what the cap allows, because a cheap feature nobody may call
+     often is not where the money is. */
+  function renderMoneySplit() {
+    var parts = scan.ai.features.map(function (f) {
+      var c = costFor(f.feature);
+      var weight = c && c.perWindowUsd != null ? c.perWindowUsd
+        : (c && c.perRequestUsd != null ? c.perRequestUsd : 0);
+      return { label: f.label || f.feature, weight: weight };
+    }).filter(function (p) { return p.weight > 0; })
+      .sort(function (a, b) { return b.weight - a.weight; });
+
+    var total = parts.reduce(function (n, p) { return n + p.weight; }, 0);
+    if (!total || parts.length < 2) { $('moneySplitCard').hidden = true; return; }
+    $('moneySplitCard').hidden = false;
+
+    /* Everything past the top three is one slice: a legend of nine features is
+       not a picture of anything. */
+    var shown = parts.slice(0, 3);
+    var restW = parts.slice(3).reduce(function (n, p) { return n + p.weight; }, 0);
+    if (restW > 0) shown.push({ label: 'Everything else', weight: restW, rest: true });
+
+    var COLOURS = ['var(--gold)', 'var(--lav)', 'var(--lavd)', 'var(--tile2)'];
+    $('moneySplit').innerHTML =
+      '<div class="split">' + shown.map(function (p, i) {
+        return '<i style="width:' + ((p.weight / total) * 100).toFixed(1) + '%;background:' + COLOURS[i] + '"></i>';
+      }).join('') + '</div>' +
+      '<div class="legend">' + shown.map(function (p, i) {
+        return '<div class="lg"><i style="background:' + COLOURS[i] + '"></i>' + esc(p.label) +
+          '<span class="p">' + Math.round((p.weight / total) * 100) + '%</span></div>';
+      }).join('') + '</div>' +
+      '<div class="barnote" style="margin-top:10px">Shares of the ceiling, not of a bill — each feature weighted by what one use costs times what its own rate limit allows.</div>';
   }
 
   /* Name a screen rather than a file path wherever possible. A view module is
@@ -1035,16 +1321,8 @@
         '<span class="v">' + (value == null ? nd() : num(value) + suffix) + '</span></div>';
     }).join('');
 
-    if (live && pulse.usage) {
-      var over = pulse.usage.dailyLimit && pulse.usage.count / pulse.usage.dailyLimit > 0.7;
-      html += '<div class="caprow"><div class="bd"><b>Used so far today</b>' +
-        '<span>From the spend ledger, so a restart does not reset it.</span></div>' +
-        '<span class="v"' + (over ? ' style="color:var(--gold)"' : '') + '>' +
-        num(pulse.usage.count) + ' / ' + num(pulse.usage.dailyLimit) + '</span></div>';
-    } else {
-      html += '<div class="caprow"><div class="bd"><b>Used so far today</b><span>Needs a running HaTi to count.</span></div>' +
-        '<span class="v">' + nd() + '</span></div>';
-    }
+    /* What was actually used today now leads the panel, on the headline card,
+       so it is not repeated here as one row among the settings. */
 
     if (live) {
       html += '<div class="caprow"><div class="bd"><b>AI key configured</b>' +
@@ -1053,57 +1331,130 @@
         (pulse.aiKeyConfigured ? 'yes' : 'no') + '</span></div>';
     }
 
+    /* The tap that actually moves the ceiling, and by how much. A cap is only
+       useful if you can see what turning it down would buy you. */
+    var c = scan.cost || {};
+    if (c.dailyCeilingUsd != null && c.dailyLimit) {
+      var halved = c.dailyCeilingUsd / 2;
+      var busiest = null;
+      (trends && trends.points ? trends.points : []).forEach(function (p) {
+        if (typeof p.dailyCostUsd === 'number') busiest = Math.max(busiest == null ? 0 : busiest, p.dailyCostUsd);
+      });
+      html += '<div class="note">Halving the daily limit would put the worst case at <b>' + esc(usd(halved)) + '</b>. ' +
+        (live && pulse.usage && pulse.usage.count != null
+          ? 'Today\u2019s count so far is ' + num(pulse.usage.count) + ' of ' + num(c.dailyLimit) + '.'
+          : 'What has actually been used needs a running HaTi to count, so this is the roof rather than the reality.') +
+        '</div>';
+    }
+
     $('capsBody').innerHTML = html;
   }
 
 
-  /* ---- 3. where things are kept ---- */
+  /* ---- 3. where things are kept ----
+
+     A card per table rather than a row per table. A table of tables reads like
+     a database tool; each card leads with what the thing holds, in a sentence,
+     and demotes the file and line to the corner where an address belongs. */
   function renderData() {
     var st = scan.storage;
-    var rows = st.tables.map(function (t) {
-      var blob = (st.blobs || []).filter(function (b) { return b.record === 'appSettings' && t.name === 'settings'; })[0];
-      return '<tr>' +
-        '<td><b>' + esc(t.name) + '</b><div class="subnum">' + t.columns.length + ' columns</div></td>' +
-        '<td>' + t.columns.map(function (c) { return '<span class="codechip">' + esc(c) + '</span>'; }).join(' ') +
-        (blob ? '<div style="margin-top:5px;color:var(--badtx);font-size:11.5px">— and every custom template, in full</div>' : '') + '</td>' +
-        '<td class="r"' + (blob ? ' style="color:var(--badtx)"' : '') + '>' + (blob ? 'see below' : 'server.js:' + t.line) + '</td>' +
-        '</tr>';
-    }).join('');
+    var cols = st.tables.reduce(function (n, t) { return n + t.columns.length; }, 0);
+    var blobs = st.blobs || [];
 
-    var html = '<table class="tbl"><thead><tr><th style="width:150px">Holds</th><th>What’s inside</th><th class="r" style="width:130px">Note</th></tr></thead>' +
-      '<tbody>' + rows + '</tbody></table>';
+    /* Tables that changed shape lately, from the Mapper's own change log — the
+       one figure on this panel that is an observation rather than a reading. */
+    var schemaMoves = 0;
+    ((towerWatch && towerWatch.rounds) || []).forEach(function (r) {
+      (r.events || []).forEach(function (e) { if (e.kind === 'data') schemaMoves++; });
+    });
 
-    if (st.blobs && st.blobs.length) {
-      html += st.blobs.map(function (b) {
-        return '<div class="note"><b>Worth knowing.</b> ' + esc(b.note) +
+    $('dataSums').innerHTML =
+      sumCard(st.tables.length, 'ok', 'Tables, all in one file on the server.') +
+      sumCard(cols, 'ok', 'Columns between them — the shape of everything HaTi remembers.') +
+      sumCard(blobs.length, blobs.length ? 'bad' : 'ok',
+        blobs.length
+          ? 'Place' + (blobs.length === 1 ? '' : 's') + ' storing something big inside a single row.'
+          : 'Nothing is stored as a whole collection inside one row.') +
+      sumCard(schemaMoves, schemaMoves ? 'warn' : 'ok',
+        schemaMoves
+          ? 'Times a table changed shape in what the Mapper has watched.'
+          : 'Tables have changed shape in what the Mapper has watched.');
+
+    var html = '';
+
+    /* The one finding on this panel, out of a footnote and into a red card
+       with the button that does something about it. */
+    if (blobs.length) {
+      html += blobs.map(function (b) {
+        return '<div class="warncard"><span class="ic">' + ICON_WARN + '</span><div class="bd">' +
+          '<b>' + esc(sentenceCase(b.field)) + ' is all kept inside one row</b>' +
+          '<div class="d">' + esc(b.note) +
           (st.rewritesWholeRecord ? ' The settings route writes the whole record back on every save, so this is not theoretical.' : '') +
-          ' Fine at two templates. Not fine at thirty with version history. ' +
-          '<code>server/server.js:' + b.line + '</code></div>';
+          ' Fine at two. Not fine at thirty with version history — saves get slower and slower, and one bad save takes all of them. ' +
+          '<code>server/server.js:' + b.line + '</code></div></div>' +
+          '<span style="flex:none">' + fixButton('gap', b.note) + '</span></div>';
       }).join('');
     }
 
+    html += '<div class="tcards">' + st.tables.map(function (t) {
+      var blob = blobs.filter(function (b) { return t.name === 'settings' && b.record; })[0];
+      var shown = t.columns.slice(0, 8);
+      var rest = t.columns.length - shown.length;
+      return '<div class="tcard"><div class="h">' +
+        '<b>' + esc(sentenceCase(t.name)) + '</b>' +
+        '<span class="sub">' + t.columns.length + ' column' + (t.columns.length === 1 ? '' : 's') + '</span>' +
+        '<span class="src">server.js:' + t.line + '</span></div>' +
+        '<div class="say">' + (t.holds ? esc(t.holds) : nd('no plain-English note yet')) +
+        (blob ? ' <b>Including ' + esc(blob.field) + ', in full.</b>' : '') + '</div>' +
+        '<div class="chips">' + shown.map(function (c) {
+          return '<span class="codechip">' + esc(c) + '</span>';
+        }).join('') + (rest > 0 ? '<span class="codechip">+ ' + rest + ' more</span>' : '') + '</div></div>';
+    }).join('') + '</div>';
+
     if (st.settingKeys && st.settingKeys.length) {
-      html += '<div class="note">The <code>settings</code> table is a key/value store. ' +
-        'The keys written to it are: ' + st.settingKeys.map(function (k) { return '<span class="codechip">' + esc(k) + '</span>'; }).join(' ') + '.</div>';
+      html += '<div class="note">The <code>settings</code> table is a name-and-value store. ' +
+        'The names written to it are: ' + st.settingKeys.map(function (k) { return '<span class="codechip">' + esc(k) + '</span>'; }).join(' ') + '.</div>';
     }
     $('dataBody').innerHTML = html;
   }
 
   /* ---- 4. what breaks what ---- */
   var currentPick = null;
+  /* The picking and the lighting-up are unchanged — same picks, same
+     on/risk/off states. What changed is the shape around them: the tiles are
+     grouped into HaTi's three parts so the grid reads as an anatomy rather
+     than an alphabet, the two counts come before the picture, and the sentence
+     the whole panel exists to deliver is a card rather than a grey footnote. */
   function renderBlast() {
     var d = scan.dependencies;
+    var groups = (d.groups || []).length
+      ? d.groups
+      : [{ id: null, title: 'Everything that reads HaTi’s data' }];
 
-    var html = '<div class="blastwrap"><div class="picks2" id="picks">' +
+    var html =
+      '<div class="blastwrap">' +
+      '<div class="card" style="margin:0">' +
+      '<div class="glab">If I change…</div>' +
+      '<div class="picks2" id="picks">' +
       d.items.map(function (it, i) {
         return '<button class="pick2" type="button" aria-pressed="' + (i === 0) + '" data-k="' + esc(it.key) + '">' + esc(it.label) +
           '<small>' + esc((it.fields || []).join(' · ')) + '</small></button>';
       }).join('') +
-      '</div><div class="deps2" id="deps">' +
-      d.subsystems.map(function (s) {
-        return '<div class="dep2" data-d="' + esc(s.id) + '"><div class="t">' + esc(s.title) + '</div>' +
-          '<div class="d">' + esc(s.desc) + '</div></div>';
+      '</div></div>' +
+
+      '<div><div class="trio" id="blastCounts"></div>' +
+      '<div class="card">' +
+      '<div class="board" style="align-items:start">' +
+      groups.map(function (g) {
+        var mine = d.subsystems.filter(function (s) { return g.id == null || s.group === g.id; });
+        return '<div class="gcol"><div class="glab">' + esc(g.title) + '</div>' +
+          mine.map(function (s) {
+            return '<div class="dep2" data-d="' + esc(s.id) + '"><div class="t">' + esc(s.title) + '</div>' +
+              '<div class="d">' + esc(s.desc) + '</div></div>';
+          }).join('') + '</div>';
       }).join('') +
+      '</div></div>' +
+      '<div id="blastNote"></div>' +
       '</div></div>';
 
     if (d.warnings && d.warnings.length) {
@@ -1111,7 +1462,7 @@
         d.warnings.map(function (w) { return '<li>' + esc(w) + '</li>'; }).join('') + '</ul></div>';
     }
     html += '<div class="note" style="opacity:.8">These relationships are judgements about meaning, not something a parser can read out of code, so they are written by hand in <code>' +
-      esc(d.source) + '</code>. Every subsystem and field named above is checked against HaTi’s source on each scan; anything stale is listed rather than quietly shown as fact.</div>';
+      esc(d.source) + '</code>. Every subsystem, group and field named above is checked against HaTi’s source on each scan; anything stale is listed rather than quietly shown as fact.</div>';
 
     $('blastBody').innerHTML = html;
 
@@ -1138,25 +1489,67 @@
       d.classList.toggle('risk', isRisk);
       d.classList.toggle('off', !isOn);
     });
-    $('blastNote').innerHTML = item.note;
-    $('blastNote').hidden = false;
+
+    /* The answer, before the picture that evidences it. */
+    var reads = on.length, breaks = risk.length;
+    $('blastCounts').innerHTML =
+      '<div class="sum"><div class="top"><span class="n">' + reads + '</span></div>' +
+      '<div class="cap">part' + (reads === 1 ? '' : 's') + ' of HaTi read this. Change it and every one of them has to be checked.</div></div>' +
+      '<div class="sum"><div class="top"><span class="tl' + (breaks ? ' bad' : '') + '"></span>' +
+      '<span class="n">' + breaks + '</span></div>' +
+      '<div class="cap">' + (breaks
+        ? 'of them can break something <b>already signed</b>.'
+        : 'of them can break anything already signed.') + '</div></div>' +
+      '<div class="sum"><div class="keyline" style="margin:0;flex-direction:column;align-items:flex-start;gap:7px">' +
+      '<span><span class="sw" style="background:var(--lav)"></span>reads it</span>' +
+      '<span><span class="sw" style="background:var(--bad)"></span>can break a signed contract</span>' +
+      '<span><span class="sw" style="background:var(--tile2)"></span>not affected</span>' +
+      '</div></div>';
+
+    /* Promoted out of a grey footnote. It is the sentence the whole panel
+       exists to deliver, and where the change can reach something already
+       signed it is carried in red. */
+    $('blastNote').innerHTML = breaks
+      ? '<div class="warncard" style="margin:14px 0 0"><span class="ic">' + ICON_WARN + '</span>' +
+        '<div class="bd"><div class="d" style="margin:0">' + item.note + '</div></div></div>'
+      : '<div class="card" style="margin:14px 0 0"><div style="font-size:12.5px;color:var(--tx2);line-height:1.6">' +
+        item.note + '</div></div>';
   }
 
   /* ---- 5. not finished ---- */
+
+  function gapRow(x) {
+    var cls = x.severity === 'high' ? ' hi' : x.severity === 'medium' ? ' md' : '';
+    var title = x.severity ? 'Severity: ' + x.severity : 'The source does not state a severity';
+    return '<div class="gline"><span class="dot' + cls + '" title="' + esc(title) + '"></span>' +
+      '<div><b>' + esc(x.title) + (x.marker ? ' <span class="badge">' + esc(x.marker) + '</span>' : '') + '</b>' +
+      '<span>' + esc(x.source) + (x.severity ? ' · marked ' + esc(x.severity) : '') +
+      (x.detail ? ' · ' + esc(x.detail) : '') + '</span></div>' +
+      '<span style="margin-left:auto;flex:none">' + fixButton('gap', x.title) + '</span></div>';
+  }
+
   function renderGaps() {
     var g = scan.gaps;
     var html = '';
-    $('gapsBadge').textContent = g.gaps.length + ' gap' + (g.gaps.length === 1 ? '' : 's');
-    $('gapsBadge').hidden = false;
 
-    html += g.gaps.map(function (x) {
-      var cls = x.severity === 'high' ? ' hi' : x.severity === 'medium' ? ' md' : '';
-      var title = x.severity ? 'Severity: ' + x.severity : 'The source does not state a severity';
-      return '<div class="gline"><span class="dot' + cls + '" title="' + esc(title) + '"></span><div>' +
-        '<b>' + esc(x.title) + (x.marker ? ' <span class="badge">' + esc(x.marker) + '</span>' : '') + '</b>' +
-        '<span>' + esc(x.source) + (x.detail ? ' · ' + esc(x.detail) : '') + ' ' + fixButton('gap', x.title) + '</span>' +
-        '</div></div>';
-    }).join('');
+    /* The ones the documents rank, in full, with the fix button on its own at
+       the end of the row rather than trailing the source line — it is an
+       action, and reading it as part of a sentence is how it got missed. */
+    var ranked = g.gaps.filter(function (x) { return !!x.severity; });
+    var unranked = g.gaps.filter(function (x) { return !x.severity; });
+
+    html += ranked.map(gapRow).join('');
+
+    /* Everything the documents say nothing about, collapsed into one line.
+       Listing twenty unranked gaps at the same weight as three ranked ones
+       buries the three. */
+    if (unranked.length) {
+      html += '<div class="gline"><span class="dot"></span><div>' +
+        '<b>' + unranked.length + ' more with no severity stated</b>' +
+        '<span>Kept in the order the documents list them — nothing is guessed. ' +
+        '<button class="showall" type="button" data-act="gaps">Show them</button></span>' +
+        '</div></div><div id="unrankedGaps" hidden>' + unranked.map(gapRow).join('') + '</div>';
+    }
 
     if (g.markerNote) html += '<div class="note">' + esc(g.markerNote) + '</div>';
 
@@ -1187,42 +1580,217 @@
     $('gapsBody').innerHTML = html;
   }
 
-  /* ---- 6. open to the public ---- */
+  /* ---- 6. the doors ----
+
+     One list, not two. The code's claim about a door and what the live site
+     actually did when knocked on are two halves of one fact, and showing them
+     in separate cards meant reading the same twelve addresses twice and doing
+     the join in your head. They are joined here on the address — the same
+     "METHOD /path" string lib/doors.mjs builds — so a disagreement between
+     the two is a single row that cannot be missed. */
+
+  var doorsFilter = 'all';
+
+  /* What the code alone says about one route. */
+  function routeClaim(r) {
+    var qual = [];
+    if (r.servesShell) qual.push('serves the app shell, no data');
+    if (r.tokenGuarded) qual.push('checks its own secret in the handler');
+    if (r.tokenInPath) qual.push('needs an unguessable code in the link');
+    if (r.middleware.length) qual.push('rate limited by ' + r.middleware.join(', '));
+    return { qual: qual, bare: !qual.length };
+  }
+
+  /* Every door, from both sources, with the live verdict attached where there
+     is one. Nothing here is invented: a door that has never been knocked on
+     says so rather than being assumed fine. */
+  function doorList() {
+    var p = scan.public || { routes: [], hashes: [] };
+    var last = doorsResult;
+    var byAddress = {};
+    var skipped = {};
+    if (last) {
+      (last.results || []).forEach(function (r) { byAddress[r.address] = r; });
+      (last.skipped || []).forEach(function (s) { skipped[s.address] = s; });
+    }
+
+    var out = [];
+
+    p.hashes.forEach(function (h) {
+      out.push({
+        kind: 'hash',
+        title: h.label || (h.hash + '=…'),
+        claim: (h.detail || 'The scan could not read what this one does.') +
+          (h.beforeSession ? ' Handled in js/app.js:' + h.line + ', before the session is checked.' : ''),
+        address: null, where: 'js/app.js:' + h.line,
+        chip: h.hash + '=…',
+        bare: false, result: null, skipped: null,
+      });
+    });
+
+    p.routes.forEach(function (r) {
+      var address = r.method + ' ' + r.path;
+      var c = routeClaim(r);
+      out.push({
+        kind: 'route',
+        /* The title says which of the two kinds of door this is; the line
+           under it says what actually guards it. Making the title the first
+           guard made both lines identical whenever there was only one. */
+        title: c.bare ? 'Nothing guards this address' : 'Open by design',
+        claim: c.bare
+          ? 'Nothing in the handler checks who is asking — no login, no secret, no rate limit the scan could find.'
+          : sentenceCase(c.qual.join('; ')) + '.',
+        address: address, where: 'server/server.js:' + r.line,
+        chip: address,
+        bare: c.bare,
+        result: byAddress[address] || null,
+        skipped: skipped[address] || null,
+      });
+    });
+
+    return out;
+  }
+
+  function sentenceCase(s) {
+    var t = String(s || '');
+    return t.charAt(0).toUpperCase() + t.slice(1);
+  }
+
+  /* Surprises first, then anything the code leaves unguarded, then the rest.
+     A door that disagreed with its own code is the only thing on this panel
+     that could need doing something about tonight. */
+  function doorWeight(d) {
+    var v = d.result && d.result.verdict;
+    if (v === 'unexpected-data' || v === 'needs-login') return 0;
+    if (v === 'missing' || v === 'error') return 1;
+    if (d.bare) return 2;
+    if (v === 'unreachable') return 3;
+    return 4;
+  }
+
   function renderPublic() {
     var p = scan.public;
     $('publicLede').textContent =
       p.routes.length + ' of HaTi’s ' + p.totalRoutes + ' server routes carry no login check, and ' +
-      p.hashes.length + ' URL hashes are handled before any session exists. Short list by design — if it grows, that is the finding.';
-
-    var html = p.hashes.map(function (h) {
-      return '<div class="caprow"><div class="bd">' +
-        '<b><span class="codechip">' + esc(h.hash) + '=…</span> ' + esc(h.label || '') + '</b>' +
-        '<span>' + (h.detail ? esc(h.detail) : 'not detected') +
-        (h.beforeSession ? ' Handled in js/app.js:' + h.line + ', before the session is checked.' : '') +
-        '</span></div></div>';
-    }).join('');
-
-    html += p.routes.map(function (r) {
-      var qual = [];
-      if (r.servesShell) qual.push('serves the app shell, no data');
-      if (r.tokenGuarded) qual.push('checks its own bearer token in the handler');
-      if (r.tokenInPath) qual.push('needs an unguessable token in the URL');
-      if (r.middleware.length) qual.push('rate limited by ' + r.middleware.join(', '));
-      var bare = !qual.length;
-      return '<div class="caprow"><div class="bd">' +
-        '<b><span class="codechip">' + esc(r.method) + ' ' + esc(r.path) + '</span></b>' +
-        '<span' + (bare ? ' style="color:var(--badtx)"' : '') + '>' +
-        (bare ? 'No login check and no other guard in the handler.' : esc(qual.join('; ')) + '.') +
-        ' server/server.js:' + r.line + '</span></div>' +
-        (bare ? '<span class="badge bad">bare</span>' : '') + '</div>';
-    }).join('');
-
-    html += '<div class="note">Derived by listing every <code>app.get/post/put/patch/delete</code> ' +
-      'whose middleware chain does not include <code>auth</code>. "No login check" is not the same as "anyone can read it" — ' +
-      'the notes above say what actually guards each one.</div>';
-
-    $('publicBody').innerHTML = html;
+      p.hashes.length + ' URL hashes are handled before any session exists. ' +
+      'Short list by design — if it grows, that is the finding.';
+    renderDoorsPanel();
   }
+
+  /* The three counters, the list, and the button that knocks. All three read
+     the same array, so they cannot disagree with each other. */
+  function renderDoorsPanel() {
+    if (!scan) return;
+    var doors = doorList();
+    var last = doorsResult;
+    var surprises = doors.filter(function (d) { return doorWeight(d) <= 1; });
+    var asWritten = doors.filter(function (d) { return d.result && d.result.verdict === 'as-expected'; });
+    var state = doorsState || {};
+
+    /* Card 1 — the only one that can be urgent. */
+    var c1 = surprises.length
+      ? '<div class="sum" style="background:var(--bad);border-color:transparent">' +
+        '<div class="top"><span class="tl bad"></span><span class="n" style="font-size:19px;color:var(--badtx)">' +
+        surprises.length + ' door' + (surprises.length === 1 ? '' : 's') + ' behaved worse than the code says</span></div>' +
+        '<div class="cap" style="color:var(--badtx)">' +
+        esc(surprises.map(function (d) { return d.result ? d.result.says : ''; }).filter(Boolean)[0] || '') + '</div></div>'
+      : sumCard(last ? asWritten.length : doors.length, last ? 'ok' : 'warn',
+        last
+          ? 'Doors behaved exactly as written. Nothing answered that should not have.'
+          : 'Doors the code says are open. Nobody has knocked on them yet, so this is a promise rather than a fact.');
+
+    /* Card 2 — the shape of the whole set at a glance. */
+    var c2 = '<div class="sum"><div class="top">' +
+      '<span class="tl' + (doors.length > 14 ? ' warn' : '') + '"></span>' +
+      '<span class="n">' + doors.length + '</span></div>' +
+      '<div class="cap">Of HaTi’s ' + (scan.public.totalRoutes || 0) + ' addresses, these need no login. ' +
+      'Short by design.</div>' +
+      '<div style="display:flex;gap:4px;margin-top:11px;flex-wrap:wrap">' +
+      doors.map(function (d) {
+        var w = doorWeight(d);
+        var bg = w <= 1 ? 'var(--badtx)' : w === 2 ? 'var(--gold)' : d.result ? 'var(--lav)' : 'var(--tile2)';
+        return '<i title="' + esc(d.chip) + '" style="display:block;width:22px;height:6px;border-radius:3px;background:' + bg + '"></i>';
+      }).join('') + '</div></div>';
+
+    /* Card 3 — the button, and what the last knock cost. */
+    var c3;
+    if (!state.available) {
+      c3 = sumCard('—', 'warn',
+        esc(state.reason || 'The Mapper does not know where the live HaTi is, so it cannot knock on anything.'));
+    } else if (!last) {
+      c3 = '<div class="sum"><div class="top"><span class="tl warn"></span>' +
+        '<span class="n" style="font-size:19px">Never knocked</span></div>' +
+        '<div class="cap">One request at a time, ' + ((state.throttleMs || 500) / 1000) + ' seconds apart, ' +
+        (state.cap || 12) + ' at most. Nothing here ever runs on its own.</div>' +
+        '<div style="margin-top:12px"><button class="btn btn-primary" data-act="knock" type="button">Check the live site</button></div></div>';
+    } else {
+      c3 = '<div class="sum"><div class="top"><span class="tl' + (surprises.length ? ' bad' : '') + '"></span>' +
+        '<span class="n" style="font-size:19px">Last checked ' + esc(fmtDate(last.at, true)) + '</span></div>' +
+        '<div class="cap">' + last.requests + ' plain request' + (last.requests === 1 ? '' : 's') + ' to ' + esc(last.site) +
+        ', one at a time, taking ' + Math.round(last.tookMs / 1000) + ' seconds. ' +
+        'Only a status code and a rough size came back.</div>' +
+        '<div style="margin-top:12px"><button class="btn" data-act="knock" type="button">Check the live site again</button></div></div>';
+    }
+
+    $('doorsSums').innerHTML = c1 + c2 + c3;
+    renderDoorRows(doors);
+  }
+
+  function renderDoorRows(doors) {
+    var list = doors.slice().sort(function (a, b) {
+      var d = doorWeight(a) - doorWeight(b);
+      return d !== 0 ? d : String(a.chip).localeCompare(String(b.chip));
+    });
+
+    if (doorsFilter === 'surprise') list = list.filter(function (d) { return doorWeight(d) <= 2; });
+    if (doorsFilter === 'unknocked') list = list.filter(function (d) { return !d.result; });
+
+    if (!list.length) {
+      $('doorsBody').innerHTML = '<div class="note">Nothing matches that filter.</div>';
+    } else {
+      $('doorsBody').innerHTML = list.map(function (d) {
+        var v = d.result ? (VERDICT[d.result.verdict] || { cls: '', label: d.result.verdict }) : null;
+        var w = doorWeight(d);
+        var isBad = w <= 1;
+        /* An address with no guard at all is not a surprise — the code says so
+           — but it is not a green tick either. It gets its own middle state. */
+        var isWarn = !isBad && w === 2;
+        var badge = v
+          ? '<span class="badge ' + v.cls + '">' + esc(v.label) + '</span>'
+          : d.skipped
+            ? '<span class="badge">left alone</span>'
+            : '<span class="badge' + (isWarn ? ' gold' : '') + '">not knocked</span>';
+
+        return '<div class="door' + (isBad ? ' bad' : isWarn ? ' warn' : '') + '">' +
+          '<span class="ic">' + (isBad || isWarn ? ICON_WARN : ICON_TICK) + '</span>' +
+          '<div class="bd"><b>' + esc(d.title) + '</b>' +
+          '<div class="d">' + esc(d.claim) +
+          (d.result ? ' <b>' + esc(d.result.says) + '</b>' : '') +
+          (d.skipped ? ' ' + esc(sentenceCase(d.skipped.reason)) + '.' : '') +
+          '</div>' +
+          '<div class="w"><span class="codechip">' + esc(d.chip) + '</span>' +
+          '<span>' + esc(d.where) + '</span></div></div>' +
+          '<div class="rt">' + badge +
+          (isBad ? (d.kind === 'route' ? fixButton('door', d.chip) : '') : '') + '</div></div>';
+      }).join('');
+    }
+
+    $('doorsNote').innerHTML = 'Derived by listing every <code>app.get/post/put/patch/delete</code> whose middleware chain ' +
+      'does not include <code>auth</code>. "No login check" is not the same as "anyone can read it" — each row says what ' +
+      'actually guards it. Where the live site was knocked on, what it answered is in bold beside the code’s claim; ' +
+      'nothing but a status code and a rough size ever came back, so nothing of HaTi’s is on this screen.';
+  }
+
+  var ICON_TICK = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>';
+  var ICON_WARN = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>';
+
+  $('doorsFilter').addEventListener('click', function (e) {
+    var b = e.target.closest('button[data-f]');
+    if (!b || !scan) return;
+    doorsFilter = b.getAttribute('data-f');
+    this.querySelectorAll('button').forEach(function (x) { x.setAttribute('aria-pressed', String(x === b)); });
+    renderDoorRows(doorList());
+  });
 
   /* ---- 6b. knocking on those doors for real ---- */
 
@@ -1239,86 +1807,41 @@
     'unreachable':      { cls: '',     label: 'no answer' },
   };
 
+  /* Whether the Mapper knows where HaTi is, and the limits it knocks under. */
+  var doorsState = null;
+
   function renderDoors(state) {
-    var body = $('doorsBody');
-    var bar = $('doorsState');
-    var go = $('doorsGo');
-
-    if (!state) { body.innerHTML = ''; bar.textContent = ''; return; }
-
-    if (!state.available) {
-      go.disabled = true;
-      bar.textContent = state.reason || 'The Mapper does not know where the live HaTi is, so it cannot knock on anything.';
-      body.innerHTML = '';
-      return;
+    if (!state) return;
+    doorsState = state;
+    if (state.last) {
+      /* The tower leads with anything that answered when the code said it
+         would not, so it needs this as soon as there is one. */
+      doorsResult = state.last;
+      if (scan) { renderTowerDoors(); renderTowerAttention(); }
     }
-
-    go.disabled = false;
-    var last = state.last;
-    if (!last) {
-      bar.textContent = 'Not asked yet. Pressing this sends one plain request to each door above — at most ' +
-        state.cap + ', half a second apart — and reports what came back.';
-      body.innerHTML = '';
-      return;
-    }
-
-    bar.textContent = 'Last asked ' + fmtDate(last.at, true) + '.';
-
-    /* The tower leads with anything that answered when the code said it would
-       not, so it needs the result of this check as soon as there is one. */
-    doorsResult = last;
-    if (scan) { renderTowerDoors(); renderTowerAttention(); }
-
-    var html = last.results.map(function (r) {
-      var v = VERDICT[r.verdict] || { cls: '', label: r.verdict };
-      var surprise = r.verdict !== 'as-expected' && r.verdict !== 'unreachable';
-      return '<div class="knock2' + (surprise ? ' surprise' : '') + '">' +
-        '<span class="badge ' + v.cls + '">' + esc(v.label) + '</span><div class="bd">' +
-        '<span class="codechip">' + esc(r.address) + '</span>' +
-        '<div class="d">' + esc(r.says) + ' The code led us to expect it ' + esc(r.expected) + '.</div></div></div>';
-    }).join('');
-
-    if (last.skipped.length) {
-      html += last.skipped.map(function (s) {
-        return '<div class="knock2"><span class="badge">left alone</span><div class="bd">' +
-          '<span class="codechip">' + esc(s.address) + '</span>' +
-          '<div class="d">' + esc(s.reason) + '.</div></div></div>';
-      }).join('');
-    }
-
-    html += '<div class="note"><b>' + esc(last.summary) + '</b></div>';
-
-    html += '<div class="note"><b>What this did:</b> ' + last.requests +
-      ' plain request' + (last.requests === 1 ? '' : 's') + ' to ' + esc(last.site) +
-      ', one at a time, ' + (last.throttleMs / 1000) + ' seconds apart, giving each ' +
-      (last.timeoutMs / 1000) + ' seconds to answer, stopping at ' + last.cap +
-      '. It took ' + Math.round(last.tookMs / 1000) + ' seconds. ' +
-      'Anything that would have written data was left alone. ' +
-      'Only the status code and a rough size came back — no page, no record, nothing of HaTi’s is on this screen.</div>';
-
-    body.innerHTML = html;
+    if (scan) renderDoorsPanel();
   }
 
   function loadDoors() {
     return apiGet('/api/public-check').then(renderDoors, function () {});
   }
 
-  $('doorsGo').addEventListener('click', function () {
-    var btn = this;
+  /* Delegated, because the button now lives inside a card that is redrawn
+     every time the list changes — a listener bound to the element itself
+     would be thrown away with the first repaint. */
+  document.addEventListener('click', function (e) {
+    var btn = e.target.closest && e.target.closest('button[data-act="knock"]');
+    if (!btn) return;
     btn.disabled = true;
-    var was = btn.textContent;
     btn.textContent = 'Knocking…';
-    $('doorsState').textContent = 'Asking the live site now. This is deliberately slow — one door at a time.';
     $('doorsBody').innerHTML = skeleton(4);
     post('/api/public-check', {})
       .then(function (last) {
         renderDoors({ available: true, cap: last.cap, throttleMs: last.throttleMs, timeoutMs: last.timeoutMs, last: last });
       })
-      .catch(function (e) {
-        $('doorsBody').innerHTML = '';
-        $('doorsState').textContent = e.message;
-      })
-      .then(function () { btn.textContent = was; btn.disabled = false; });
+      .catch(function (err) {
+        $('doorsBody').innerHTML = '<div class="note bad"><b>The check could not run.</b> ' + esc(err.message) + '</div>';
+      });
   });
 
   /* ---- 7a. what the Mapper has watched change (72 hours) ---- */
@@ -1365,6 +1888,7 @@
       (lookedAt ? ' The Mapper last looked ' + lookedAt + '.' : '');
 
     var html = '';
+    renderChangesSums();
 
     /* An empty list has two very different causes and used to be given only
        the flattering one. Two looks finding nothing and two hundred looks
@@ -1388,16 +1912,21 @@
           : '') +
         '</div>';
     } else {
-      html += watch.rounds.map(function (r) {
-        return '<div class="round2"><div class="when">' + esc(fmtDate(r.at, true)) +
-          (r.commit ? ' · code version ' + esc(r.commit) : '') + '</div>' +
-          r.events.map(function (e) {
+      /* A timeline rather than a stack of cards: the round's time and code
+         version sit on a rail down the left, its events on the right, so the
+         rounds read as a sequence. */
+      html += '<div class="tl2">' + watch.rounds.map(function (r) {
+        var worst = r.events.reduce(function (n, e) { return Math.max(n, e.weight || 1); }, 1);
+        return '<div class="when"><b>' + esc(fmtDate(r.at, true)) + '</b>' +
+          (r.commit ? 'version ' + esc(r.commit) : 'no code version recorded') + '</div>' +
+          '<div class="rail"><i class="' + (worst >= 3 ? 'bad' : worst === 2 ? 'warn' : '') + '"></i></div>' +
+          '<div class="evs">' + r.events.map(function (e) {
             var w = e.weight || 1;
-            return '<div class="evrow"><span class="badge' + (w >= 3 ? ' bad' : w === 2 ? ' gold' : '') + '">' +
+            return '<div class="ev"><span class="badge' + (w >= 3 ? ' bad' : w === 2 ? ' gold' : '') + '">' +
               esc(KIND_LABEL[e.kind] || e.kind) + '</span>' +
               '<span class="x">' + esc(e.text) + '</span></div>';
           }).join('') + '</div>';
-      }).join('');
+      }).join('') + '</div>';
     }
 
     lede.innerHTML = esc(lede.textContent) + ' <br>A scan that finds nothing changed adds nothing here, so this stays a list of real events rather than a list of look-ups. ' +
@@ -1414,9 +1943,90 @@
   /* The question the owner actually asks each morning. The same events the log
      below lists, grouped into one report so it reads as an answer rather than
      as a feed. */
+  /* The four counters over the Changes tab. They come from three different
+     places — the night's report, the watch log and the scan — so they are
+     drawn once, here, rather than by whichever renderer happens to run last. */
+  var digestData = null;
+
+  function renderChangesSums() {
+    if (!scan) return;
+    var d = digestData;
+    var w = watchData;
+    var commits = d && d.commits ? d.commits.length : null;
+    var observed = w ? w.rounds.reduce(function (n, r) { return n + r.events.length; }, 0) : null;
+    var gaps = scan.gaps ? scan.gaps.gaps.length : 0;
+    var high = scan.gaps ? (scan.gaps.severityCounts || {}).high || 0 : 0;
+    var mv = scan.gapMovement;
+    var looks = w ? (w.looks || 0) : null;
+
+    $('changesSums').innerHTML =
+      sumCard(commits == null ? '—' : commits, commits ? 'warn' : 'ok',
+        commits == null
+          ? 'The night’s report has not arrived yet.'
+          : commits
+            ? 'Code updates ' + esc(d.label) + ' — read from the repository’s own record, not from the Mapper’s watching.'
+            : 'No code updates ' + esc(d.label) + '. If a session was meant to run, that is worth knowing too.') +
+      sumCard(observed == null ? '—' : observed, observed ? 'warn' : 'ok',
+        observed == null
+          ? 'The watch log has not arrived yet.'
+          : observed
+            ? 'Things the Mapper noticed move on its own, in ' + rangeLabel() + '.'
+            : 'Nothing has moved that the Mapper could see, in ' + rangeLabel() + '.') +
+      sumCard(gaps, high ? 'bad' : gaps ? 'warn' : 'ok',
+        gaps
+          ? 'Things still unfinished' + (high ? ', ' + high + ' of them marked high' : '') +
+            (mv && (mv.opened || mv.closed) ? ' · ' + mv.closed + ' closed, ' + mv.opened + ' opened this month' : '') + '.'
+          : 'Nothing in HaTi’s documents is written down as unfinished.') +
+      sumCard(looks == null ? '—' : looks + (looks === 1 ? ' look' : ' looks'), 'ok',
+        looks == null
+          ? 'The watch log has not arrived yet.'
+          : 'The Mapper has taken' + (w && w.lastLookedAt ? ', the last one ' + esc(fmtDate(w.lastLookedAt, true)) : '') +
+            '. It looks when you open this page and at no other time.');
+  }
+
+  /* The heaviest thing the Mapper observed last night, and — only where the
+     evidence is actually there — the code update that most likely caused it.
+     The tie is made on a distinctive word shared between the event and a
+     commit subject, and where nothing matches the card says so rather than
+     picking one. It is a lead, never a verdict. */
+  var STOPWORDS = {
+    the: 1, and: 1, that: 1, this: 1, with: 1, from: 1, into: 1, have: 1, been: 1, were: 1, was: 1,
+    for: 1, its: 1, now: 1, out: 1, more: 1, than: 1, over: 1, file: 1, files: 1, code: 1, name: 1,
+    names: 1, added: 1, moved: 1, changed: 1, longer: 1, without: 1, anything: 1, something: 1,
+  };
+
+  function distinctiveWords(s) {
+    var out = {};
+    String(s || '').toLowerCase().replace(/[^a-z0-9/._-]+/g, ' ').split(' ').forEach(function (w) {
+      if (w.length >= 5 && !STOPWORDS[w]) out[w] = true;
+    });
+    return out;
+  }
+
+  function digestSpotlight(d) {
+    var events = [];
+    (d.sections || []).forEach(function (s) {
+      (s.events || []).forEach(function (e) { events.push(e); });
+    });
+    if (!events.length) return null;
+    var worst = events.reduce(function (a, b) { return (b.weight || 1) > (a.weight || 1) ? b : a; });
+    if ((worst.weight || 1) < 2) return null;    // nothing here rises above routine
+
+    var words = distinctiveWords(worst.text);
+    var hit = null;
+    (d.commits || []).forEach(function (c) {
+      if (hit) return;
+      var cw = distinctiveWords(c.subject);
+      for (var k in words) if (cw[k]) { hit = c; return; }
+    });
+    return { event: worst, commit: hit };
+  }
+
   function renderDigest(d) {
     var body = $('digestBody');
     if (!d) { body.innerHTML = skeleton(3); return; }
+    digestData = d;
+    renderChangesSums();
 
     $('digestLede').textContent = 'Everything that moved ' + d.label + ', in one place.';
 
@@ -1457,6 +2067,8 @@
       }).join('');
     }).join('');
 
+    var spotlight = digestSpotlight(d);
+
     /* Numbered in the order the work happened, so the list reads as the story
        of the session rather than as an undifferentiated pile. The date sits
        above them because "since midnight" is relative and a date is not. */
@@ -1470,10 +2082,52 @@
         ', in the order they happened</h5>' +
         '<div class="day">' + esc(fmtDate(d.commits[0].date)) + '</div>' +
         d.commits.map(function (c) {
-          return '<div class="commit2"><span class="n">' + c.n + '</span>' +
+          var lit = spotlight && spotlight.commit && spotlight.commit.sha === c.sha;
+          return '<div class="commit2"' + (lit ? ' style="background:var(--bad);border-radius:9px"' : '') + '>' +
+            '<span class="n">' + c.n + '</span>' +
             '<span class="t">' + esc(c.subject) + '</span>' +
             '<span class="h" title="The reference number for this code update">' + esc(c.sha) + '</span></div>';
         }).join('') + '</div>';
+    }
+
+    /* The one thing on this card worth acting on, said once and in red. It is
+       the heaviest thing the Mapper actually observed, and where a code update
+       from the same night plausibly caused it, that update is named. */
+    if (spotlight) {
+      html += '<div class="warncard" style="margin-top:12px">' +
+        '<span class="ic">' + ICON_WARN + '</span><div class="bd">' +
+        '<b>' + (spotlight.commit
+          ? 'Update ' + spotlight.commit.n + ' is the one to look at.'
+          : 'One thing here is worth a look.') + '</b>' +
+        '<div class="d">' + esc(spotlight.event.text) +
+        (spotlight.commit
+          ? ' That update is the only one last night whose description mentions it.'
+          : ' No code update last night names it, so what caused it is not on this card.') +
+        '</div></div></div>';
+    }
+
+    /* Every other code update the scan can see, folded in here rather than
+       repeated in a card of its own. They are the same commits — a second
+       panel listing them again read as a second, disagreeing answer. */
+    var nightShas = {};
+    d.commits.forEach(function (c) { nightShas[c.sha] = true; });
+    var earlier = (scan && scan.changes ? scan.changes : []).filter(function (c) { return !nightShas[c.sha]; });
+    if (earlier.length) {
+      html += '<div style="margin-top:12px;border-top:1px solid var(--line);padding-top:10px">' +
+        '<button class="showall" type="button" data-act="earlier">' +
+        'Show the ' + earlier.length + ' earlier code update' + (earlier.length === 1 ? '' : 's') + '</button>' +
+        '<div id="earlierCommits" hidden style="margin-top:8px">' +
+        earlier.map(function (c) {
+          var files = c.fileCount != null ? c.fileCount + ' file' + (c.fileCount === 1 ? '' : 's') : null;
+          var what = c.areas === null ? 'areas not detected'
+            : c.areas.length ? 'touched ' + c.areas.join(', ') + (files ? ' · ' + files : '')
+              : (files || 'files') + ', none in the tracked areas';
+          return '<div class="gline"><span class="dot"></span><div><b>' + esc(c.subject) + '</b>' +
+            '<span>' + esc(fmtDate(c.date)) + ' · ' + esc(what) + ' · ' + esc(c.sha) + '</span></div></div>';
+        }).join('') + '</div></div>';
+    } else if (!d.commits.length && scan && !scan.changes.length) {
+      html += '<div class="note"><b>No commit history.</b> The scan could not read the repository’s record, ' +
+        'so no code updates can be listed. Everything else on this page comes from the source itself and is unaffected.</div>';
     }
 
     var foot = [];
@@ -1538,77 +2192,161 @@
     loadWatch();
   });
 
-  /* ---- 7b. what changed in the code ---- */
-  function renderChanges() {
-    if (!scan.changes.length) {
-      $('changesBody').innerHTML = '<div class="note"><b>No commit history.</b> The scan could not read the repository’s commits, so this panel has nothing to show. Everything else on this page comes from the source itself and is unaffected.</div>';
-      return;
-    }
-    $('changesBody').innerHTML = scan.changes.map(function (c) {
-      var files = c.fileCount != null ? c.fileCount + ' file' + (c.fileCount === 1 ? '' : 's') : null;
-      var what;
-      if (c.areas === null) what = 'areas not detected';
-      else if (c.areas.length) what = 'Touched ' + c.areas.join(', ') + (files ? ' · ' + files : '');
-      else what = (files || 'Files') + ', none in the tracked areas';
-      return '<div class="gline"><span class="dot"></span><div>' +
-        '<b>' + esc(c.subject) + '</b>' +
-        '<span>' + esc(fmtDate(c.date)) + ' · ' + esc(what) + ' · ' + esc(c.sha) + '</span></div></div>';
-    }).join('');
-  }
+  /* The code updates older than last night live inside the "Last night" card,
+     behind this toggle. They used to be a fourth panel of their own, which
+     read as a second answer to the question that card already answers. */
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest && e.target.closest('button[data-act="earlier"]');
+    if (!b) return;
+    var box = $('earlierCommits');
+    if (!box) return;
+    box.hidden = !box.hidden;
+    b.textContent = box.hidden
+      ? 'Show the ' + box.children.length + ' earlier code update' + (box.children.length === 1 ? '' : 's')
+      : 'Hide the earlier code updates';
+  });
 
-  /* ---- 8. getting bulky ---- */
+  /* The gaps the documents say nothing about, behind their own toggle. */
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest && e.target.closest('button[data-act="gaps"]');
+    if (!b) return;
+    var box = $('unrankedGaps');
+    if (!box) return;
+    box.hidden = !box.hidden;
+    b.textContent = box.hidden ? 'Show them' : 'Hide them';
+  });
+
+  /* ---- 8. getting bulky ----
+
+     Same fields as before, a different shape. "Over the line" used to be a
+     badge, which says only yes or no; it is a POSITION now — the line is drawn
+     on every bar at threshold/maxBytes, so how far over is visible at a
+     glance. And only the heaviest few are shown: the long tail of small files
+     is never the answer to "what has outgrown comfortable". */
+
+  var weightShowAll = false;
+
   function renderWeight() {
     var w = scan.weight;
     var max = w.files.length ? w.files[0].bytes : 1;
+    var totalBytes = w.totalBytes != null
+      ? w.totalBytes
+      : w.files.reduce(function (n, f) { return n + f.bytes; }, 0);
 
-    /* A path is an address, not an answer. Each row leads with what the file
-       IS and demotes the address to a chip, because the person reading this
-       does not write code and should not have to decode one. */
-    var html = '<table class="tbl"><thead><tr><th>What it is</th><th style="width:210px">Lives in</th>' +
-      '<th class="r" style="width:80px">Size</th></tr></thead><tbody>' + w.files.map(function (f) {
+    $('weightSums').innerHTML =
+      '<div class="sum"><div class="top">' +
+      '<span class="n">' + esc(totalBytes >= 1048576 ? (totalBytes / 1048576).toFixed(2) + ' MB' : kb(totalBytes)) + '</span>' +
+      trendChip('bytes', totalBytes, { epsilon: 1024, format: function (d) { return kb(d); } }) +
+      '</div><div class="cap">All of HaTi, across ' + w.files.length + ' files.</div></div>' +
+      sumCard(w.overThreshold, w.overThreshold ? 'warn' : 'ok',
+        'Files past the comfortable line of ' + kb(w.threshold) +
+        (w.overThreshold ? '.' : '. Nothing has outgrown it.')) +
+      sumCard(w.orphans.length, w.orphans.length ? 'bad' : 'ok',
+        w.orphans.length
+          ? 'Names published for other code to use, that nothing uses.'
+          : 'Every published name is used somewhere. Nothing to remove.') +
+      sumCard(w.files.length - w.overThreshold, 'ok', 'Files comfortably under the line.');
+
+    $('weightLede').textContent = 'the line is ' + kb(w.threshold) +
+      ' — past it, a file is hard for a person or an AI session to hold in mind';
+
+    /* Anything over the line is always shown, however many that is; the tail
+       is behind the toggle. */
+    var over = w.files.filter(function (f) { return f.bytes > w.threshold; });
+    var shown = weightShowAll ? w.files : w.files.slice(0, Math.max(4, over.length));
+    var markAt = max ? Math.min((w.threshold / max) * 100, 100) : 0;
+
+    var html = shown.map(function (f) {
       var big = f.bytes > w.threshold;
-      return '<tr><td><b>' + (f.name ? esc(f.name) : nd('no plain-English note yet')) + '</b>' +
-        (f.does ? '<div class="subnum">' + esc(f.does) + '</div>' : '') +
-        '<div style="margin-top:5px;height:4px;border-radius:4px;background:var(--tile2);overflow:hidden">' +
-        '<span style="display:block;height:100%;width:' + ((f.bytes / max) * 100).toFixed(1) + '%;' +
-        'background:' + (big ? 'var(--gold)' : 'var(--lav)') + '"></span></div></td>' +
-        '<td><span class="codechip" title="Where this file lives in HaTi">' + esc(f.path) + '</span>' +
-        (big ? fixButton('file-size', f.path) : '') + '</td>' +
-        '<td class="r">' + kb(f.bytes) + (big ? '<div class="badge gold" style="margin-top:4px">over the line</div>' : '') + '</td></tr>';
-    }).join('') + '</tbody></table>';
+      var times = Math.round((f.bytes / w.threshold) * 10) / 10;
+      return '<div class="rank">' +
+        '<div class="rwho"><b>' + (f.name ? esc(f.name) : nd('no plain-English note yet')) + '</b>' +
+        (f.does ? '<div class="d">' + esc(f.does) + '</div>' : '') +
+        '<div class="m"><span class="codechip" title="Where this file lives in HaTi">' + esc(f.path) + '</span></div></div>' +
+        '<div><div class="mbar"><i class="' + (big ? 'over' : '') + '" style="width:' +
+        ((f.bytes / max) * 100).toFixed(1) + '%"></i>' +
+        '<span class="mark" title="The comfortable line, ' + esc(kb(w.threshold)) + '" style="left:' + markAt.toFixed(1) + '%"></span>' +
+        '</div><div class="barnote">' +
+        (big ? esc(times + '× the comfortable line.') : 'Under the line. Nothing to do.') +
+        '</div></div>' +
+        '<div class="amt"><span class="v"' + (big ? ' style="color:var(--gold)"' : '') + '>' + esc(kb(f.bytes)) + '</span>' +
+        (big ? '<div style="margin-top:6px">' + fixButton('file-size', f.path) + '</div>' : '') +
+        '</div></div>';
+    }).join('');
 
+    if (w.files.length > shown.length || weightShowAll) {
+      html += '<div style="margin-top:12px;font-size:12px;color:var(--tx3)">' +
+        (weightShowAll
+          ? 'Showing all ' + w.files.length + ' files. '
+          : 'Showing the ' + shown.length + ' heaviest of ' + w.files.length + ' files. ') +
+        '<button class="showall" type="button" data-act="weight">' +
+        (weightShowAll ? 'Show fewer' : 'Show all') + '</button></div>';
+    }
+
+    /* The panel explains its own unit rather than assuming KB is common
+       knowledge, and says in words what the gold means. Both belong here
+       whatever shape the rows take. */
     html += '<div class="note" style="opacity:.85"><b>What the sizes mean.</b> ' +
       'KB is how much text a file holds — ' + kb(w.threshold) + ' is roughly fifteen to twenty printed pages of code. ' +
       'Past that a file gets hard for a person, or for an AI session, to hold in mind at once, which is when mistakes creep in. ' +
-      'That is all the gold colouring says: this one has outgrown comfortable.</div>';
+      'That is all the gold colouring and the line on each bar say: this one has outgrown comfortable.</div>';
 
     var worst = (scan.moduleFacts || []).filter(function (m) { return m.multiJob; })
       .sort(function (a, b) { return b.bytes - a.bytes; })[0];
-    html += '<div class="note"><b>' + w.overThreshold + ' file' + (w.overThreshold === 1 ? ' is' : 's are') + ' past the comfortable line.</b>' +
-      (worst ? ' <code>' + esc(worst.module) + '</code> carries ' + worst.sections.length +
+    if (worst) {
+      html += '<div class="note"><b>' + esc(worst.module) + '</b> carries ' + worst.sections.length +
         ' separately-banner-ed jobs and ' + worst.exportCount + ' exported names in ' + kb(worst.bytes) +
-        '. Splitting it would make every future session on that area faster and safer.' : '') + '</div>';
+        '. Splitting it would make every future session on that area faster and safer.</div>';
+    }
 
     $('weightBody').innerHTML = html;
+    renderOrphans();
+  }
+
+  /* Chips grouped by the file they come from, and one button that drafts a
+     prompt covering all of them — one button per name was thirty presses. */
+  function renderOrphans() {
+    var w = scan.weight;
+    $('orphanTitle').textContent = w.orphans.length
+      ? w.orphans.length + ' name' + (w.orphans.length === 1 ? '' : 's') + ' nothing uses'
+      : 'Names nothing uses';
 
     if (!w.orphans.length) {
+      $('orphanAct').innerHTML = '';
       $('orphanBody').innerHTML = '<div class="note">Every one of the ' + w.exportCount +
         ' names attached to <code>window</code> is referenced somewhere else in the repository. Nothing to remove.</div>';
       return;
     }
+
+    $('orphanAct').innerHTML = fixButton('orphan-all', 'all', null,
+      'Draft one fix for all ' + w.orphans.length);
+
     var byFile = {};
     w.orphans.forEach(function (o) { (byFile[o.exportedFrom] = byFile[o.exportedFrom] || []).push(o.name); });
-    $('orphanBody').innerHTML = '<table class="tbl"><thead><tr><th style="width:220px">Exported from</th><th>Never referenced anywhere else</th></tr></thead><tbody>' +
-      Object.keys(byFile).map(function (f) {
-        return '<tr><td><span class="codechip">' + esc(f) + '</span></td><td>' +
-          byFile[f].map(function (n) {
-            return '<span class="codechip">' + esc(n) + '</span>' + fixButton('orphan', n);
-          }).join(' ') + '</td></tr>';
-      }).join('') +
-      '</tbody></table><div class="note">' + w.orphans.length + ' of ' + w.exportCount +
-      ' exported names. Each appears exactly once outside the export blocks — its own declaration — so nothing calls it. ' +
-      'Worth a look before assuming any of them is load-bearing.</div>';
+
+    /* Each chip is itself the button for its own name. The bulk button above
+       covers the common case — they are all the same decision — but losing the
+       ability to ask about one name would have been a capability traded away
+       for tidiness. */
+    $('orphanBody').innerHTML = '<div class="ocards">' + Object.keys(byFile).map(function (f) {
+      return '<div class="ocard"><div class="f">' + esc(f) + '</div><div class="chips">' +
+        byFile[f].map(function (n) {
+          return '<button class="codechip chipbtn" type="button" data-fix="orphan" data-id="' + esc(n) + '"' +
+            ' title="Write a prompt about ' + esc(n) + ' I can paste into a Claude Code session">' + esc(n) + '</button>';
+        }).join('') +
+        '</div></div>';
+    }).join('') + '</div>' +
+      '<div class="note">' + w.orphans.length + ' of ' + w.exportCount +
+      ' published names. Each appears exactly once in the whole of HaTi — where it is declared — so nothing calls it. ' +
+      'Worth a look before assuming any of them is holding something up.</div>';
   }
+
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest && e.target.closest('button[data-act="weight"]');
+    if (!b || !scan) return;
+    weightShowAll = !weightShowAll;
+    renderWeight();
+  });
 
   /* ------------------------------------------------------------- the run */
 
@@ -1720,7 +2458,6 @@
     renderBlast();
     renderGaps();
     renderPublic();
-    renderChanges();
     renderWeight();
     stampText();
   }
@@ -1773,7 +2510,7 @@
         var msg = '<div class="note bad"><b>' + headline + '</b> ' + esc(e.message || 'Unknown error') +
           '<br>' + footer + '</div>';
         TOWER_IDS.concat(['screensBody', 'costBody', 'dataBody', 'blastBody', 'gapsBody',
-          'publicBody', 'changesBody', 'weightBody', 'orphanBody', 'capsBody'])
+          'doorsBody', 'weightBody', 'orphanBody', 'capsBody'])
           .forEach(function (id) { $(id).innerHTML = msg; });
       });
   }
@@ -2771,10 +3508,13 @@
      instruction from the scan, so the paths in it are the ones that were
      actually scanned. */
 
-  function fixButton(kind, id, label) {
+  /* `label` is read by a screen reader only, so two of these buttons on one
+     screen are distinguishable. `text` replaces the visible wording, for the
+     one button that covers a whole list rather than a single finding. */
+  function fixButton(kind, id, label, text) {
     return '<button class="fixbtn" data-fix="' + esc(kind) + '" data-id="' + esc(id) + '"' +
       ' title="Write a prompt I can paste into a Claude Code session">' +
-      'Draft a fix prompt' + (label ? '<span class="sr">' + esc(label) + '</span>' : '') + '</button>';
+      esc(text || 'Draft a fix prompt') + (label ? '<span class="sr">' + esc(label) + '</span>' : '') + '</button>';
   }
 
   function draftFix(kind, id) {
@@ -3170,8 +3910,20 @@
         // Only what the last check found; knocking needs the button.
         loadDoors();
       })
-      .catch(function () {
+      /* This used to report every failure as "the server did not answer",
+         including a fault in the page's own drawing code — which sent anyone
+         debugging it looking at the network for a bug that was on this side
+         of it. A page fault is now re-thrown so it reaches the console as
+         itself, and only a genuine failure to reach the server gets that
+         message. */
+      .catch(function (e) {
         showAuth('login');
+        var reachable = authInfo !== null;
+        if (reachable) {
+          authMsg('bad', 'This page hit a fault while drawing itself. Reload; if it keeps happening the details are in the browser console.');
+          setTimeout(function () { throw e; }, 0);
+          return;
+        }
         authMsg('bad', 'The server did not answer. If this page has just been redeployed, wait a moment and reload.');
       });
   }
