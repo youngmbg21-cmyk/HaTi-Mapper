@@ -563,8 +563,26 @@ last one. The failure is quiet, because every number involved is true.
 
 If your service was created before the disk was added to the blueprint, add it
 by hand: in Render open the service → **Settings → Disks → Add Disk**, mount it
-at `/var/data`, then add `MAPPER_DATA=/var/data` to the environment. The
-Settings tab says on screen when the state directory is not writable.
+at `/var/data`, then add `MAPPER_DATA=/var/data` to the environment.
+
+**The Settings tab tells you which of the three states you are in**, and this
+is worth knowing because it used to tell you the wrong one. It reported the
+state as safe whenever a write succeeded — which it does, on a directory the
+host is about to replace, right up until it does. So the page said the account,
+the key and the change log were permanent while every one of them was being
+wiped on each deploy: true sentence, wrong question, and the one place the
+owner would go to check. It now separates them:
+
+| What it says | What it means |
+|---|---|
+| Nothing is being saved | The directory cannot be written to at all |
+| This is not a permanent disk | Writes work, and the host replaces the directory on every deploy |
+| Written to `<path>`, outside this service's own directory | A mounted volume — a deploy does not touch it |
+
+The third is inferred from the state directory sitting outside the service's
+own, which is what a mounted volume looks like from inside the container. That
+is a strong signal and not a proof, so the wording on screen says exactly that
+rather than promising more than it established.
 
 ---
 

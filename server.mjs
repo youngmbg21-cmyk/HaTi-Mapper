@@ -86,6 +86,23 @@ const COMMIT_COUNT = Number(process.env.COMMIT_COUNT || 20);
    generated files in with them invites exactly the accident of deleting one
    while clearing the other. */
 const DATA_DIR = process.env.MAPPER_DATA || path.join(__dirname, '.mapper-state');
+
+/* Whether that directory survives a redeploy, as far as it can be known from
+   inside the container.
+
+   "Can I write here" is not the same question and was standing in for it: a
+   host replaces the service's own directory on every deploy, so writes succeed
+   right up until everything written is thrown away. The dashboard reported the
+   writable answer under the durable label, and therefore said the account, the
+   key and the change log were safe while they were being wiped on every deploy
+   — the exact shape of quiet untruth this whole service exists to avoid.
+
+   A mounted volume is a path outside the service's own directory, which is
+   what this checks. It is a strong signal rather than a proof — MAPPER_DATA
+   could point at some other temporary place — so the wording on screen says
+   what was actually established and no more. */
+const DATA_DIR_IS_MOUNTED = path.relative(__dirname, path.resolve(DATA_DIR)).startsWith('..');
+
 const history = new History(DATA_DIR);
 const prefs = new Prefs(DATA_DIR);
 
@@ -887,7 +904,13 @@ app.get('/api/ai/config', requireAuth, rateLimit('aiconfig', 120, 15 * 60 * 1000
     // says which one is in use so there is never any doubt.
     environmentFallback: !!ENV_AI_KEY,
     budget: chatBudget(),
-    storageIsDurable: history.status().durable,
+    /* Three states, not two: nothing is being written, something is being
+       written somewhere that a deploy will replace, or something is being
+       written to a mounted volume. The middle one used to report as the last
+       one. */
+    storageIsWritable: history.status().durable,
+    storageIsMounted: DATA_DIR_IS_MOUNTED,
+    storagePath: DATA_DIR,
   });
 });
 

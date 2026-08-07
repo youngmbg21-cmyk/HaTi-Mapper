@@ -641,6 +641,25 @@ try {
   const gear = await page.$('.tops [data-p="settings"]');
   check('Settings is reachable from the top bar', !!gear);
 
+  /* ---- what Settings says about whether the state is safe ----
+     It used to say "written to this service's disk" whenever a write
+     succeeded, which on a host that replaces the service's directory every
+     deploy is true and beside the point. This run writes inside the
+     repository — precisely the case that used to read as safe — so the page
+     has to say so in words the owner can act on. */
+  await page.click('.tops [data-p="settings"]');
+  await page.waitForFunction(() => /\S/.test(document.getElementById('setStorageNote')?.textContent || ''), null, { timeout: 20000 });
+  const storage = (await page.textContent('#setStorageNote')).trim();
+  check('Settings does not claim a throwaway directory is permanent',
+    !/written to this service’s disk\.?$/.test(storage) && /not a permanent disk/i.test(storage),
+    storage.slice(0, 150));
+  check('And says what actually happens to it, and what to do',
+    /replaces? .*on every deploy/i.test(storage) && /MAPPER_DATA/.test(storage),
+    storage.slice(0, 220));
+  check('And names the directory it means, so the claim can be checked',
+    !!(await page.$('#setStorageNote code')),
+    (await page.textContent('#setStorageNote code').catch(() => '(none)')));
+
   /* Scroll a long way down one tab, go elsewhere, come back. The place has to
      be waiting where it was left. Reloaded first, because "a tab you have not
      opened before" is only true of a page that has not been driven through

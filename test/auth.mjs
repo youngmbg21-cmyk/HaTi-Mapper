@@ -12,6 +12,7 @@ import { spawn } from 'node:child_process';
 import http from 'node:http';
 import path from 'node:path';
 import fs from 'node:fs';
+import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { hatiSource, announce } from './source.mjs';
 import { driftVerdict } from '../lib/drift.mjs';
@@ -199,6 +200,63 @@ try {
   const cfg2 = await get('/api/ai/config');
   check('The key is reported as set in the platform', cfg2.body.source === 'platform', cfg2.body.source);
   check('The key itself is never returned', !JSON.stringify(cfg2.body).includes('aaaaaaaa'), JSON.stringify(cfg2.body));
+
+  /* ---- does the state survive a deploy, and does the page know? ----
+     This was reported from whether a write succeeded, which on a host that
+     replaces the service's directory every deploy is a different question with
+     the same answer — right up until the deploy. So the page told the owner
+     the account, the key and the change log were safe while every one of them
+     was being wiped on each ship.
+
+     The three states are now distinct. This run writes to a directory inside
+     the repository, which is exactly the case that used to report as safe, so
+     it is the one worth pinning: writable, and known not to be permanent. */
+  check('The page is told whether the state directory can be written to',
+    cfg2.body.storageIsWritable === true, JSON.stringify(cfg2.body.storageIsWritable));
+  check('And separately, whether it survives a deploy',
+    cfg2.body.storageIsMounted === false,
+    `storageIsMounted=${cfg2.body.storageIsMounted} for ${cfg2.body.storagePath}`);
+  check('Writable is no longer reported as permanent',
+    !('storageIsDurable' in cfg2.body), Object.keys(cfg2.body).join(','));
+  check('And it says which directory it means, so the claim can be checked',
+    typeof cfg2.body.storagePath === 'string' && cfg2.body.storagePath.length > 0,
+    cfg2.body.storagePath);
+
+  /* A directory outside the service's own is what a mounted volume looks like
+     from inside the container, and it has to report as one. Asserted against a
+     second server rather than by trusting the first — the whole point is that
+     the two cases are told apart. */
+  const MOUNTED = fs.mkdtempSync(path.join(os.tmpdir(), 'mapper-mounted-'));
+  const mountedPort = PORT + 7;
+  const mBase = `http://127.0.0.1:${mountedPort}`;
+  const mounted = spawn(process.execPath, ['server.mjs'], {
+    cwd: ROOT,
+    env: {
+      ...process.env, PORT: String(mountedPort), MAPPER_DATA: MOUNTED, MAPPER_OWNER_EMAIL: OWNER,
+      HATI_URL: '', MAPPER_TOKEN: '', RESEND_API_KEY: '', ...source.env,
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  try {
+    let up = false;
+    for (let i = 0; i < 60; i++) {
+      try { if ((await fetch(`${mBase}/api/health`)).ok) { up = true; break; } } catch (_) {}
+      await new Promise(r => setTimeout(r, 250));
+    }
+    check('A second Mapper started on a directory outside its own', up);
+    const mSetup = await fetch(`${mBase}/api/auth/setup`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: OWNER, password: 'mountedpass1' }),
+    });
+    const mCookie = (mSetup.headers.get('set-cookie') || '').split(';')[0];
+    const mCfg = await (await fetch(`${mBase}/api/ai/config`, { headers: { Cookie: mCookie } })).json();
+    check('State outside the service directory reports as surviving a deploy',
+      mCfg.storageIsMounted === true && mCfg.storageIsWritable === true,
+      `mounted=${mCfg.storageIsMounted} writable=${mCfg.storageIsWritable} at ${mCfg.storagePath}`);
+  } finally {
+    mounted.kill();
+    fs.rmSync(MOUNTED, { recursive: true, force: true });
+  }
 
   /* ---- signing out ---- */
   console.log('\nSigning out and back in');

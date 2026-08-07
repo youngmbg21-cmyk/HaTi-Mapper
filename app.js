@@ -1817,7 +1817,14 @@
       if (cfg.budget && cfg.budget.limit) {
         $('askNote').innerHTML = 'It can see how HaTi is built — never what is inside it. No contracts, clients or figures reach it.<br>' +
           'Questions today: ' + cfg.budget.used + ' of ' + cfg.budget.limit + '.' +
-          (cfg.storageIsDurable ? '' : ' The key is held in memory only and will be lost if this service restarts — set ANTHROPIC_API_KEY in the dashboard to make it permanent.');
+          /* Two ways to lose a key, and the second one used to go unmentioned:
+             a directory that takes the write and is then replaced by the next
+             deploy. Both are worth the same warning. */
+          (!cfg.storageIsWritable
+            ? ' The key is held in memory only and will be lost if this service restarts — set ANTHROPIC_API_KEY in the dashboard to make it permanent.'
+            : cfg.storageIsMounted
+              ? ''
+              : ' The key is saved, but to a directory this service replaces on every deploy — see Settings.');
       }
       return cfg;
     }, function () { /* the config route is optional to the rest of the page */ });
@@ -2101,9 +2108,20 @@
         : 'Not set. The assistant cannot answer until you add one.';
     }
     $('setEmail').textContent = (authInfo && authInfo.email) || '—';
-    $('setStorageNote').innerHTML = cfg.storageIsDurable
-      ? 'Your account, your key, the day’s question count and the change log are written to this service’s disk.'
-      : '<b>This service has no permanent disk.</b> Your account, your key and the change log are held in memory, so they will be lost when it restarts or redeploys. Attach a disk in your hosting dashboard and point <code>MAPPER_DATA</code> at it to make them permanent.';
+    /* Three states. The middle one used to be reported as the good one, on the
+       strength of writes succeeding — which they do right up until the deploy
+       that throws the directory away. */
+    var where = cfg.storagePath ? ' <code>' + esc(cfg.storagePath) + '</code>' : '';
+    $('setStorageNote').innerHTML = !cfg.storageIsWritable
+      ? '<b>Nothing is being saved.</b> This service cannot write to its state directory, so your account, your key and the change log are held in memory only and go when it restarts.'
+      : cfg.storageIsMounted
+        ? 'Your account, your key, the day’s question count and the change log are written to' + where +
+          ', which is outside this service’s own directory — so a redeploy does not touch them. ' +
+          'That is how a mounted disk looks from in here; it is not proof of one, so if that path is not your disk, it is not permanent.'
+        : '<b>This is not a permanent disk.</b> Everything is being written to' + where +
+          ', inside the service’s own directory, which your host replaces on every deploy. Writing works, and then it is thrown away — ' +
+          'so your account, your key and the change log start again each time you ship, and the change log can never hold more than the time since the last deploy. ' +
+          'Attach a disk in your hosting dashboard and point <code>MAPPER_DATA</code> at it.';
   }
 
   function settingsState(id, kind, text) {
