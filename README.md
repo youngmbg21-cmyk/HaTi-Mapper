@@ -527,6 +527,32 @@ plain-English entry — a new screen, an AI feature that changed model, an
 address that started working without a login, a file that crossed 60 KB, a gap
 that was closed.
 
+**The Mapper looks when you open the page, and at no other time.** There is no
+schedule and no background job; the only thing on a timer in the whole service
+is rate-limit cleanup. A scan runs when the dashboard is loaded, reusing the
+previous result for ten minutes, or immediately when you press Rescan. So a
+change is only ever found between two visits — open it, let HaTi change, open
+it again — and an empty log can mean HaTi has been still or that nobody has
+been to look.
+
+The card said the flattering one of those. Faced with an empty list it answered
+*"the Mapper has looked N times and found HaTi unchanged each time — that is a
+good sign, not a broken page"*, and it was wrong twice over. The count was the
+number of **snapshots**, and a snapshot only exists when something did change,
+so it could not see the looks that found nothing — the exact ones that sentence
+is about. And "a good sign" needs a sample: two looks finding nothing and two
+hundred looks finding nothing are opposite facts.
+
+So looks are now counted for real, including the quiet ones, and the card says
+how many there have been, when the last one was, that opening the page is what
+makes it watch, and — below three looks — that this is too thin to call quiet.
+If the last look was over a day ago it says that too, and points at Rescan.
+
+**"Watching since" is gone**, for the same reason. It implied continuous
+watching, and its date was not when watching began — it was the oldest snapshot
+still retained, which creeps forward as old ones are pruned past 72 hours. When
+it last looked is a fact the service actually holds.
+
 A scan that finds nothing changed adds nothing, so the log stays a list of real
 events rather than a list of look-ups. It holds names, paths, counts and byte
 sizes only — the same class of information the dashboard already shows.

@@ -1009,6 +1009,36 @@ try {
   check('And it goes back to 72 hours', /last 72 hours/.test(await page.textContent('#watchLede')),
     await page.textContent('#watchLede'));
 
+  /* ---- an empty log is not the same as a quiet HaTi ----
+     This card used to answer an empty list with "the Mapper has looked N times
+     and found HaTi unchanged each time — that is a good sign, not a broken
+     page". Two problems, both of them the page reassuring the owner about
+     something it had not established.
+
+     The count was the snapshot count, and a snapshot only exists when
+     something DID change — so it could not see the looks that found nothing,
+     which are exactly the ones that sentence is about. And "a good sign" is
+     only true with enough looks behind it: two looks finding nothing and two
+     hundred looks finding nothing are opposite facts.
+
+     This run has looked once or twice, so it is the thin case. */
+  const empty = (await page.textContent('#watchBody')).trim();
+  const lede = (await page.textContent('#watchLede')).trim();
+  if (/Nothing has moved/.test(empty)) {
+    check('An empty log does not call itself a good sign on a thin sample',
+      !/good sign/.test(empty) && /too few looks to call this quiet/.test(empty),
+      empty.slice(0, 200));
+    check('It says the Mapper only looks when the page is opened',
+      /looks when you open this page/.test(empty) && /no schedule/.test(empty),
+      empty.slice(0, 240));
+    check('And that an empty list may mean nobody has opened it',
+      /nobody has opened the Mapper since HaTi last changed/.test(empty), empty.slice(0, 260));
+  } else {
+    check('The log has entries, so the empty-state wording is not on screen', true, 'skipped');
+  }
+  check('The card says when it last looked, not "watching since"',
+    /The Mapper last looked/.test(lede) && !/Watching since/i.test(lede), lede);
+
   /* ---- is this what's live? ----
      This run has no HaTi, so the only state reachable here is the honest "I
      can't tell". The other two are asserted against lib/drift.mjs in

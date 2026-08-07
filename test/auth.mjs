@@ -211,6 +211,21 @@ try {
      The three states are now distinct. This run writes to a directory inside
      the repository, which is exactly the case that used to report as safe, so
      it is the one worth pinning: writable, and known not to be permanent. */
+  /* Looks that found nothing leave no snapshot — that is the point of the log
+     — so the service could not say how often it had looked, and the page said
+     it anyway out of the snapshot count. The number now exists for real,
+     because "looked twice, found nothing" and "looked two hundred times, found
+     nothing" are opposite facts and the page draws a conclusion from it. */
+  const beforeLooks = (await get('/api/changes')).body.looks;
+  await get('/api/scan?refresh=1');
+  const afterLooks = (await get('/api/changes')).body.looks;
+  check('Every look is counted, including the ones that find nothing',
+    typeof beforeLooks === 'number' && afterLooks === beforeLooks + 1,
+    `${beforeLooks} → ${afterLooks}`);
+  check('And the count survives being written down',
+    JSON.parse(fs.readFileSync(path.join(DATA, 'history.json'), 'utf8')).looks === afterLooks,
+    `on disk ${JSON.parse(fs.readFileSync(path.join(DATA, 'history.json'), 'utf8')).looks}, in memory ${afterLooks}`);
+
   check('The page is told whether the state directory can be written to',
     cfg2.body.storageIsWritable === true, JSON.stringify(cfg2.body.storageIsWritable));
   check('And separately, whether it survives a deploy',

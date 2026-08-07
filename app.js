@@ -1149,7 +1149,7 @@
         ' in the last ' + mv.days + ' days.</b> Counted from the change log, so it only covers the time the Mapper has been watching.</div>';
     } else if (mv) {
       html += '<div class="note">Nothing on this list has opened or closed in the last ' + mv.days +
-        ' days' + (mv.watchedSince ? ', and the Mapper has been watching since ' + esc(fmtDate(mv.watchedSince)) : '') + '.</div>';
+        ' days' + (mv.watchedSince ? ', across the looks the Mapper has taken since ' + esc(fmtDate(mv.watchedSince)) : '') + '.</div>';
     }
 
     if (g.ranked) {
@@ -1331,15 +1331,41 @@
     }
 
     var total = watch.rounds.reduce(function (n, r) { return n + r.events.length; }, 0);
-    lede.textContent = total === 0
-      ? 'Nothing has changed in HaTi in ' + rangeLabel() + '. Watching since ' + fmtDate(watch.since, true) + '.'
-      : total + (total === 1 ? ' change' : ' changes') + ' in ' + rangeLabel() + ', newest first. Watching since ' + fmtDate(watch.since, true) + '.';
+
+    /* "Watching since" claimed two things that were not true: that the Mapper
+       watches continuously — it looks when this page is opened and at no other
+       time — and that the date was when it started, when it is really the
+       oldest snapshot still kept, which creeps forward as old ones are pruned.
+       When it last looked is a fact it actually holds. */
+    var lookedAt = watch.lastLookedAt ? fmtDate(watch.lastLookedAt, true) : null;
+    lede.textContent = (total === 0
+      ? 'Nothing has moved in HaTi in ' + rangeLabel() + '.'
+      : total + (total === 1 ? ' change' : ' changes') + ' in ' + rangeLabel() + ', newest first.') +
+      (lookedAt ? ' The Mapper last looked ' + lookedAt + '.' : '');
 
     var html = '';
+
+    /* An empty list has two very different causes and used to be given only
+       the flattering one. Two looks finding nothing and two hundred looks
+       finding nothing are opposite facts, and the page asserted the second
+       while holding the evidence for neither — it was counting snapshots,
+       which only exist when something DID change. */
+    var looks = watch.looks || 0;
+    var sinceLook = watch.lastLookedAt ? (Date.now() - new Date(watch.lastLookedAt).getTime()) / 36e5 : null;
+
     if (total === 0) {
-      html += '<div class="note"><b>Nothing has moved' + (watchHours > 72 ? ' in ' + rangeLabel() : '') + '.</b> The Mapper has looked ' +
-        watch.snapshots + ' time' + (watch.snapshots === 1 ? '' : 's') +
-        ' and found HaTi unchanged each time. That is a good sign, not a broken page.</div>';
+      html += '<div class="note"><b>Nothing has moved' + (watchHours > 72 ? ' in ' + rangeLabel() : '') + '.</b> ' +
+        'The Mapper has looked ' + looks + ' time' + (looks === 1 ? '' : 's') + ' altogether' +
+        (lookedAt ? ', most recently ' + esc(lookedAt) : '') + '. ' +
+        'It looks when you open this page, and at no other time — there is no schedule behind it, so opening the Mapper is what makes it watch. ' +
+        (looks < 3
+          ? '<b>That is too few looks to call this quiet.</b> An empty list here can just as easily mean nobody has opened the Mapper since HaTi last changed.'
+          : 'Each of those found HaTi unchanged.') +
+        (sinceLook != null && sinceLook > 24
+          ? ' <b>Its last look was ' + Math.round(sinceLook / 24) + ' day' + (Math.round(sinceLook / 24) === 1 ? '' : 's') +
+            ' ago</b>, so anything that has moved since then is not here yet — press Rescan to bring it up to date.'
+          : '') +
+        '</div>';
     } else {
       html += watch.rounds.map(function (r) {
         return '<div class="round2"><div class="when">' + esc(fmtDate(r.at, true)) +
