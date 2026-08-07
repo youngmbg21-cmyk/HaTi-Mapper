@@ -518,6 +518,28 @@ being true; both had been written against the fixture's shape at the time
 rather than against the scan, so they now read the real count and pick whatever
 file the scan actually described from a screen.
 
+## Two greys that had never been measured
+
+**What broke.** The owner could not read the muted text. Measured, `--tx3` was
+2.56:1 on white in the light theme and 2.60:1 on the darker tiles in dark —
+against a 4.5:1 minimum for body text. It had been chosen by eye, and by eye it
+looks like a reasonable muted grey; it is only wrong once you measure it.
+
+Four places also set `opacity:.8` on a `.note` on top of that, dimming an
+already-failing colour again.
+
+**How it ended.** Both greys re-picked against the surfaces they actually land
+on — cards, tiles and the darker tiles — in both themes, and the extra opacity
+layers removed. `--tx2` had to move with `--tx3`: raising only the muted one
+would have made it *brighter* than the weight above it, which is two colours
+rather than a hierarchy.
+
+The suite now measures both, on every surface, in both themes, and asserts the
+ordering as well as the ratios. The lesson is the same one this project has
+learned twice before about the assistant's green band: a colour that looks fine
+is not a colour that has been checked, and "it looked fine" is how it goes
+wrong.
+
 ## Nothing was abandoned
 
 Rule 4 of the brief covers the case where an item breaks verification and

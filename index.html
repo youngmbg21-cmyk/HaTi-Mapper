@@ -17,7 +17,13 @@
    coloured by the same switch. */
 body{
   --sh:#0b1120; --card:#0f172a; --tile:#1e293b; --tile2:#293548; --line:#1e293b;
-  --tx:#f1f5f9; --tx2:#94a3b8; --tx3:#64748b;
+  /* The three weights of text. Measured against the surfaces they land on,
+     not chosen by eye: --tx3 was #64748b, which is 3.75:1 on a card and only
+     2.60:1 on the darker tiles — under the 4.5:1 line for body text and hard
+     to read at the sizes this page uses it. --tx2 moved up with it so the
+     hierarchy survives; a muted grey brighter than the one above it is not a
+     hierarchy. */
+  --tx:#f1f5f9; --tx2:#b4bfcf; --tx3:#9aa7ba;
   --lav:#2dd4bf; --lavd:#14b8a6; --gold:#f59e0b;
   --onlav:#042f2e; --ongold:#3b2503;
   /* The assistant's two green bands. Its own token because it carries body
@@ -31,7 +37,10 @@ body{
 }
 body.light{
   --sh:#f1f5f9; --card:#ffffff; --tile:#f8fafc; --tile2:#e2e8f0; --line:#e2e8f0;
-  --tx:#0f172a; --tx2:#475569; --tx3:#94a3b8;
+  /* Light was the worse of the two: --tx3 was #94a3b8, which is 2.56:1 on
+     white — not far off half the readable minimum, and the reason the muted
+     text on this page could not be read. */
+  --tx:#0f172a; --tx2:#475569; --tx3:#556377;
   --lav:#0d9488; --lavd:#99f6e4; --gold:#d97706;
   --onlav:#f0fdfa; --ongold:#fffbeb;
   /* Two steps darker than --lav: near-white on --lav reaches only 3.6:1, which
@@ -718,16 +727,48 @@ a{color:inherit;}
    Settings, because the question it answers — "wrong HOW?" — belongs at the
    moment of asking, not three clicks away; the same list also stays on its
    card under the gear for whoever goes looking. */
-.warnpop-veil{position:fixed;inset:0;z-index:55;background:rgba(2,6,23,.55);display:flex;align-items:center;justify-content:center;padding:20px;}
-.warnpop{width:min(560px,100%);max-height:min(70vh,560px);display:flex;flex-direction:column;background:var(--card);
+.warnpop-veil{position:fixed;inset:0;z-index:55;background:rgba(2,6,23,.62);display:flex;align-items:center;justify-content:center;padding:20px;}
+.warnpop{width:min(720px,100%);max-height:min(80vh,680px);display:flex;flex-direction:column;background:var(--card);
   border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow);overflow:hidden;}
-.warnpop .head{flex:none;display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--line);}
-.warnpop .head h3{margin:0;font-size:15px;font-weight:600;}
-.warnpop .head .badge{margin-left:auto;}
-.warnpop .bd{flex:1;min-height:0;overflow-y:auto;padding:6px 18px 14px;}
-.warnpop .bd ul{margin:8px 0 0;padding-left:18px;font-size:13px;color:var(--tx2);line-height:1.6;}
-.warnpop .bd li{margin:7px 0;}
-.warnpop .foot{flex:none;padding:10px 18px 14px;font-size:11.5px;color:var(--tx3);border-top:1px solid var(--line);}
+
+/* The head is banded amber rather than plain, because this box only ever opens
+   to say "some of what you are reading may be wrong" and a neutral header made
+   it look like an ordinary list. */
+.warnpop .head{flex:none;display:flex;align-items:center;gap:12px;padding:14px 18px;background:var(--gold);color:var(--ongold);}
+.warnpop .head .ic{flex:none;width:32px;height:32px;border-radius:10px;background:rgba(0,0,0,.16);
+  display:flex;align-items:center;justify-content:center;}
+.warnpop .head .ttl{flex:1;min-width:0;}
+.warnpop .head h3{margin:0;font-size:15px;font-weight:600;color:var(--ongold);}
+.warnpop .head .ttl span{display:block;font-size:11.5px;opacity:.85;margin-top:1px;}
+.warnpop .head .btn{flex:none;background:rgba(0,0,0,.16);border-color:transparent;color:var(--ongold);}
+.warnpop .head .btn:hover{background:rgba(0,0,0,.28);color:var(--ongold);}
+.warnpop .head .close{color:var(--ongold);}
+.warnpop .head .close:hover{background:rgba(0,0,0,.2);}
+
+.warnpop .bd{flex:1;min-height:0;overflow-y:auto;padding:14px 18px;}
+.warnpop .lede{font-size:12.5px;color:var(--tx2);line-height:1.6;margin-bottom:14px;}
+
+/* Grouped, because thirty-four warnings in one list is a wall rather than an
+   answer. Each group says how many it holds so the shape is visible before a
+   word is read. */
+.wgroup{margin-bottom:16px;}
+.wgroup:last-child{margin-bottom:0;}
+.wgroup .gh{display:flex;align-items:center;gap:9px;margin-bottom:8px;}
+.wgroup .gh b{font-family:var(--mono);font-size:9.5px;font-weight:600;letter-spacing:.11em;text-transform:uppercase;color:var(--tx3);}
+.wgroup .gh i{flex:1;height:1px;background:var(--line);}
+.wgroup .gh .n{font-family:var(--mono);font-size:10.5px;color:var(--tx3);}
+.wrow{display:flex;gap:10px;align-items:flex-start;background:var(--tile);border-radius:11px;padding:9px 12px;margin-bottom:6px;}
+.wrow:last-child{margin-bottom:0;}
+.wrow .dot{flex:none;width:7px;height:7px;border-radius:50%;background:var(--gold);margin-top:6px;}
+.wrow .tx{flex:1;min-width:0;font-size:12.5px;color:var(--tx2);line-height:1.55;}
+/* File paths and identifiers inside a warning read as addresses, so they are
+   set as addresses rather than left in the sentence. */
+.wrow .tx code{font-family:var(--mono);font-size:11.5px;background:var(--tile2);border-radius:5px;padding:1px 5px;color:var(--tx);}
+.wrow .copy1{flex:none;background:none;border:0;color:var(--tx3);cursor:pointer;padding:2px 4px;border-radius:6px;line-height:1;opacity:0;}
+.wrow:hover .copy1,.wrow .copy1:focus-visible{opacity:1;}
+.wrow .copy1:hover{color:var(--tx);background:var(--tile2);}
+
+.warnpop .foot{flex:none;padding:11px 18px 14px;font-size:11.5px;color:var(--tx3);border-top:1px solid var(--line);line-height:1.5;}
 
 /* ------------------------------------------------------------ locked frame
    The control tower is a wall display: everything it has to say is meant to
@@ -1121,7 +1162,13 @@ a{color:inherit;}
              show them, so the one number telling you the dashboard may be
              wrong came with no way to find out how. -->
         <div class="card" id="scanWarnCard" hidden>
-          <div class="chead"><h3>What this scan could not work out</h3><span class="badge gold" id="scanWarnCount" style="margin-left:auto"></span></div>
+          <div class="chead"><h3>What this scan could not work out</h3>
+            <span class="badge gold" id="scanWarnCount" style="margin-left:auto"></span>
+            <button class="btn" id="scanWarnCopy" type="button">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+              Copy all
+            </button>
+          </div>
           <div class="note" style="margin-top:0;margin-bottom:4px">Each of these is something the scanner looked for and did not find, or found and could not read. They are what the "Scanner grip" figure counts against itself, and they are the reason a panel can quietly say "not detected".</div>
           <div id="scanWarnBody"></div>
         </div>
@@ -1225,8 +1272,17 @@ a{color:inherit;}
 <div class="warnpop-veil" id="warnPop" hidden>
   <div class="warnpop" role="dialog" aria-modal="true" aria-labelledby="warnPopTitle">
     <div class="head">
-      <h3 id="warnPopTitle">What this scan could not work out</h3>
-      <span class="badge gold" id="warnPopCount"></span>
+      <span class="ic"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg></span>
+      <div class="ttl">
+        <h3 id="warnPopTitle">What this scan could not work out</h3>
+        <span id="warnPopSub"></span>
+      </div>
+      <!-- The list is what you hand to whoever is going to fix it, so getting
+           it out of here whole matters more than anything else on this box. -->
+      <button class="btn" id="warnPopCopy" type="button">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+        Copy all
+      </button>
       <button class="ask-x close" id="warnPopClose" title="Close" aria-label="Close">&times;</button>
     </div>
     <div class="bd" id="warnPopBody"></div>

@@ -57,10 +57,27 @@ the history fetch failing costs the "Code updates" list and nothing else, and
 when even that has to be said, the badge says *why* (hover it for the raw
 error) instead of leaving a mystery.
 
+**Every colour on the page is measured, not judged by eye.** The two greys the
+page uses for anything secondary were chosen by eye once and both were under
+the readable line — the lighter one reached 2.56:1 on white, not far off half
+the minimum for body text. Both are now measured against every surface they
+land on, in both themes, and the suite fails if either drops under 4.5:1 or if
+the muted grey ever becomes louder than the weight above it.
+
 Everything the scan looked for and could not read is listed in full in two
 places: a card of its own under the gear, and a popup that the "Scanner grip"
-warnings circle opens on click. An alarm you cannot get the detail of is an
-alarm with the label torn off. The circle breathes between its resting grey and
+warnings circle opens on click. Both group the list by what would be done about
+it — a note here describing a part of HaTi that has gone, a part of HaTi with no
+note written yet, something the scanner could not read — because thirty-four
+warnings in one column is a wall rather than an answer. Both carry a **Copy
+all** button, and every single warning has one of its own, because the list is
+what you hand to whoever is going to fix it. What lands on the clipboard is
+plain text with the repository, the version and the scan time at the top, so it
+is worth pasting into a session or an email without editing.
+
+An alarm you cannot get the detail of is an alarm with the label torn off,
+which is why the detail is one click from the number rather than three. The
+circle breathes between its resting grey and
 a clear alert red — slowly, so it reads as "alive and asking" rather than as an
 emergency strobe — because these warnings mean "some of what you are reading
 may be wrong", which is the one thing on the page that should not sit still and

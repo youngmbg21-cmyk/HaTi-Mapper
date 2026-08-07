@@ -312,15 +312,39 @@ try {
     await warnCircle.click();
     await page.waitForSelector('#warnPop:not([hidden])', { timeout: 5000 });
     const pop = await page.evaluate(() => ({
-      count: (document.getElementById('warnPopCount').textContent || '').trim(),
-      items: document.querySelectorAll('#warnPopBody li').length,
+      sub: (document.getElementById('warnPopSub').textContent || '').trim(),
+      rows: [...document.querySelectorAll('#warnPopBody .wrow .tx')].map(t => t.textContent.trim()),
+      groups: [...document.querySelectorAll('#warnPopBody .wgroup .gh b')].map(b => b.textContent.trim()),
+      perRow: document.querySelectorAll('#warnPopBody .wrow button[data-copy1]').length,
+      hasCopyAll: !!document.getElementById('warnPopCopy'),
       focusInside: document.getElementById('warnPop').contains(document.activeElement),
     }));
     check('Clicking the circle opens the popup with every warning',
-      pop.items === scan.warnings.length && pop.items > 0,
-      `${pop.items} shown, ${scan.warnings.length} in payload`);
-    check('And the count in its header matches', /^\d+ warning/.test(pop.count), pop.count);
+      pop.rows.length === scan.warnings.length && pop.rows.length > 0,
+      `${pop.rows.length} shown, ${scan.warnings.length} in payload`);
+    check('And each is shown word for word, not summarised',
+      scan.warnings.every(w => pop.rows.some(r => r.replace(/\s+/g, ' ') === w.replace(/\s+/g, ' '))),
+      (scan.warnings.find(w => !pop.rows.some(r => r.replace(/\s+/g, ' ') === w.replace(/\s+/g, ' '))) || 'all matched').slice(0, 70));
+    check('They are grouped rather than piled into one list',
+      pop.groups.length >= 1, pop.groups.join(' | '));
+    check('And the header says how many and when they were found',
+      new RegExp(`^${scan.warnings.length} thing`).test(pop.sub) && /scanned/.test(pop.sub), pop.sub.slice(0, 80));
     check('Focus moves into the dialog', pop.focusInside);
+
+    /* Getting the list out is the point of the box: it is what you hand to
+       whoever is going to fix it. Read back off the clipboard, not assumed. */
+    check('There is a button to copy the whole list', pop.hasCopyAll);
+    check('And one on every single warning', pop.perRow === scan.warnings.length, `${pop.perRow} buttons`);
+    await ctx.grantPermissions(['clipboard-read', 'clipboard-write']);
+    await page.click('#warnPopCopy');
+    await page.waitForTimeout(300);
+    const clip = await page.evaluate(() => navigator.clipboard.readText());
+    check('Copying puts every warning on the clipboard',
+      scan.warnings.every(w => clip.includes(w)),
+      (scan.warnings.find(w => !clip.includes(w)) || 'all present').slice(0, 70));
+    check('With enough context to be worth pasting somewhere',
+      /HaTi-Mapper/.test(clip) && /Repository:/.test(clip) && /Scanned:/.test(clip),
+      clip.split('\n').slice(0, 4).join(' / '));
 
     /* Escape closes it and does not also close anything behind it. */
     await page.keyboard.press('Escape');
@@ -333,7 +357,7 @@ try {
        not a move. */
     await page.evaluate(() => document.querySelector('.tops [data-p="settings"]').click());
     await page.waitForFunction(() => !document.getElementById('scanWarnCard').hidden, null, { timeout: 5000 });
-    const settingsWarns = await page.$$eval('#scanWarnBody li', els => els.length);
+    const settingsWarns = await page.$$eval('#scanWarnBody .wrow', els => els.length);
     check('The full warnings list is still on its Settings card too',
       settingsWarns === scan.warnings.length, `${settingsWarns} on the card, ${scan.warnings.length} in payload`);
     await page.evaluate(() => document.querySelector('[data-p="tower"]').click());
@@ -586,6 +610,47 @@ try {
         `${r.toFixed(2)}:1, wanted ${want}:1`);
     }
   }
+  /* ---- the muted text is actually readable ----
+     The page leans on two greys for anything secondary — captions, sub-labels,
+     the note under a chart, half the sentences on the redesigned tabs. Both
+     were picked by eye and both were under the line: the lighter one measured
+     2.56:1 on white, not far off half the readable minimum, and the owner
+     could not read it. Measured here on the surfaces they land on, in both
+     themes, because a grey chosen against one of them is a grey untested
+     against the other. */
+  for (const theme of ['dark', 'light']) {
+    if (theme === 'dark') { await page.evaluate(() => document.getElementById('themeBtn').click()); await page.waitForTimeout(300); }
+    else { await page.evaluate(() => document.getElementById('themeBtn').click()); await page.waitForTimeout(300); }
+    const t = await page.evaluate(() => {
+      const v = n => getComputedStyle(document.body).getPropertyValue(n).trim();
+      const rgb = (hex) => {
+        const h = hex.replace('#', '');
+        return `rgb(${parseInt(h.slice(0, 2), 16)}, ${parseInt(h.slice(2, 4), 16)}, ${parseInt(h.slice(4, 6), 16)})`;
+      };
+      return {
+        light: document.body.classList.contains('light'),
+        tx: rgb(v('--tx')), tx2: rgb(v('--tx2')), tx3: rgb(v('--tx3')),
+        card: rgb(v('--card')), tile: rgb(v('--tile')), tile2: rgb(v('--tile2')),
+      };
+    });
+    const name = t.light ? 'light' : 'dark';
+    for (const [what, fg, bg] of [
+      ['the second weight of text on a card', t.tx2, t.card],
+      ['the second weight on a tile', t.tx2, t.tile],
+      ['the muted text on a card', t.tx3, t.card],
+      ['the muted text on a tile', t.tx3, t.tile],
+      ['the muted text on the darker tile', t.tx3, t.tile2],
+    ]) {
+      const r = contrast(fg, bg);
+      check(`In ${name}, ${what} clears 4.5:1`, r >= 4.5, `${r.toFixed(2)}:1 — ${fg} on ${bg}`);
+    }
+    /* Muted must stay quieter than the weight above it, or it is two colours
+       rather than a hierarchy. */
+    check(`In ${name}, muted is still quieter than the weight above it`,
+      contrast(t.tx3, t.card) < contrast(t.tx2, t.card) && contrast(t.tx2, t.card) < contrast(t.tx, t.card),
+      `tx3 ${contrast(t.tx3, t.card).toFixed(2)} < tx2 ${contrast(t.tx2, t.card).toFixed(2)} < tx ${contrast(t.tx, t.card).toFixed(2)}`);
+  }
+
   await page.evaluate(() => document.getElementById('themeBtn').click());   // back to the theme the run started in
   await page.waitForTimeout(300);
 

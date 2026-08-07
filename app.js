@@ -1461,7 +1461,7 @@
       html += '<div class="note"><b>This map is out of date in ' + d.warnings.length + ' place' + (d.warnings.length === 1 ? '' : 's') + '.</b><ul style="margin:6px 0 0;padding-left:18px">' +
         d.warnings.map(function (w) { return '<li>' + esc(w) + '</li>'; }).join('') + '</ul></div>';
     }
-    html += '<div class="note" style="opacity:.8">These relationships are judgements about meaning, not something a parser can read out of code, so they are written by hand in <code>' +
+    html += '<div class="note">These relationships are judgements about meaning, not something a parser can read out of code, so they are written by hand in <code>' +
       esc(d.source) + '</code>. Every subsystem, group and field named above is checked against HaTi’s source on each scan; anything stale is listed rather than quietly shown as fact.</div>';
 
     $('blastBody').innerHTML = html;
@@ -1568,11 +1568,11 @@
 
     if (g.ranked) {
       var sc = g.severityCounts;
-      html += '<div class="note" style="opacity:.8">Ranked by the severity the documents state: ' +
+      html += '<div class="note">Ranked by the severity the documents state: ' +
         sc.high + ' high, ' + sc.medium + ' medium, ' + sc.low + ' low' +
         (sc.unstated ? ', and ' + sc.unstated + ' that say nothing — those keep their source order underneath' : '') + '.</div>';
     } else {
-      html += '<div class="note" style="opacity:.8">None of these sources states a severity, so none is shown. ' +
+      html += '<div class="note">None of these sources states a severity, so none is shown. ' +
         'The order is the order the sources list them in, not a ranking. ' +
         'To rank them, start a bullet in HaTi’s README or SECURITY.md with <code>[high]</code>, ' +
         '<code>[medium]</code> or <code>[low]</code> — nothing else needs to change here.</div>';
@@ -2286,7 +2286,7 @@
     /* The panel explains its own unit rather than assuming KB is common
        knowledge, and says in words what the gold means. Both belong here
        whatever shape the rows take. */
-    html += '<div class="note" style="opacity:.85"><b>What the sizes mean.</b> ' +
+    html += '<div class="note"><b>What the sizes mean.</b> ' +
       'KB is how much text a file holds — ' + kb(w.threshold) + ' is roughly fifteen to twenty printed pages of code. ' +
       'Past that a file gets hard for a person, or for an AI session, to hold in mind at once, which is when mistakes creep in. ' +
       'That is all the gold colouring and the line on each bar say: this one has outgrown comfortable.</div>';
@@ -2413,16 +2413,139 @@
      whoever goes looking later. */
   var warnPopOpener = null;   // where focus goes back to on close
 
+  /* Thirty-four warnings in one list is a wall, not an answer, so they are
+     grouped by what would actually be done about them. The test is on the
+     wording the scan itself uses, and anything that matches nothing falls
+     through to the last group rather than being dropped — the text is always
+     shown exactly as the scan wrote it, whichever group it lands in. */
+  var WARN_GROUPS = [
+    {
+      id: 'stale',
+      title: 'Written down here, gone from HaTi',
+      why: 'Something in the Mapper’s own notes describes a part of HaTi that no longer exists. Harmless, but the note should go.',
+      test: function (w) { return /no longer (exists|has an endpoint)|that no longer/i.test(w); },
+    },
+    {
+      id: 'missing',
+      title: 'In HaTi, not yet described here',
+      why: 'New parts of HaTi with no plain-English note written for them yet. They show as “not detected” until one is.',
+      test: function (w) { return /has no plain-English description|with no name in/i.test(w); },
+    },
+    {
+      id: 'unread',
+      title: 'The scanner could not read this',
+      why: 'HaTi is written in a shape the Mapper does not recognise here, so a figure on the page is missing rather than wrong.',
+      test: function (w) { return /could not be (derived|resolved|worked out|read)|not derived|no .* call found|could not be/i.test(w); },
+    },
+    {
+      id: 'map',
+      title: 'The “what breaks what” map is out of step',
+      why: 'The hand-written map points at something HaTi has moved or renamed.',
+      test: function (w) { return /Subsystem "|dependencies\.js|points at the subsystem/i.test(w); },
+    },
+    {
+      id: 'prices',
+      title: 'The price list needs a look',
+      why: 'The money figures are only as good as the prices written down for them.',
+      test: function (w) { return /pricing\.js|prices/i.test(w); },
+    },
+    { id: 'other', title: 'Everything else', why: 'Things that do not fall into any of the above.', test: function () { return true; } },
+  ];
+
+  function groupWarnings(list) {
+    var out = WARN_GROUPS.map(function (g) { return { g: g, items: [] }; });
+    list.forEach(function (w) {
+      for (var i = 0; i < WARN_GROUPS.length; i++) {
+        if (WARN_GROUPS[i].test(w)) { out[i].items.push(w); return; }
+      }
+    });
+    return out.filter(function (x) { return x.items.length; });
+  }
+
+  /* File paths, identifiers and quoted names inside a warning are addresses,
+     so they are set as addresses. Escaped first — a warning carries text read
+     out of HaTi's source, so it is untrusted like anything else from there. */
+  function warnText(w) {
+    return esc(w)
+      .replace(/(&quot;|&#39;)([^&<]{1,60})\1/g, '<code>$2</code>')
+      .replace(/\b([\w./-]+\.(?:js|mjs|html|md))\b/g, '<code>$1</code>')
+      .replace(/\b(\/api\/[\w/:.-]+)/g, '<code>$1</code>');
+  }
+
+  /* The whole list as plain text, ready to paste into a session, an email or a
+     note. It carries what was scanned and when, because a list of warnings
+     with no idea which scan produced them is not much use to anyone. */
+  function warningsAsText() {
+    var list = (scan && scan.warnings) || [];
+    var head = [
+      'HaTi-Mapper — what the scan could not work out',
+      list.length + (list.length === 1 ? ' warning' : ' warnings'),
+      'Repository: ' + ((scan && scan.repo) || 'unknown') + (scan && scan.commit ? ' @ ' + scan.commit : ''),
+      'Scanned: ' + ((scan && scan.scannedAt) ? new Date(scan.scannedAt).toISOString() : 'unknown'),
+      '',
+    ];
+    var body = [];
+    groupWarnings(list).forEach(function (grp) {
+      body.push(grp.g.title.toUpperCase() + ' (' + grp.items.length + ')');
+      grp.items.forEach(function (w) { body.push('  - ' + w); });
+      body.push('');
+    });
+    return head.concat(body).join('\n').trim() + '\n';
+  }
+
+  var ICON_COPY = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>';
+
   function openWarnPop() {
     var list = (scan && scan.warnings) || [];
     if (!list.length) return;
     warnPopOpener = document.activeElement;
-    $('warnPopCount').textContent = list.length + (list.length === 1 ? ' warning' : ' warnings');
+
+    $('warnPopSub').textContent = list.length + (list.length === 1 ? ' thing' : ' things') +
+      ' the Mapper looked for and could not read' +
+      (scan && scan.scannedAt ? ' · scanned ' + fmtDate(scan.scannedAt, true) : '');
+
+    var groups = groupWarnings(list);
     $('warnPopBody').innerHTML =
-      '<ul>' + list.map(function (w) { return '<li>' + esc(w) + '</li>'; }).join('') + '</ul>';
+      '<div class="lede">Each of these is something the scan set out to establish and could not. ' +
+      'Anything they touch may be missing or wrong on the page — that is what the circle on the ' +
+      '“Scanner grip” card is counting, and it is why the grip score is below 100%.</div>' +
+      groups.map(function (grp) {
+        return '<div class="wgroup"><div class="gh"><b>' + esc(grp.g.title) + '</b><i></i>' +
+          '<span class="n">' + grp.items.length + '</span></div>' +
+          '<div class="wgroup-why" style="font-size:11.5px;color:var(--tx3);line-height:1.5;margin:-2px 0 8px">' +
+          esc(grp.g.why) + '</div>' +
+          grp.items.map(function (w) {
+            return '<div class="wrow"><span class="dot"></span>' +
+              '<span class="tx">' + warnText(w) + '</span>' +
+              '<button class="copy1" type="button" data-copy1="' + esc(w) + '" ' +
+              'title="Copy this one" aria-label="Copy this warning">' + ICON_COPY + '</button></div>';
+          }).join('') + '</div>';
+      }).join('');
+
     $('warnPop').hidden = false;
     $('warnPopClose').focus();
   }
+
+  /* Copy the whole list, or one line of it. */
+  function copyText(text, said) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(
+        function () { toast(said); },
+        function () { toast('Could not copy — select the text and copy it by hand'); });
+    } else {
+      toast('This browser will not let the page copy for you — select the text and copy it by hand');
+    }
+  }
+
+  $('warnPopCopy').addEventListener('click', function () {
+    var n = ((scan && scan.warnings) || []).length;
+    copyText(warningsAsText(), 'All ' + n + ' copied');
+  });
+
+  $('warnPopBody').addEventListener('click', function (e) {
+    var b = e.target.closest('button[data-copy1]');
+    if (b) copyText(b.getAttribute('data-copy1'), 'Copied');
+  });
 
   function closeWarnPop() {
     $('warnPop').hidden = true;
@@ -2442,11 +2565,30 @@
     $('scanWarnCard').hidden = list.length === 0;
     if (!list.length) return;
     $('scanWarnCount').textContent = list.length + (list.length === 1 ? ' warning' : ' warnings');
-    $('scanWarnBody').innerHTML =
-      '<ul style="margin:0;padding-left:18px;font-size:12.5px;color:var(--tx2);line-height:1.6">' +
-      list.map(function (w) { return '<li style="margin:5px 0">' + esc(w) + '</li>'; }).join('') +
-      '</ul>';
+    /* Grouped the same way the popup groups them, and copyable the same way.
+       It is the same list; showing it two different shapes in two places is
+       how a reader comes to think they are two different lists. */
+    $('scanWarnBody').innerHTML = groupWarnings(list).map(function (grp) {
+      return '<div class="wgroup"><div class="gh"><b>' + esc(grp.g.title) + '</b><i></i>' +
+        '<span class="n">' + grp.items.length + '</span></div>' +
+        grp.items.map(function (w) {
+          return '<div class="wrow"><span class="dot"></span>' +
+            '<span class="tx">' + warnText(w) + '</span>' +
+            '<button class="copy1" type="button" data-copy1="' + esc(w) + '" ' +
+            'title="Copy this one" aria-label="Copy this warning">' + ICON_COPY + '</button></div>';
+        }).join('') + '</div>';
+    }).join('');
   }
+
+  $('scanWarnCopy').addEventListener('click', function () {
+    var n = ((scan && scan.warnings) || []).length;
+    copyText(warningsAsText(), 'All ' + n + ' copied');
+  });
+
+  $('scanWarnBody').addEventListener('click', function (e) {
+    var b = e.target.closest('button[data-copy1]');
+    if (b) copyText(b.getAttribute('data-copy1'), 'Copied');
+  });
 
   function renderAll() {
     renderDrift();
