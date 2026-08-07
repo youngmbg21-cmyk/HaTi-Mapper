@@ -18,6 +18,7 @@ import { hatiSource, announce } from './source.mjs';
 import { driftVerdict } from '../lib/drift.mjs';
 import { History, snapshot } from '../lib/history.mjs';
 import { buildScan } from '../lib/scan.mjs';
+import { stripRoot } from '../lib/tar.mjs';
 import { readFixture } from '../lib/fixture.mjs';
 import { buildDigest, digestText } from '../lib/digest.mjs';
 import { evaluateWatch } from '../lib/watch.mjs';
@@ -470,6 +471,42 @@ try {
   const cannotTell = driftVerdict(scanned, { available: false, reason: 'nope' });
   check('An unreachable HaTi is "can\'t tell", never "probably fine"',
     cannotTell.state === 'unknown' && cannotTell.liveCommit === null, JSON.stringify(cannotTell));
+
+  /* ---- the version comes from the tarball, not the history fetch ----
+     The scan's version used to be the newest sha in the commit history, which
+     is a separate, best-effort, twenty-request fetch — and the first thing a
+     rate limit lands on. Whenever it failed, the badge went grey saying "could
+     not read which version", though the tarball's own root directory had named
+     the exact commit on the very first request. */
+  const shaTar = new Map([
+    ['youngmbg21-cmyk-mkataba-clm-9f8e7d6c5b4a/index.html', Buffer.from('x')],
+    ['youngmbg21-cmyk-mkataba-clm-9f8e7d6c5b4a/js/app.js', Buffer.from('y')],
+  ]);
+  const stripped = stripRoot(shaTar);
+  check('The tarball root names the commit and stripRoot hands it back',
+    stripped.root === 'youngmbg21-cmyk-mkataba-clm-9f8e7d6c5b4a' && stripped.files.has('index.html'),
+    JSON.stringify({ root: stripped.root, keys: [...stripped.files.keys()] }));
+  const strippedFlat = stripRoot(new Map([['index.html', Buffer.from('x')]]));
+  check('A tarball with no single root still unpacks, with no commit claimed',
+    strippedFlat.root === null && strippedFlat.files.has('index.html'),
+    JSON.stringify({ root: strippedFlat.root }));
+
+  const fromTarball = buildScan({
+    files: readFixture(FIXTURE_DIR).files, commits: null,
+    repo: 'f', ref: 'main', requestCount: 1, tarballCommit: '9f8e7d6',
+  });
+  check('A scan whose history fetch failed still knows its version',
+    fromTarball.commit === '9f8e7d6', String(fromTarball.commit));
+  check('So the badge can compare it with the live site as usual',
+    driftVerdict(fromTarball, { available: true, version: '9f8e7d6c5b4a' }).state === 'match');
+
+  /* And when even the tarball cannot say, the badge explains why instead of
+     shrugging: the commit error travels as its own field. */
+  const noVersion = driftVerdict({ commit: null, commitError: 'GitHub 403: rate limit' }, { available: true, version: '9f8e7d6c5b4a' });
+  check('A version the scan could not read is explained, not left a mystery',
+    noVersion.state === 'unknown' && noVersion.reason === 'GitHub 403: rate limit' &&
+    /could not read HaTi’s commit history/.test(noVersion.message),
+    JSON.stringify(noVersion));
 
   /* ---- history older than 72 hours survives ----
      The working set is still 72 hours and the default view is unchanged. What

@@ -793,6 +793,16 @@ a{color:inherit;}
           </div>
           <div class="note" id="setStorageNote"></div>
         </div>
+
+        <!-- Everything the scan set out to establish and could not. The grip
+             card on the control tower counts these and has never been able to
+             show them, so the one number telling you the dashboard may be
+             wrong came with no way to find out how. -->
+        <div class="card" id="scanWarnCard" hidden>
+          <div class="chead"><h3>What this scan could not work out</h3><span class="badge gold" id="scanWarnCount" style="margin-left:auto"></span></div>
+          <div class="note" style="margin-top:0;margin-bottom:4px">Each of these is something the scanner looked for and did not find, or found and could not read. They are what the "Scanner grip" figure counts against itself, and they are the reason a panel can quietly say "not detected".</div>
+          <div id="scanWarnBody"></div>
+        </div>
       </div>
 
       <div>

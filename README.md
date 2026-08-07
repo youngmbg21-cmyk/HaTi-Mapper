@@ -39,6 +39,21 @@ number of commits behind when that can be worked out and no number when it
 cannot. Grey means HaTi is not answering, so the honest reply is "can't tell" —
 never "probably fine".
 
+The scan learns which version it read from the tarball itself: GitHub names a
+tarball's root directory `owner-repo-<sha>`, so the very first request of a
+scan carries the answer. It used to come from the commit-history fetch instead
+— a separate, best-effort call twenty requests deeper, and the first place a
+rate limit lands — so whenever that fetch failed, the badge went grey saying
+*"could not read which version"* about a fact already sitting in memory. Now
+the history fetch failing costs the "Code updates" list and nothing else, and
+when even that has to be said, the badge says *why* (hover it for the raw
+error) instead of leaving a mystery.
+
+Everything the scan looked for and could not read is listed in full under the
+gear, on a card of its own — the "Scanner grip" circle counts these warnings,
+and clicking its warnings bubble goes there. An alarm you cannot get the
+detail of is an alarm with the label torn off.
+
 Everything but one panel is read from HaTi's **source code**. Only "Money"
 needs anything from a running HaTi, and all it asks for is caps and a count.
 

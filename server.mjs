@@ -446,13 +446,19 @@ async function runScan() {
   const started = Date.now();
 
   let files, commits = null, commitError = null, requests = 0;
+  /* The version of what was read, from the tarball itself. The commit-history
+     fetch also knows it, but that fetch is best-effort and twenty requests
+     deep — the tarball's answer is there whether or not history can be read. */
+  let tarballCommit = null;
   if (FIXTURE) {
     const fx = readFixture(FIXTURE);
     files = fx.files;
     commits = fx.commits;
   } else {
     const client = makeClient(GITHUB_TOKEN);
-    files = await fetchRepoFiles(client, REPO, REF);
+    const fetched = await fetchRepoFiles(client, REPO, REF);
+    files = fetched.files;
+    tarballCommit = fetched.commit;
 
     // Commit history is best-effort: the seven code-derived panels do not need
     // it, so a commits failure must not take the whole scan down with it.
@@ -464,12 +470,17 @@ async function runScan() {
     requests = client.requests;
   }
 
-  const payload = buildScan({ files, commits, repo: REPO, ref: REF, requestCount: requests });
+  const payload = buildScan({ files, commits, repo: REPO, ref: REF, requestCount: requests, tarballCommit });
   payload.tookMs = Date.now() - started;
   payload.tokenConfigured = !!GITHUB_TOKEN;
   payload.fixture = !!FIXTURE;
   if (FIXTURE) payload.warnings.push(FIXTURE_WARNING);
   if (commitError) payload.warnings.push(`Commit history could not be read: ${commitError}`);
+  /* Also carried as its own field: the "is this what's live?" badge goes grey
+     for exactly this reason, and a badge that says "could not read which
+     version" ought to be able to say why without the reader hunting through
+     the warnings list for the sentence that explains it. */
+  if (commitError) payload.commitError = commitError;
   if (!FIXTURE && !GITHUB_TOKEN) payload.warnings.push('GITHUB_TOKEN is not set — GitHub allows only 60 unauthenticated requests an hour, so scans will start failing.');
 
   /* Every fresh scan is compared with the last one and anything that moved is
