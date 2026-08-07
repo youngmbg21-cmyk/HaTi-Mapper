@@ -217,6 +217,21 @@ log and the live caps — exactly what the dashboard already displays. It has no
 tool that can reach HaTi's database, so no contract, counterparty, name, email
 or monetary value can reach it even if asked directly.
 
+**It can explain every number the dashboard shows — the money ones included.**
+That has to be said because it briefly could not: the tool serving the AI panel
+left out the cost block, so the assistant, asked about the $106 on "Today's
+burn", truthfully found no dollar figure in its data — and then guessed,
+wrongly, that the number must be live billing data from inside HaTi that it was
+blocked from seeing. The opposite is true. Those figures are the Mapper's own
+estimates — the caps in HaTi's code times the prices in `data/pricing.js`,
+priced pessimistically, a roof and never a bill — and no dollar figure ever
+crosses from the running site. The tool now carries the same estimates the tile
+shows, labelled as estimates in the result itself; the headline figure sits in
+the system prompt before any tool is called; and the instructions forbid it
+disowning a number the dashboard is displaying. A dashboard's assistant
+speculating that the dashboard's own headline is someone else's secret data is
+the exact kind of confident wrongness it exists to prevent.
+
 **Giving it a brain.** Sign in, open the **Settings** tab, and paste an
 Anthropic key from
 [console.anthropic.com](https://console.anthropic.com/settings/keys). That is

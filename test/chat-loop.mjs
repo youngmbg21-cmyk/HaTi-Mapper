@@ -151,6 +151,20 @@ try {
     /never report a count of these as "changes"/.test(commitsDesc),
     commitsDesc.slice(commitsDesc.indexOf('commits ='), 140));
 
+  /* The owner asked the assistant about the $106 on the burn tile and it
+     answered that no dollar figure existed in its data — true, the tool left
+     the cost block out — and then guessed that the number was live billing
+     data from inside HaTi. It is the opposite: the Mapper's own estimate,
+     caps times prices. The number the dashboard leads with has to be in front
+     of the model, named for what it is. */
+  check('The system prompt carries the burn figure itself',
+    /Money headline: the dashboard's "Today's burn" figure is \$\d/.test(sys),
+    (sys.match(/Money headline[^\n]*/) || ['(absent)'])[0]);
+  check('And says the money figures are the Mapper\'s own estimates, not billing data',
+    /THE MONEY FIGURES ARE THIS DASHBOARD'S OWN ESTIMATES/.test(sys) && /a roof, not a bill/.test(sys));
+  check('And forbids disowning a number the dashboard displays',
+    /never disown a number the dashboard\s+itself is displaying/.test(sys));
+
   /* The tool result must actually be fed back, not invented. */
   const secondTurn = JSON.stringify(seen[1].messages || []);
   check('The tool result was fed back to the model', /tool_result/.test(secondTurn));
@@ -171,6 +185,17 @@ try {
   check('Several tools in one turn all run', r2.status === 200 && (r2.body.toolsUsed || []).length === 2, JSON.stringify(r2.body.toolsUsed));
   const fed = JSON.stringify(seen[1].messages || []);
   check('Both tool results came back real', /capPer15Minutes/.test(fed) && /Clause review/.test(fed));
+  /* The dollar figures the dashboard leads with, in the same tool result —
+     their absence is what sent the assistant guessing that $106 was live
+     billing data. Labelled as the Mapper's own estimate where the model reads
+     it, not only in the prompt. */
+  check('The ai panel carries the money estimates the burn tile shows',
+    /moneyEstimates/.test(fed) && /dailyRealisticUsd/.test(fed) && /dailyWorstCaseUsd/.test(fed),
+    fed.slice(fed.indexOf('moneyEstimates'), fed.indexOf('moneyEstimates') + 120));
+  check('And says in the result itself that they are estimates, not live spend',
+    /NOT live spend, NOT a bill/.test(fed));
+  check('And prices each feature per use',
+    /estimatedUsdPerUse/.test(fed));
 
   /* ---- 3. plain text with no tool call is still accepted ---- */
   seen = [];
