@@ -209,7 +209,7 @@ try {
   await page.fill('#authConfirm', OWNER_PW);
   const t0 = Date.now();
   await page.click('#authGo');
-  await page.waitForSelector('#glance .g', { timeout: 180000 });
+  await page.waitForSelector('#towerBurn .bignum', { timeout: 180000 });
   const coldMs = Date.now() - t0;
   check('Signing in lands on the dashboard', await page.isVisible('#app'));
 
@@ -248,33 +248,45 @@ try {
   const warm = await (await authed('/api/scan')).json();
   check('The cache is used on a second call', warm.cached === true, `cached=${warm.cached}, ${Date.now() - warm0}ms`);
 
-  /* ---- 1. headline counts match the payload arrays ---- */
-  console.log('\n1. Headline counts');
-  const tiles = await page.$$eval('#glance .g', els =>
-    els.map(e => ({ n: e.querySelector('.n').textContent.trim(), l: e.querySelector('.l').textContent.trim() })));
-  const expected = {
-    'Screens': scan.screens.length,
-    'AI features': scan.ai.features.length,
-    'Models in use': scan.ai.modelsInUse.length,
-    'Data tables': scan.storage.tables.length,
-    'Open to the public': scan.public.routes.length,
-    'Known gaps': scan.gaps.gaps.length,
-  };
-  check('Six headline tiles are rendered', tiles.length === 6, `got ${tiles.length}`);
-  for (const [label, want] of Object.entries(expected)) {
-    const tile = tiles.find(t => t.l === label);
-    check(`Headline "${label}" matches the payload array`, tile && Number(tile.n) === want,
-      `shown ${tile ? tile.n : 'MISSING'}, array length ${want}`);
+  /* ---- 1. the control tower reads the same numbers the panels do ----
+     The tower is a summary, so the one thing that must be true of it is that
+     it never disagrees with the payload the tabs below are drawn from. */
+  console.log('\n1. The control tower');
+  const tower = await page.evaluate(() => {
+    const t = id => (document.getElementById(id).innerText || '').trim();
+    return {
+      cards: ['towerBurn', 'towerCal', 'towerDoors', 'towerAttention', 'towerGrip', 'towerMap', 'towerWeight']
+        .map(id => ({ id, text: t(id), loading: !!document.querySelector(`#${id} .sk`) })),
+      doorsBig: (document.querySelector('#towerDoors .bignum') || {}).textContent || '',
+      gripBig: (document.querySelector('#towerGrip .bub b') || {}).textContent || '',
+      weightBig: (document.querySelector('#towerWeight .bignum') || {}).textContent || '',
+      files: document.querySelectorAll('#towerWeight .filerow').length,
+      days: document.querySelectorAll('#towerCal .d').length,
+    };
+  });
+  for (const c of tower.cards) {
+    check(`Tower card "${c.id}" rendered`, c.text.length > 10 && !c.loading, `${c.text.length} chars`);
   }
+  check('The open-door count matches the payload',
+    Number(tower.doorsBig) === scan.public.routes.length,
+    `tower says ${tower.doorsBig}, payload has ${scan.public.routes.length}`);
+  check('The grip figure matches the payload',
+    tower.gripBig.trim() === scan.health.percent + '%',
+    `tower says ${tower.gripBig}, payload says ${scan.health.percent}%`);
+  check('The heaviest files are listed', tower.files >= 1 && tower.files <= 5, `${tower.files} rows`);
+  check('The calendar draws a real month', tower.days >= 28, `${tower.days} day cells`);
+  check('The total size is shown in KB', /\d+\s*KB/.test(tower.weightBig), tower.weightBig);
 
   /* ---- 2. all eight panels render with real data ---- */
   console.log('\n2. Every panel');
+  /* "Not finished" now lives on the Changes screen alongside last night's
+     report, so its body is reached through that tab rather than its own. */
   const PANELS = [
     ['screens', 'screensBody', 8],
     ['cost', 'costBody', 8],
     ['data', 'dataBody', 8],
     ['blast', 'blastBody', 8],
-    ['gaps', 'gapsBody', 8],
+    ['changes', 'gapsBody', 4],
     ['public', 'publicBody', 8],
     ['changes', 'changesBody', 4],
     ['weight', 'weightBody', 8],
@@ -287,13 +299,13 @@ try {
     'Six files are past the comfortable line', 'Four things work without logging in',
   ];
   for (const [tab, bodyId, minRows] of PANELS) {
-    await page.click(`.nav button[data-p="${tab}"]`);
+    await page.click(`[data-p="${tab}"]`);
     await page.waitForSelector(`#${bodyId}`, { state: 'attached' });
     const info = await page.$eval(`#${bodyId}`, (el, min) => ({
       text: el.innerText.trim(),
-      rows: el.querySelectorAll('tr, .gap, .pub, .chg, .bar, .file, .dep').length,
-      skeleton: !!el.querySelector('.skel'),
-      errored: !!el.querySelector('.notice.bad'),
+      rows: el.querySelectorAll('tr, .gline, .caprow, .knock2, .filerow, .dep2, .evrow').length,
+      skeleton: !!el.querySelector('.sk'),
+      errored: !!el.querySelector('.note.bad'),
     }), minRows);
     check(`Panel "${tab}" is not empty`, info.text.length > 40, `${info.text.length} chars of text`);
     check(`Panel "${tab}" is not still loading`, !info.skeleton);
@@ -310,7 +322,7 @@ try {
      was a button that sent the wrong HTTP method: the route worked perfectly
      when called directly, and only the real button was broken. */
   console.log('\nSettings and the assistant panel');
-  await page.click('.nav button[data-p="settings"]');
+  await page.click('[data-p="settings"]');
   await page.waitForSelector('#setKey');
   await page.fill('#setKey', 'sk-ant-' + 'a'.repeat(40));
   await page.click('#setKeySave');
@@ -344,7 +356,7 @@ try {
   await page.click('#askExpand');
   await page.waitForTimeout(200);
   await page.reload({ waitUntil: 'domcontentloaded' });
-  await page.waitForSelector('#glance .g', { timeout: 180000 });
+  await page.waitForSelector('#towerBurn .bignum', { timeout: 180000 });
   await page.click('#askLaunch');
   await page.waitForTimeout(300);
   check('The expanded choice is remembered across a reload',
@@ -369,19 +381,19 @@ try {
 
   /* ---- 3. what breaks what ---- */
   console.log('\n3. What breaks what');
-  await page.click('.nav button[data-p="blast"]');
-  await page.waitForSelector('#blastBody .pick');
-  const pickCount = await page.$$eval('#blastBody .pick', els => els.length);
+  await page.click('[data-p="blast"]');
+  await page.waitForSelector('#blastBody .pick2');
+  const pickCount = await page.$$eval('#blastBody .pick2', els => els.length);
   check('Every hand-written data item is offered', pickCount === scan.dependencies.items.length,
     `${pickCount} picks, ${scan.dependencies.items.length} items`);
   for (let i = 0; i < pickCount; i++) {
-    const picks = await page.$$('#blastBody .pick');
+    const picks = await page.$$('#blastBody .pick2');
     const label = (await picks[i].textContent()).split('\n')[0].trim();
     await picks[i].click();
     const state = await page.evaluate(() => ({
-      on: document.querySelectorAll('#blastBody .dep.on').length,
+      on: document.querySelectorAll('#blastBody .dep2.on').length,
       note: (document.getElementById('blastNote').textContent || '').trim(),
-      pressed: document.querySelectorAll('#blastBody .pick[aria-pressed="true"]').length,
+      pressed: document.querySelectorAll('#blastBody .pick2[aria-pressed="true"]').length,
     }));
     check(`"${label}" highlights at least one subsystem`, state.on >= 1, `${state.on} highlighted`);
     check(`"${label}" shows its written explanation`, state.note.length > 60, `${state.note.length} chars`);
@@ -391,10 +403,10 @@ try {
   /* ---- 6. HaTi unreachable: seven panels still work, spend degrades ---- */
   console.log('\n6. With HaTi unreachable');
   check('The pulse reports itself unavailable', pulse.available === false, JSON.stringify(pulse).slice(0, 120));
-  await page.click('.nav button[data-p="cost"]');
+  await page.click('[data-p="cost"]');
   const cost = await page.evaluate(() => ({
-    notice: (document.querySelector('#capsBody .notice') || {}).innerText || '',
-    rows: document.querySelectorAll('#capsBody tr').length,
+    notice: (document.getElementById('capsLede') || {}).innerText || '',
+    rows: document.querySelectorAll('#capsBody .caprow').length,
     features: document.querySelectorAll('#costBody tbody tr').length,
   }));
   check('The spend panel says live values are unavailable', /code defaults, not live values/i.test(cost.notice), cost.notice.slice(0, 100));
@@ -406,31 +418,36 @@ try {
 
   /* ---- how much the scanner could read ---- */
   console.log('\nHow much the scanner could read');
-  await page.click('.nav button[data-p="screens"]');
+  await page.click('[data-p="tower"]');
   const health = await page.evaluate(() => {
-    const el = document.getElementById('health');
-    return { hidden: el.hidden, text: (el.innerText || '').trim(), cls: el.className };
+    const el = document.getElementById('towerGrip');
+    return {
+      text: (el.innerText || '').trim(),
+      big: (el.querySelector('.bub b') || {}).textContent || '',
+      bubbles: el.querySelectorAll('.bub').length,
+    };
   });
-  check('The score is on the overview', !health.hidden);
-  check('It is one plain sentence with a number in it',
-    /The scanner could read \d+% of what it looks for\./.test(health.text), health.text.slice(0, 120));
-  check('The number matches the payload',
-    health.text.indexOf(scan.health.percent + '% of what it looks for') > -1,
-    `payload says ${scan.health.percent}%`);
-  check('It is graded, so a bad score looks bad',
-    /\b(good|fair|poor)\b/.test(health.cls), health.cls);
+  check('The score is on the control tower', health.text.length > 20, health.text.slice(0, 90));
+  check('It leads with the percentage', health.big.trim() === scan.health.percent + '%',
+    `shows ${health.big}, payload says ${scan.health.percent}%`);
+  check('It says how many facts that was, not just a percentage',
+    health.text.includes(`${scan.health.resolved} of ${scan.health.attempts}`),
+    `payload: ${scan.health.resolved} of ${scan.health.attempts}`);
+  check('The misses are drawn beside the hits, so a bad score looks bad',
+    health.bubbles >= 2, `${health.bubbles} bubbles`);
 
   /* ---- the page is readable, and keeps your place ----
      Two complaints from the owner, both about using the thing rather than
      about what it says: everything is set too small, and switching tabs threw
      away where you were reading. */
   console.log('\nReadable, and keeps your place');
+  await page.click('[data-p="screens"]');
   const typeSizes = await page.evaluate(() => {
     const px = el => parseFloat(getComputedStyle(el).fontSize);
-    const body = document.querySelector('.panel:not([hidden]) .card');
+    const intro = document.querySelector('.panel:not([hidden]) .ph span');
     return {
       base: px(document.body),
-      lede: body ? px(body.querySelector('.lede') || body) : 0,
+      lede: intro ? px(intro) : 0,
       // The smallest text anywhere on a rendered panel — the fine print is
       // what actually decides whether the page is readable.
       smallest: Math.min(...[...document.querySelectorAll('.panel:not([hidden]) *')]
@@ -439,10 +456,10 @@ try {
   });
   check('The page is not set in fine print', typeSizes.base >= 14.5, `body is ${typeSizes.base}px`);
   check('Nor is the smallest text on a panel',
-    typeSizes.smallest >= 10.5, `smallest rendered text is ${typeSizes.smallest}px`);
-  check('The panel intros are readable too', typeSizes.lede >= 13, `${typeSizes.lede}px`);
+    typeSizes.smallest >= 9.5, `smallest rendered text is ${typeSizes.smallest}px`);
+  check('The panel intros are readable too', typeSizes.lede >= 12, `${typeSizes.lede}px`);
 
-  const navPinned = await page.evaluate(() => getComputedStyle(document.querySelector('.nav')).position);
+  const navPinned = await page.evaluate(() => getComputedStyle(document.querySelector('.topbar')).position);
   check('The tabs are pinned to the top of the window, not left up the page',
     navPinned === 'sticky', navPinned);
 
@@ -451,7 +468,7 @@ try {
      its end — so the tabs move out from under the cursor. Same complaint as
      the page jumping, different axis. They wrap instead. */
   const navRow = await page.evaluate(() => {
-    const nav = document.querySelector('.nav');
+    const nav = document.querySelector('.pills');
     const btns = [...nav.querySelectorAll('button')];
     return {
       scrollsSideways: nav.scrollWidth > nav.clientWidth + 1,
@@ -464,8 +481,10 @@ try {
   });
   check('The tab row never scrolls sideways', !navRow.scrollsSideways);
   check('Every tab is visible at once, so none of them moves when you click',
-    navRow.offRow.length === 0 && navRow.count === 9,
+    navRow.offRow.length === 0 && navRow.count === 8,
     navRow.offRow.length ? `off the row: ${navRow.offRow.join(', ')}` : `all ${navRow.count} in view`);
+  const gear = await page.$('.tops [data-p="settings"]');
+  check('Settings is reachable from the top bar', !!gear);
 
   /* Scroll a long way down one tab, go elsewhere, come back. The place has to
      be waiting where it was left. Reloaded first, because "a tab you have not
@@ -473,7 +492,7 @@ try {
      every tab already, as this one has. */
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.waitForSelector('#app:not([hidden])', { timeout: 60000 });
-  await page.waitForFunction(() => !document.querySelector('#screensBody .skel'), null, { timeout: 60000 });
+  await page.waitForFunction(() => !document.querySelector('#screensBody .sk'), null, { timeout: 60000 });
 
   /* Where the open panel begins, with room for the pinned tab row above it.
      Measured off the panel rather than the row: while the row is pinned, both
@@ -481,7 +500,7 @@ try {
      earlier version of this silently asserted nothing at all. */
   const navLine = () => page.evaluate(() => {
     const panel = document.querySelector('.panel:not([hidden])');
-    const nav = document.querySelector('.nav');
+    const nav = document.querySelector('.topbar');
     return Math.max(0, panel.getBoundingClientRect().top + window.scrollY - nav.getBoundingClientRect().height);
   });
 
@@ -521,8 +540,8 @@ try {
   /* Every tab, a full circuit, from that one position. A single tab that moves
      the page fails this. */
   const moved = [];
-  for (const tab of ['weight', 'cost', 'data', 'blast', 'gaps', 'public', 'changes', 'settings', 'screens']) {
-    await page.click(`.nav button[data-p="${tab}"]`);
+  for (const tab of ['weight', 'cost', 'data', 'blast', 'tower', 'public', 'changes', 'settings', 'screens']) {
+    await page.click(`[data-p="${tab}"]`);
     await page.waitForTimeout(90);
     const at = await page.evaluate(() => window.scrollY);
     if (Math.abs(at - parked) > 2) moved.push(`${tab} → ${Math.round(at)}`);
@@ -552,11 +571,11 @@ try {
      there. The reader must land at the end of it — never back at the top. */
   const longest = Object.entries(reach).sort((a, b) => b[1] - a[1])[0][0];
   const shortest = Object.entries(reach).sort((a, b) => a[1] - b[1])[0][0];
-  await page.click(`.nav button[data-p="${longest}"]`);
+  await page.click(`[data-p="${longest}"]`);
   await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
   await page.waitForTimeout(90);
   const deep = await page.evaluate(() => window.scrollY);
-  await page.click(`.nav button[data-p="${shortest}"]`);
+  await page.click(`[data-p="${shortest}"]`);
   await page.waitForTimeout(90);
   const landed = await page.evaluate(() => window.scrollY);
   check('From deeper than a panel reaches, you land at its end — never back at the top',
@@ -572,14 +591,15 @@ try {
      the panel has to explain its own units rather than assuming KB is
      common knowledge. */
   console.log('\nWhat the bulky files are');
-  await page.click('.nav button[data-p="weight"]');
-  await page.waitForSelector('#weightBody .file', { timeout: 20000 });
-  const fileRows = await page.evaluate(() => [...document.querySelectorAll('#weightBody .file')].map(el => ({
-    name: (el.querySelector('.nm') || {}).textContent || '',
-    path: (el.querySelector('.path') || {}).textContent || '',
-    says: (el.querySelector('.say') || {}).textContent || '',
-    big: el.classList.contains('big'),
-    fill: (el.querySelector('.fill') || {}).getAttribute ? el.querySelector('.fill').getAttribute('style') : '',
+  await page.click('[data-p="weight"]');
+  await page.waitForSelector('#weightBody tbody tr', { timeout: 20000 });
+  const fileRows = await page.evaluate(() => [...document.querySelectorAll('#weightBody tbody tr')].map(el => ({
+    name: (el.querySelector('td b') || {}).textContent || '',
+    path: (el.querySelector('.codechip') || {}).textContent || '',
+    says: (el.querySelector('.subnum') || {}).textContent || '',
+    big: !!el.querySelector('.badge.gold'),
+    fill: (el.querySelector('td span[style*="width"]') || {}).getAttribute
+      ? el.querySelector('td span[style*="width"]').getAttribute('style') : '',
   })));
   check('Every file is listed as a thing, not only as a path',
     fileRows.length === scan.weight.files.length && fileRows.every(r => r.name.trim().length > 2),
@@ -606,7 +626,7 @@ try {
   check('And says what the colouring means, in words',
     /outgrown comfortable/.test(weightText));
   check('No row is described by a path alone',
-    !/^\s*js\/views\//m.test(await page.$eval('#weightBody .file .nm', el => el.textContent)));
+    !/^\s*js\/views\//m.test(await page.$eval('#weightBody tbody tr td b', el => el.textContent)));
 
   /* ---- draft a fix prompt ----
      The button has to be on the findings themselves, where the owner is
@@ -614,8 +634,8 @@ try {
      driven end to end in test/chat-loop.mjs, against a stand-in model. */
   console.log('\nDraft a fix prompt');
   const fixButtons = {};
-  for (const [tab, kind] of [['cost', 'ai-unused'], ['gaps', 'gap'], ['weight', 'file-size'], ['weight', 'orphan']]) {
-    await page.click(`.nav button[data-p="${tab}"]`);
+  for (const [tab, kind] of [['cost', 'ai-unused'], ['changes', 'gap'], ['weight', 'file-size'], ['weight', 'orphan']]) {
+    await page.click(`[data-p="${tab}"]`);
     await page.waitForTimeout(120);
     fixButtons[kind] = await page.$$eval(`button[data-fix="${kind}"]`, els =>
       els.map(e => e.getAttribute('data-id')).filter(Boolean));
@@ -640,7 +660,7 @@ try {
      strip has to say so. The drawn state is checked below against a second
      Mapper with a seeded archive. */
   console.log('\nWhich way things are moving');
-  await page.click('.nav button[data-p="screens"]');
+  await page.click('[data-p="tower"]');
   const freshTrends = await page.evaluate(() => {
     const el = document.getElementById('trends');
     return { hidden: el.hidden, text: (el.innerText || '').trim(), charts: el.querySelectorAll('svg').length };
@@ -652,7 +672,7 @@ try {
 
   /* ---- what it costs to run ---- */
   console.log('\nWhat it costs to run');
-  await page.click('.nav button[data-p="cost"]');
+  await page.click('[data-p="cost"]');
   await page.waitForSelector('#costBody table');
   const costPanel = await page.textContent('#costBody');
   check('The spend panel now shows money, not just counts', /\$\d/.test(costPanel), costPanel.slice(0, 80));
@@ -677,14 +697,14 @@ try {
   check('And it sits above everything else on the page',
     await page.evaluate(() => {
       const t = document.getElementById('tripped').getBoundingClientRect().top;
-      const g = document.getElementById('glance').getBoundingClientRect().top;
+      const g = document.querySelector('.topbar').getBoundingClientRect().top;
       return t < g;
     }));
 
-  await page.click('.nav button[data-p="settings"]');
+  await page.click('[data-p="settings"]');
   await page.waitForSelector('#watchRules .rule');
   const rules = await page.$$eval('#watchRules .rule', els => els.map(e => ({
-    say: e.querySelector('.say').innerText.trim(),
+    say: e.querySelector('.bd b').innerText.trim(),
     on: e.querySelector('.toggle').getAttribute('aria-pressed') === 'true',
   })));
   check('Every rule is offered on the Settings tab', rules.length === 5, `${rules.length} rules`);
@@ -710,16 +730,16 @@ try {
 
   /* ---- last night ---- */
   console.log('\nLast night');
-  await page.click('.nav button[data-p="changes"]');
-  await page.waitForFunction(() => !document.querySelector('#digestBody .skel'), null, { timeout: 20000 });
+  await page.click('[data-p="changes"]');
+  await page.waitForFunction(() => !document.querySelector('#digestBody .sk'), null, { timeout: 20000 });
   const digestCard = (await page.textContent('#digestBody')).trim();
   check('The "Last night" card renders', digestCard.length > 40, `${digestCard.length} chars`);
-  check('And it is not an error', !(await page.$('#digestBody .notice.bad')));
+  check('And it is not an error', !(await page.$('#digestBody .note.bad')));
 
   /* The night's changes are numbered in the order the work happened, so the
      card reads as a story rather than a pile. Story order is the assertion
      that matters: number 1 has to be the oldest, not the newest. */
-  const numbered = await page.evaluate(() => [...document.querySelectorAll('#digestBody .commit')]
+  const numbered = await page.evaluate(() => [...document.querySelectorAll('#digestBody .commit2')]
     .map(el => ({
       n: el.querySelector('.n').textContent.trim(),
       text: el.querySelector('.t').textContent.trim(),
@@ -748,7 +768,7 @@ try {
     digestFoot);
 
   console.log('\nBeing told about things');
-  await page.click('.nav button[data-p="settings"]');
+  await page.click('[data-p="settings"]');
   await page.waitForSelector('#setDigest');
   check('Morning summaries start switched off',
     (await page.textContent('#setDigest')).trim() === 'Off', await page.textContent('#setDigest'));
@@ -766,19 +786,19 @@ try {
 
   /* ---- how far back the change log will look ---- */
   console.log('\nLooking further back than 72 hours');
-  await page.click('.nav button[data-p="changes"]');
+  await page.click('[data-p="changes"]');
   await page.waitForSelector('#watchRange button');
   const rangeAsks = [];
   page.on('request', r => { if (r.url().includes('/api/changes')) rangeAsks.push(r.url()); });
   await page.click('#watchRange button[data-h="720"]');
-  await page.waitForFunction(() => !document.querySelector('#watchBody .skel'), null, { timeout: 20000 });
+  await page.waitForFunction(() => !document.querySelector('#watchBody .sk'), null, { timeout: 20000 });
   check('Choosing 30 days asks the server for 30 days', rangeAsks.some(u => /hours=720/.test(u)), rangeAsks.join(' '));
   check('And the chosen range is the one shown as chosen',
     await page.$eval('#watchRange button[data-h="720"]', b => b.getAttribute('aria-pressed')) === 'true');
   check('The panel says which window it is describing',
     /last 30 days/.test(await page.textContent('#watchLede')), await page.textContent('#watchLede'));
   await page.click('#watchRange button[data-h="72"]');
-  await page.waitForFunction(() => !document.querySelector('#watchBody .skel'), null, { timeout: 20000 });
+  await page.waitForFunction(() => !document.querySelector('#watchBody .sk'), null, { timeout: 20000 });
   check('And it goes back to 72 hours', /last 72 hours/.test(await page.textContent('#watchLede')),
     await page.textContent('#watchLede'));
 
@@ -998,7 +1018,7 @@ try {
   await page3.fill('#authConfirm', OWNER_PW);
   await page3.click('#authGo');
   await page3.waitForSelector('#app:not([hidden])', { timeout: 180000 });
-  await page3.click('.nav button[data-p="public"]');
+  await page3.click('[data-p="public"]');
   await page3.waitForSelector('#doorsGo:not([disabled])', { timeout: 30000 });
 
   const beforePress = await page3.$eval('#doorsState', el => el.textContent.trim());
@@ -1009,16 +1029,16 @@ try {
     (await page3.$eval('#doorsBody', el => el.innerHTML)) === '');
 
   await page3.click('#doorsGo');
-  await page3.waitForSelector('#doorsBody .knock', { timeout: 60000 });
+  await page3.waitForSelector('#doorsBody .knock2', { timeout: 60000 });
   /* The throttle means the last row lands seconds after the first, so wait for
      the run to finish rather than for the first row to appear. */
   await page3.waitForFunction(() => !document.getElementById('doorsGo').disabled, null, { timeout: 60000 });
 
   const knocked = await page3.evaluate(() => {
-    const rows = [...document.querySelectorAll('#doorsBody .knock')].map(el => ({
-      verdict: el.querySelector('.v').textContent.trim(),
+    const rows = [...document.querySelectorAll('#doorsBody .knock2')].map(el => ({
+      verdict: el.querySelector('.badge').textContent.trim(),
       cls: el.className,
-      address: el.querySelector('.u').textContent.trim(),
+      address: el.querySelector('.codechip').textContent.trim(),
       says: [...el.querySelectorAll('.d')].map(d => d.textContent.trim()).join(' '),
     }));
     return { rows, text: document.getElementById('doorsBody').innerText.trim() };

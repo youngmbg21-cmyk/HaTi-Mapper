@@ -37,12 +37,14 @@
   function num(n) { return n == null ? '—' : Number(n).toLocaleString('en-GB'); }
 
   /* Anything the scan could not work out renders the same way everywhere. */
-  function nd(label) { return '<span class="none">' + esc(label || 'not detected') + '</span>'; }
+  function nd(label) { return '<span class="nd">' + esc(label || 'not detected') + '</span>'; }
 
   function skeleton(rows) {
-    var out = '<div class="skel">';
-    for (var i = 0; i < (rows || 5); i++) out += '<i></i>';
-    return out + '</div>';
+    var out = '';
+    for (var i = 0; i < (rows || 5); i++) {
+      out += '<div class="sk" style="width:' + (58 + (i * 37) % 42) + '%"></div>';
+    }
+    return out;
   }
 
   function fmtDate(iso, withTime) {
@@ -169,6 +171,15 @@
     $('auth').hidden = true;
     $('app').hidden = false;
     $('askLaunch').hidden = false;
+
+    /* The chip in the corner says who is signed in. There is only ever one
+       account, so the initials come from the address itself. */
+    var email = (authInfo && authInfo.email) || '';
+    if (email) {
+      $('whoName').textContent = email;
+      $('whoName').title = email;
+      $('whoAv').textContent = email.slice(0, 2).toUpperCase();
+    }
   }
 
   $('authForm').addEventListener('submit', function (e) {
@@ -274,8 +285,19 @@
 
   /* -------------------------------------------------------------- panels */
 
-  var tabs = document.querySelectorAll('.nav button');
+  /* Every control that opens a panel, wherever it sits — the pill row carries
+     most of them, and Settings is the gear in the top right corner. */
+  var tabs = document.querySelectorAll('[data-p]');
   var panels = document.querySelectorAll('.panel');
+
+  function showPanel(name) {
+    var hold = window.scrollY;
+    tabs.forEach(function (x) { x.setAttribute('aria-selected', String(x.getAttribute('data-p') === name)); });
+    panels.forEach(function (p) { p.hidden = p.getAttribute('data-panel') !== name; });
+    /* Swapping the panels changes the height of the document, and a browser
+       will shift the scroll position when that happens. Put it back. */
+    if (window.scrollY !== hold) window.scrollTo({ top: hold, behavior: 'auto' });
+  }
 
   /* Switching tabs does not move the page. Full stop.
    *
@@ -291,22 +313,39 @@
    * content genuinely is not there to scroll to.
    */
   tabs.forEach(function (t) {
-    t.addEventListener('click', function () {
-      var next = t.getAttribute('data-p');
-      var hold = window.scrollY;
-
-      tabs.forEach(function (x) { x.setAttribute('aria-selected', String(x === t)); });
-      panels.forEach(function (p) { p.hidden = p.getAttribute('data-panel') !== next; });
-
-      /* Swapping the panels changes the height of the document, and a browser
-         will shift the scroll position when that happens. Put it back. */
-      if (window.scrollY !== hold) window.scrollTo({ top: hold, behavior: 'auto' });
-    });
+    t.addEventListener('click', function () { showPanel(t.getAttribute('data-p')); });
   });
 
+  /* ------------------------------------------------------------ the theme
+     Dark is the resting state. The choice is remembered in this browser only —
+     it is a preference about a screen, not a fact about HaTi, so it never
+     reaches the server. */
+  var SUN = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>';
+  var MOON = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>';
+
+  function applyTheme(mode) {
+    var light = mode === 'light';
+    document.body.classList.toggle('light', light);
+    document.documentElement.style.background = light ? '#f1f5f9' : '#020617';
+    /* The button shows what pressing it gets you, not what you already have. */
+    $('themeBtn').innerHTML = light ? MOON : SUN;
+  }
+
+  var savedTheme = null;
+  try { savedTheme = localStorage.getItem('mapper.theme'); } catch (e) { /* private mode */ }
+  applyTheme(savedTheme === 'light' ? 'light' : 'dark');
+
+  $('themeBtn').addEventListener('click', function () {
+    var next = document.body.classList.contains('light') ? 'dark' : 'light';
+    applyTheme(next);
+    try { localStorage.setItem('mapper.theme', next); } catch (e) { /* private mode */ }
+  });
+
+  var TOWER_IDS = ['towerBurn', 'towerCal', 'towerDoors', 'towerAttention', 'towerGrip', 'towerMap', 'towerWeight'];
+
   function setLoading() {
-    $('glance').innerHTML = '';
-    ['screensBody', 'costBody', 'dataBody', 'blastBody', 'gapsBody', 'publicBody', 'changesBody', 'weightBody', 'orphanBody', 'watchBody', 'digestBody']
+    TOWER_IDS.concat(['screensBody', 'costBody', 'dataBody', 'blastBody', 'gapsBody',
+      'publicBody', 'changesBody', 'weightBody', 'orphanBody', 'watchBody', 'digestBody'])
       .forEach(function (id) { $(id).innerHTML = skeleton(5); });
     $('capsBody').innerHTML = skeleton(4);
     $('screensBody').innerHTML = skeleton(6) +
@@ -314,19 +353,417 @@
       'A warm scan takes a second or two; a cold one — the first after this service has been idle, which spins it down — has to start the server first and can take up to a minute.</p>';
   }
 
-  /* ---- headline strip ---- */
-  function renderGlance() {
-    var g = [
-      { n: scan.screens.length, l: 'Screens' },
-      { n: scan.ai.features.length, l: 'AI features' },
-      { n: scan.ai.modelsInUse.length, l: 'Models in use' },
-      { n: scan.storage.tables.length, l: 'Data tables' },
-      { n: scan.public.routes.length, l: 'Open to the public', warn: true },
-      { n: scan.gaps.gaps.length, l: 'Known gaps', warn: true },
-    ];
-    $('glance').innerHTML = g.map(function (x) {
-      return '<div class="g' + (x.warn ? ' warn' : '') + '"><div class="n">' + x.n + '</div><div class="l">' + esc(x.l) + '</div></div>';
+  /* ==================================================================== */
+  /*  The control tower                                                    */
+  /*                                                                       */
+  /*  One screen that answers "is anything wrong this morning?" without     */
+  /*  opening a tab. Every figure on it is read from the same scan the      */
+  /*  tabs below use — nothing here is illustrative, and where a reading    */
+  /*  needs history the Mapper has not gathered yet, the card says so       */
+  /*  rather than drawing a shape that means nothing.                      */
+  /* ==================================================================== */
+
+  var trends = null;   // the measurement series, once /api/trends answers
+  var watchData = null; // the watch log, once /api/changes answers
+  var doorsResult = null; // the last live door check, if the owner ran one
+
+  function pct(a, b) { return b ? Math.round((a / b) * 100) : 0; }
+
+  /* A line drawn through however many readings there are. Returns the two
+     paths the design wants — a filled area and the stroke over it. */
+  function areaPath(values, w, h, pad) {
+    if (!values.length) return null;
+    var lo = Math.min.apply(null, values), hi = Math.max.apply(null, values);
+    var span = hi - lo || 1;
+    var step = values.length > 1 ? w / (values.length - 1) : 0;
+    var pts = values.map(function (v, i) {
+      return [i * step, pad + (h - pad * 2) * (1 - (v - lo) / span)];
+    });
+    var line = pts.map(function (p, i) {
+      return (i ? 'L' : 'M') + p[0].toFixed(1) + ',' + p[1].toFixed(1);
+    }).join(' ');
+    return { line: line, area: line + ' L' + w + ',' + h + ' L0,' + h + ' Z', points: pts };
+  }
+
+  /* ---- today's burn ---- */
+  function renderTowerBurn() {
+    var c = scan.cost || {};
+    var live = pulse && pulse.available;
+    var used = live && pulse.usage ? pulse.usage.count : null;
+    var limit = live && pulse.usage ? pulse.usage.dailyLimit : null;
+    if (limit == null) {
+      var lim = (scan.ai.caps || []).filter(function (x) { return x.key === 'aiDailyLimit'; })[0];
+      limit = lim ? lim.codeDefault : null;
+    }
+
+    var spend = c.dailyMixedUsd;
+    var ceiling = c.dailyCeilingUsd;
+
+    var html = '<div class="chead"><h3>Today\'s burn</h3>' +
+      '<div class="seg"><button type="button" class="on">A whole day</button></div></div>' +
+      '<div class="duo">' +
+      '<div><span class="bignum">' + (spend == null ? '—' : usd(spend)) + '</span>' +
+      (ceiling == null ? '' : '<span class="delta flat">max ' + usd(ceiling) + '</span>') +
+      '<div class="subnum">a whole day at HaTi\'s own caps — a roof, not a bill</div></div>' +
+      '<div><span class="bignum">' + (used == null ? '—' : num(used)) + '</span>' +
+      (limit == null ? '' : '<span class="delta ' + (used != null && used / limit > 0.7 ? 'bad' : 'good') + '">of ' + num(limit) + '</span>') +
+      '<div class="subnum">' + (used == null
+        ? 'AI requests today — needs a running HaTi to count'
+        : 'AI requests against the daily cap') + '</div></div>' +
+      '</div>';
+
+    /* The line is the estimated cost of a day at the caps, one reading per
+       scan that found something different. Below three readings there is no
+       shape to see, so nothing is drawn. */
+    var series = trends && trends.points
+      ? trends.points.map(function (p) { return p.dailyCostUsd; }).filter(function (v) { return typeof v === 'number'; })
+      : [];
+
+    if (series.length >= 3) {
+      var p = areaPath(series, 420, 120, 12);
+      var last = p.points[p.points.length - 1];
+      html += '<div class="chartwrap">' +
+        '<span class="chip" style="right:0;top:0"><i style="background:var(--lav)"></i>' + usd(series[series.length - 1]) + ' now</span>' +
+        '<svg viewBox="0 0 420 120" width="100%" height="120" preserveAspectRatio="none" role="img" ' +
+        'aria-label="What a full day at HaTi\'s caps would cost, across the last ' + series.length + ' readings">' +
+        '<defs><linearGradient id="gl" x1="0" y1="0" x2="0" y2="1">' +
+        '<stop offset="0" stop-color="var(--lav)" stop-opacity=".28"/><stop offset="1" stop-color="var(--lav)" stop-opacity="0"/>' +
+        '</linearGradient></defs>' +
+        '<path d="' + p.area + '" fill="url(#gl)"/>' +
+        '<path d="' + p.line + '" fill="none" stroke="var(--lav)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>' +
+        '<circle cx="' + last[0].toFixed(1) + '" cy="' + last[1].toFixed(1) + '" r="4" fill="var(--lav)" stroke="var(--card)" stroke-width="2"/>' +
+        '</svg>' +
+        '<div class="axis"><span>oldest</span><span>' + series.length + ' readings</span><span>now</span></div>' +
+        '</div>';
+    } else {
+      html += '<div class="note">A line needs at least three scans that found something different. The Mapper has ' +
+        series.length + '. Come back after a few days and this fills in.</div>';
+    }
+
+    $('towerBurn').innerHTML = html;
+  }
+
+  /* ---- the scan calendar ---- */
+
+  /* Which days the Mapper looked, and which of those days it found something.
+     Both come from the watch log, so an empty calendar means an empty log —
+     never a quiet failure. */
+  function renderTowerCal() {
+    var now = new Date();
+    var year = now.getFullYear(), month = now.getMonth();
+    var monthName = now.toLocaleString('en-GB', { month: 'long', year: 'numeric' });
+
+    var looked = {}, found = {};
+    (trends && trends.points ? trends.points : []).forEach(function (p) {
+      var d = new Date(p.at);
+      if (d.getFullYear() === year && d.getMonth() === month) looked[d.getDate()] = true;
+    });
+    var changeCount = 0;
+    (watchData && watchData.rounds ? watchData.rounds : []).forEach(function (r) {
+      var d = new Date(r.at);
+      changeCount += (r.changes || []).length;
+      if (d.getFullYear() === year && d.getMonth() === month) { found[d.getDate()] = true; looked[d.getDate()] = true; }
+    });
+
+    var first = new Date(year, month, 1).getDay();      // 0 = Sunday
+    var lead = (first + 6) % 7;                          // weeks start Monday
+    var days = new Date(year, month + 1, 0).getDate();
+    var today = now.getDate();
+
+    var cells = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+      .map(function (d) { return '<div class="dow">' + d[0] + '</div>'; }).join('');
+    for (var i = 0; i < lead; i++) cells += '<div class="d blank"></div>';
+    for (var day = 1; day <= days; day++) {
+      var cls = 'd';
+      if (found[day]) cls += ' hot';
+      else if (looked[day]) cls += ' scan';
+      if (day === today) cls += ' today';
+      cells += '<div class="' + cls + '" title="' +
+        (found[day] ? 'Something changed' : looked[day] ? 'Scanned, nothing new' : 'No scan recorded') + '">' + day + '</div>';
+    }
+
+    $('towerCal').innerHTML =
+      '<div class="head"><span class="mon">' + esc(monthName) + '</span>' +
+      '<button class="iconbtn" type="button" data-p="changes" style="width:30px;height:30px" title="Open the change log" aria-label="Open the change log">' +
+      '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17L17 7M9 7h8v8"/></svg></button></div>' +
+      '<div class="days">' + cells + '</div>' +
+      '<div class="foot"><div><div class="v">' + (watchData ? changeCount : '—') + ' change' + (changeCount === 1 ? '' : 's') + '</div>' +
+      '<div class="l">noticed in the log · teal days moved</div></div>' +
+      '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" style="color:var(--tx3)"><path d="M3 3v18h18"/><path d="M7 14l4-4 3 3 5-6"/></svg></div>';
+
+    /* The arrow in the corner is a panel switch like any pill, so it needs the
+       same listener the pills got at start-up. */
+    var jump = $('towerCal').querySelector('[data-p]');
+    if (jump) jump.addEventListener('click', function () { showPanel('changes'); });
+  }
+
+  /* ---- open doors ---- */
+  function renderTowerDoors() {
+    var open = scan.public.routes.length;
+    var hashes = scan.public.hashes.length;
+
+    var html = '<div class="chead"><h3>Open doors</h3>' +
+      '<button class="iconbtn go" type="button" style="width:30px;height:30px" title="Open the Doors screen" aria-label="Open the Doors screen">' +
+      '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17L17 7M9 7h8v8"/></svg></button></div>' +
+      '<span class="bignum">' + open + '</span>' +
+      '<div class="subnum">of ' + scan.public.totalRoutes + ' server routes carry no login check · ' +
+      hashes + ' URL hash' + (hashes === 1 ? ' is' : 'es are') + ' handled before any session exists</div>';
+
+    /* What the live check actually found, once the owner has run one. Until
+       then the card says so rather than showing a zero that reads as "clean". */
+    if (doorsResult && doorsResult.results) {
+      var asWritten = doorsResult.results.filter(function (r) { return r.verdict === 'as-expected'; }).length;
+      var gave = doorsResult.results.filter(function (r) { return r.verdict !== 'as-expected'; }).length;
+      html += '<div class="minis">' +
+        '<div class="mini"><span class="ic ok"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg></span>' +
+        '<div><b>' + asWritten + '</b><span>as written</span></div></div>' +
+        '<div class="mini"><span class="ic no"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 9v4M12 17h.01"/><circle cx="12" cy="12" r="9"/></svg></span>' +
+        '<div><b>' + gave + '</b><span>gave data</span></div></div>' +
+        '</div>';
+    } else {
+      html += '<div class="note">Nobody has knocked on these doors yet. The Doors screen has a button that sends one plain request to each — ' +
+        'it only ever runs when you press it.</div>';
+    }
+
+    /* Seven readings of how many routes were open, so a door that appeared is
+       visible as a step rather than a sentence. */
+    var series = trends && trends.points
+      ? trends.points.map(function (p) { return p.openRoutes; }).filter(function (v) { return typeof v === 'number'; }).slice(-7)
+      : [];
+    if (series.length >= 2) {
+      var top = Math.max.apply(null, series) || 1;
+      html += '<div class="bars">' + series.map(function (v, i) {
+        var isLast = i === series.length - 1;
+        var grew = i > 0 && v > series[i - 1];
+        return '<div class="bcol">' +
+          (isLast || grew ? '<span class="bval">' + v + '</span>' : '') +
+          '<span class="bar' + (isLast ? ' hi' : grew ? ' au' : '') + '" style="height:' + Math.max(4, pct(v, top)) + '%"></span></div>';
+      }).join('') + '</div>' +
+        '<div class="blabels">' + series.map(function (v, i) {
+          return '<span>' + (i === series.length - 1 ? 'now' : '−' + (series.length - 1 - i)) + '</span>';
+        }).join('') + '</div>';
+    }
+
+    $('towerDoors').innerHTML = html;
+    var go = $('towerDoors').querySelector('.go');
+    if (go) go.addEventListener('click', function () { showPanel('public'); });
+  }
+
+  /* ---- needs attention ---- */
+
+  /* Everything on this page that is asking for something, gathered into one
+     list and sorted worst-first. Nothing here is new information — it is the
+     same facts the tabs carry, arranged so the morning question is one glance
+     rather than eight. */
+  function renderTowerAttention() {
+    var items = [];
+    var ICONS = {
+      lock: '<path d="M3 11h18v10H3z" fill="none"/><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/>',
+      clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/>',
+      chart: '<path d="M3 3v18h18"/><path d="M19 9l-5 5-3-3-4 4"/>',
+      file: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/>',
+    };
+    function push(sev, icon, title, tags, chip, go) {
+      items.push({ sev: sev, icon: icon, title: title, tags: tags, chip: chip, go: go });
+    }
+
+    /* 1. A door that answered when the code said it would not. The single
+          worst thing this page can find, so it leads whenever it exists. */
+    if (doorsResult && doorsResult.results) {
+      doorsResult.results.filter(function (r) { return r.verdict === 'unexpected-data'; }).forEach(function (r) {
+        push(3, 'lock', 'A door opened with no login', [['Security', 'hi'], [r.address, '']], 'live', 'public');
+      });
+    }
+
+    /* 2. Is what we are describing what is actually running? */
+    if (pulse && pulse.drift && pulse.drift.state === 'different') {
+      push(3, 'clock', 'This is not what is live', [['Freshness', 'hi'],
+        [(pulse.drift.behind != null ? pulse.drift.behind + ' behind' : 'live differs'), '']], 'now', null);
+    } else if (pulse && !pulse.available) {
+      push(2, 'clock', 'Can’t tell whether this is live', [['Freshness', '']], '—', null);
+    }
+
+    /* 3. The scan itself getting older. */
+    var ageH = scan.scannedAt ? (Date.now() - new Date(scan.scannedAt).getTime()) / 36e5 : null;
+    if (ageH != null && ageH > 24) {
+      push(2, 'clock', 'The scan is more than a day old', [['Freshness', '']], Math.round(ageH) + 'h', null);
+    }
+
+    /* 4. The scanner losing its grip on HaTi's source. */
+    var h = scan.health;
+    if (h && h.percent != null && h.percent < 95) {
+      push(h.percent < 85 ? 3 : 2, 'chart', 'Grip slipped to ' + h.percent + '%',
+        [['Decay', h.percent < 85 ? 'hi' : ''], [(h.attempts - h.resolved) + ' not detected', '']], h.percent + '%', null);
+    }
+
+    /* 5. Files that have outgrown comfortable. */
+    var w = scan.weight;
+    if (w && w.overThreshold) {
+      var biggest = w.files[0];
+      push(1, 'file', biggest.path + ' past ' + kb(biggest.bytes),
+        [['Tidiness', ''], [w.overThreshold + ' file' + (w.overThreshold === 1 ? '' : 's') + ' over', '']], kb(biggest.bytes), 'weight');
+    }
+
+    /* 6. Gaps the documents themselves mark as serious. */
+    (scan.gaps.gaps || []).filter(function (g) { return g.severity === 'high'; }).slice(0, 2).forEach(function (g) {
+      push(2, 'chart', g.title, [['Not finished', '']], 'gap', 'changes');
+    });
+
+    if (!items.length) {
+      $('towerAttention').innerHTML = '<div class="note"><b>Nothing is asking for you.</b> ' +
+        'No door answered unexpectedly, the scan is fresh, the scanner read everything it looks for, and no file has outgrown comfortable.</div>';
+      return;
+    }
+
+    items.sort(function (a, b) { return b.sev - a.sev; });
+    $('towerAttention').innerHTML = '<div class="rows">' + items.slice(0, 6).map(function (x) {
+      var sev = x.sev === 3 ? 'sev-hi' : x.sev === 2 ? 'sev-md' : 'sev-lo';
+      return '<div class="row"' + (x.go ? ' data-go="' + x.go + '" style="cursor:pointer"' : '') + '>' +
+        '<span class="ic ' + sev + '"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + ICONS[x.icon] + '</svg></span>' +
+        '<div class="bd"><b>' + esc(x.title) + '</b>' +
+        x.tags.map(function (t) { return '<span class="tag' + (t[1] ? ' ' + t[1] : '') + '">' + esc(t[0]) + '</span>'; }).join(' ') +
+        '</div><span class="kchip">' + esc(x.chip) + '</span></div>';
+    }).join('') + '</div>';
+
+    $('towerAttention').querySelectorAll('[data-go]').forEach(function (el) {
+      el.addEventListener('click', function () { showPanel(el.getAttribute('data-go')); });
+    });
+  }
+
+  /* ---- scanner grip ---- */
+
+  /* Every panel is built by matching patterns against source somebody else is
+     free to change. When that changes shape nothing breaks loudly — the panels
+     just fill up with "not detected". This is the number that makes that
+     visible before it matters. */
+  function renderTowerGrip() {
+    var h = scan.health;
+    var html = '<div class="chead"><h3>Scanner grip</h3></div>';
+
+    if (!h || h.percent == null) {
+      $('towerGrip').innerHTML = html + '<div class="note">The scan did not report a grip figure this time.</div>';
+      return;
+    }
+
+    var missed = h.attempts - h.resolved;
+    var missPct = 100 - h.percent;
+
+    /* Three circles, sized by what they stand for: what was read, what was
+       not, and the warnings raised along the way. */
+    html += '<div class="bubbles">' +
+      '<div class="bub" style="left:2%;top:24%;width:118px;height:118px;background:var(--lav);color:var(--onlav);font-size:26px">' +
+      '<b>' + h.percent + '%</b><span>facts resolved<br>' + h.resolved + ' of ' + h.attempts + '</span></div>' +
+      '<div class="bub" style="right:6%;bottom:2%;width:' + (56 + Math.min(46, missPct * 2)) + 'px;height:' + (56 + Math.min(46, missPct * 2)) + 'px;' +
+      'background:var(--gold);color:var(--ongold);font-size:18px"><b>' + missPct + '%</b><span>not detected</span></div>' +
+      (h.warnings ? '<div class="bub" style="right:18%;top:6%;width:56px;height:56px;background:var(--tile2);color:var(--tx);font-size:13px">' +
+        '<b>' + h.warnings + '</b><span>warning' + (h.warnings === 1 ? '' : 's') + '</span></div>' : '') +
+      '</div>';
+
+    var series = trends && trends.points
+      ? trends.points.map(function (p) { return p.health; }).filter(function (v) { return typeof v === 'number'; }) : [];
+    var was = series.length > 1 ? series[0] : null;
+    html += '<div class="subnum" style="margin-top:8px">' +
+      (missed === 0
+        ? 'Everything it looks for, it found.'
+        : missed + ' of the ' + num(h.attempts) + ' things it looks for came back “not detected” or with a warning. ') +
+      (was != null && was !== h.percent
+        ? 'Was ' + was + '% at the start of the log — HaTi moved under the patterns.'
+        : h.percent < 85 ? '<b>That is low enough to be worth a look.</b>' : '') +
+      '</div>';
+
+    $('towerGrip').innerHTML = html;
+  }
+
+  /* ---- where the weight sits ---- */
+
+  /* One dot field per folder, sized by the bytes inside it. A treemap would be
+     more precise and less readable; the point of this card is which corner of
+     HaTi is heavy, not by exactly how much. */
+  function renderTowerMap() {
+    var files = (scan.weight && scan.weight.files) || [];
+    var html = '<div class="chead"><h3>Where the weight sits</h3></div>';
+    if (!files.length) {
+      $('towerMap').innerHTML = html + '<div class="note">No file sizes were read this scan.</div>';
+      return;
+    }
+
+    var byArea = {};
+    files.forEach(function (f) {
+      var parts = String(f.path).split('/');
+      var area = parts.length > 1 ? parts[0] + '/' : f.path;
+      byArea[area] = (byArea[area] || 0) + (f.bytes || 0);
+    });
+    var areas = Object.keys(byArea).map(function (k) { return { name: k, bytes: byArea[k] }; })
+      .sort(function (a, b) { return b.bytes - a.bytes; }).slice(0, 6);
+    var total = areas.reduce(function (n, a) { return n + a.bytes; }, 0) || 1;
+
+    /* Three columns, each packed top-down in proportion to its share. */
+    var COLS = [[6, 118], [132, 92], [232, 102]];
+    var rects = '';
+    var colTotals = [0, 0, 0];
+    areas.forEach(function (a, i) { colTotals[i % 3] += a.bytes; });
+    var cursor = [14, 14, 14];
+    areas.forEach(function (a, i) {
+      var c = i % 3;
+      var height = Math.max(24, Math.round((a.bytes / (colTotals[c] || 1)) * 140));
+      var fill = a.bytes / total > 0.3 ? 'dotsL' : a.bytes / total > 0.18 ? 'dotsG' : 'dots';
+      rects += '<text x="' + (COLS[c][0] + 6) + '" y="' + (cursor[c] - 4) + '" font-size="10" fill="var(--tx3)" font-family="IBM Plex Mono">' +
+        esc(a.name) + ' · ' + kb(a.bytes) + '</text>' +
+        '<rect x="' + COLS[c][0] + '" y="' + cursor[c] + '" width="' + COLS[c][1] + '" height="' + height + '" rx="9" fill="url(#' + fill + ')"/>';
+      cursor[c] += height + 22;
+    });
+
+    var tall = Math.max.apply(null, cursor) + 4;
+    html += '<svg viewBox="0 0 340 ' + tall + '" width="100%" height="' + Math.min(tall, 200) + '" role="img" ' +
+      'aria-label="Dot map of HaTi\'s weight by folder">' +
+      '<defs>' +
+      '<pattern id="dots" width="7" height="7" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1.5" fill="var(--tx3)" opacity=".55"/></pattern>' +
+      '<pattern id="dotsL" width="7" height="7" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1.5" fill="var(--lav)"/></pattern>' +
+      '<pattern id="dotsG" width="7" height="7" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1.5" fill="var(--gold)"/></pattern>' +
+      '</defs>' + rects + '</svg>' +
+      '<div class="subnum">One dot field per folder, sized by the bytes inside it. Teal is the heaviest corner of HaTi, amber the next.</div>';
+
+    $('towerMap').innerHTML = html;
+  }
+
+  /* ---- the whole of HaTi, and its heaviest files ---- */
+  function renderTowerWeight() {
+    var w = scan.weight;
+    var files = (w && w.files) || [];
+    var total = files.reduce(function (n, f) { return n + (f.bytes || 0); }, 0);
+
+    var series = trends && trends.points
+      ? trends.points.map(function (p) { return p.bytes; }).filter(function (v) { return typeof v === 'number'; }) : [];
+    var grew = series.length > 1 ? total - series[0] : null;
+
+    var html = '<div class="statehead"><span class="bignum" style="font-size:26px">' + kb(total) + '</span>' +
+      '<button class="iconbtn go" type="button" style="width:30px;height:30px;margin-left:auto" title="Open Getting bulky" aria-label="Open Getting bulky">' +
+      '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17L17 7M9 7h8v8"/></svg></button></div>' +
+      '<div class="subnum" style="margin-bottom:10px">the whole of HaTi, across ' + files.length + ' files' +
+      (grew == null ? '' : ' · ' + (grew >= 0 ? 'grew ' : 'shrank ') + kb(Math.abs(grew)) + ' over the log') + '</div>';
+
+    var max = files.length ? files[0].bytes : 1;
+    html += files.slice(0, 5).map(function (f) {
+      var share = f.bytes / max;
+      var colour = share > 0.7 ? 'var(--lav)' : share > 0.45 ? 'var(--gold)' : 'var(--tile2)';
+      return '<div class="filerow"><span class="sw" style="background:' + colour + '"></span>' +
+        '<span class="nm" title="' + esc(f.path) + '">' + esc(f.path) + '</span>' +
+        '<span class="kb">' + kb(f.bytes) + '</span></div>';
     }).join('');
+
+    $('towerWeight').innerHTML = html;
+    var go = $('towerWeight').querySelector('.go');
+    if (go) go.addEventListener('click', function () { showPanel('weight'); });
+  }
+
+  function renderTower() {
+    renderTowerBurn();
+    renderTowerCal();
+    renderTowerDoors();
+    renderTowerAttention();
+    renderTowerGrip();
+    renderTowerMap();
+    renderTowerWeight();
   }
 
   /* ---- 1. screens ---- */
@@ -341,19 +778,20 @@
     var rows = scan.screens.map(function (s) {
       var flags = '';
       if (s.sharedWith && s.sharedWith.length) {
-        flags += '<span class="flag" title="This module also renders: ' + esc(s.sharedWith.join(', ')) + '">shares its file</span>';
+        flags += ' <span class="badge" title="This module also renders: ' + esc(s.sharedWith.join(', ')) + '">shares its file</span>';
       }
-      if (s.entry === 'hash') flags += '<span class="flag info" title="Reached by a URL hash, not a nav entry">no login</span>';
+      if (s.entry === 'hash') flags += ' <span class="badge lav" title="Reached by a URL hash, not a nav entry">no login</span>';
       return '<tr>' +
         '<td><b>' + esc(s.label) + '</b>' + flags + '</td>' +
-        '<td>' + (s.does ? esc(s.does) : nd()) + '</td>' +
-        '<td class="path">' + (s.module ? esc(s.module.replace(/^js\//, '')) : nd()) +
-        (s.bytes != null ? '<div style="color:var(--n400)">' + kb(s.bytes) + '</div>' : '') + '</td>' +
+        '<td class="dim">' + (s.does ? esc(s.does) : nd()) + '</td>' +
+        '<td>' + (s.module ? '<span class="codechip">' + esc(s.module.replace(/^js\//, '')) + '</span>' : nd()) + '</td>' +
+        '<td class="r">' + (s.bytes != null ? kb(s.bytes) : '—') + '</td>' +
         '</tr>';
     }).join('');
 
     var html =
-      '<table><thead><tr><th style="width:170px">Screen</th><th>What a person does here</th><th style="width:150px">Lives in</th></tr></thead>' +
+      '<table class="tbl"><thead><tr><th style="width:190px">Screen</th><th>What a person does here</th>' +
+      '<th style="width:190px">Lives in</th><th class="r" style="width:70px">Size</th></tr></thead>' +
       '<tbody>' + rows + '</tbody></table>';
 
     if (multiScreen.length || multiJob.length) {
@@ -368,20 +806,20 @@
           esc(m.sections.map(function (s) { return s.replace(/^VIEW:\s*/, ''); }).join('; ')) +
           ' — across ' + kb(m.bytes) + ' and ' + m.exportCount + ' exported names.</div>');
       });
-      html += '<div class="blast-note">' + bits.join('') + '</div>';
-    }
-
-    html += '<div class="streams"><span class="eyebrow" style="margin-right:2px">Value streams</span>' +
-      scan.streams.map(function (s) {
-        return '<span class="stream" title="' + esc(s.desc) + '"><i style="background:' + esc(s.color) + '"></i>' +
-          esc(s.name.split(/\s*[&(]/)[0].trim()) + '</span>';
-      }).join('') + '</div>';
-
-    if (scan.customStreamsNote) {
-      html += '<div class="blast-note" style="margin-top:9px">' + esc(scan.customStreamsNote) + '</div>';
+      html += '<div class="note">' + bits.join('') + '</div>';
     }
 
     $('screensBody').innerHTML = html;
+
+    /* Value streams get their own card, because they are a different question
+       from "which screen lives where". */
+    $('streamsBody').innerHTML =
+      '<div style="display:flex;flex-wrap:wrap;gap:8px">' + scan.streams.map(function (s) {
+        return '<span class="stream2" title="' + esc(s.desc) + '"><i style="background:' + esc(s.color) + '"></i>' +
+          esc(s.name.split(/\s*[&(]/)[0].trim()) + '</span>';
+      }).join('') + '</div>' +
+      (scan.customStreamsNote ? '<div class="note">' + esc(scan.customStreamsNote) + '</div>' : '');
+    $('streamsCard').hidden = false;
   }
 
   /* ---- 2. where the money goes ---- */
@@ -405,14 +843,16 @@
   function renderCost() {
     var rows = scan.ai.features.map(function (f) {
       var tiers = f.tiers.length
-        ? f.tiers.map(function (t) { return '<span class="tier ' + esc(t) + '">' + esc(t) + '</span>'; }).join(' ')
+        ? f.tiers.map(function (t) {
+            return '<span class="badge ' + (t === 'deep' ? 'gold' : 'lav') + '">' + esc(t) + '</span>';
+          }).join(' ')
         : nd();
       var models = f.models.length
-        ? f.models.map(function (m) { return esc(m); }).join('<br>')
+        ? f.models.map(function (m) { return '<span class="codechip">' + esc(m) + '</span>'; }).join('<br>')
         : nd();
       var used = f.usedBy.length
         ? f.usedBy.map(function (c) { return esc(callSiteName(c)); }).join(', ')
-        : '<span class="none">not called from the front end</span> ' + fixButton('ai-unused', f.feature);
+        : '<span class="nd">not called from the front end</span> ' + fixButton('ai-unused', f.feature);
       /* What one use of this feature could cost at most. Never a bill — the
          assumption behind it is printed under the table. */
       var c = costFor(f.feature);
@@ -422,33 +862,33 @@
       } else {
         money = '<b>' + esc(usd(c.perRequestUsd)) + '</b>' +
           (c.perWindowUsd != null
-            ? '<div style="color:var(--n500)">' + esc(usd(c.perWindowUsd)) + ' if one person hits the cap</div>'
+            ? '<div class="subnum">' + esc(usd(c.perWindowUsd)) + ' if one person hits the cap</div>'
             : '');
       }
 
       return '<tr>' +
         '<td><b>' + esc(f.label || f.feature) + '</b>' +
-        '<div class="path">' + (f.does ? esc(f.does) : nd()) + '</div>' +
-        '<div class="path" style="color:var(--n400)">' + esc(f.route) + '</div></td>' +
+        '<div class="subnum">' + (f.does ? esc(f.does) : nd()) + '</div>' +
+        '<div style="margin-top:4px"><span class="codechip">' + esc(f.route) + '</span></div></td>' +
         '<td>' + tiers + '</td>' +
-        '<td class="path">' + models + '</td>' +
-        '<td class="num">' + (f.cap == null ? '—' : num(f.cap)) + '</td>' +
-        '<td class="num">' + money + '</td>' +
+        '<td>' + models + '</td>' +
+        '<td class="r">' + (f.cap == null ? '—' : num(f.cap)) + '</td>' +
+        '<td class="r">' + money + '</td>' +
         '</tr>' +
-        '<tr><td colspan="5" style="padding-top:0;border-bottom:1px solid var(--divider)">' +
-        '<span class="path">Used by: </span><span style="font-size:11.5px;color:var(--n600)">' + used + '</span></td></tr>';
+        '<tr><td colspan="5" style="padding-top:0">' +
+        '<span class="subnum">Used by: ' + used + '</span></td></tr>';
     }).join('');
 
-    var html = '<table><thead><tr><th style="width:190px">Feature</th><th style="width:70px">Tier</th><th>Model</th>' +
-      '<th class="num" style="width:88px">Cap / ' + (scan.ai.windowMinutes || 15) + ' min</th>' +
-      '<th class="num" style="width:120px">Roughly, per use</th></tr></thead><tbody>' + rows + '</tbody></table>';
+    var html = '<table class="tbl"><thead><tr><th style="width:210px">Feature</th><th style="width:64px">Tier</th><th style="width:150px">Model</th>' +
+      '<th class="r" style="width:88px">Cap / ' + (scan.ai.windowMinutes || 15) + ' min</th>' +
+      '<th class="r" style="width:120px">Per use</th></tr></thead><tbody>' + rows + '</tbody></table>';
 
     html += renderCostNote();
 
     if (scan.ai.nonBillingAiRoutes && scan.ai.nonBillingAiRoutes.length) {
-      html += '<div class="blast-note">Another ' + scan.ai.nonBillingAiRoutes.length + ' routes sit under <span class="path">/api/ai/</span> ' +
+      html += '<div class="note">Another ' + scan.ai.nonBillingAiRoutes.length + ' routes sit under <code>/api/ai/</code> ' +
         'but never call Anthropic — they read and set configuration, so they cost nothing: ' +
-        scan.ai.nonBillingAiRoutes.map(function (r) { return '<span class="path">' + esc(r.label || r.path) + '</span>'; }).join(', ') + '.</div>';
+        scan.ai.nonBillingAiRoutes.map(function (r) { return '<span class="codechip">' + esc(r.label || r.path) + '</span>'; }).join(' ') + '.</div>';
     }
     $('costBody').innerHTML = html;
     renderCaps();
@@ -460,7 +900,7 @@
   function renderCostNote() {
     var c = scan.cost;
     if (!c) return '';
-    var out = '<div class="blast-note">';
+    var out = '<div class="note">';
 
     if (c.dailyCeilingUsd != null) {
       out += '<b>A whole day, at the limits the code sets: at most about ' + esc(usd(c.dailyCeilingUsd)) + '.</b> ' +
@@ -476,15 +916,15 @@
     out += esc(c.assumption);
 
     if (c.modelsWithoutPrice.length) {
-      out += ' <span style="color:var(--danger)">' + c.modelsWithoutPrice.length + ' model' +
+      out += ' <span style="color:var(--badtx)">' + c.modelsWithoutPrice.length + ' model' +
         (c.modelsWithoutPrice.length === 1 ? ' has' : 's have') + ' no price on file — ' +
         c.modelsWithoutPrice.map(function (m) { return esc(m); }).join(', ') +
         '. Nothing is guessed for them.</span>';
     }
 
-    out += '<div style="margin-top:6px;color:var(--n500)">Prices last checked ' + esc(fmtDate(c.asOf)) +
-      ' and written down by hand in <span class="path">data/pricing.js</span>.' +
-      (c.stale ? ' <b style="color:var(--amber)">That is over ' + c.ageDays + ' days ago — they may be out of date.</b>' : '') +
+    out += '<div class="subnum" style="margin-top:6px">Prices last checked ' + esc(fmtDate(c.asOf)) +
+      ' and written down by hand in <code>data/pricing.js</code>.' +
+      (c.stale ? ' <b style="color:var(--gold)">That is over ' + c.ageDays + ' days ago — they may be out of date.</b>' : '') +
       '</div></div>';
     return out;
   }
@@ -513,52 +953,53 @@
     var lede = $('capsLede');
     var html = '';
 
+    /* The badge beside the heading answers the question the numbers cannot:
+       are these the values running right now, or the defaults in the code? */
+    var flag = $('capsLive');
+    flag.className = 'badge ' + (live ? 'good' : 'gold');
+    flag.textContent = live ? 'live' : 'from the code';
+
     if (!live) {
       var why = (pulse && pulse.reason) || 'The Mapper could not reach the running HaTi.';
-      lede.textContent = 'Live values are unavailable, so these are the defaults written in HaTi’s code.';
-      html += '<div class="notice"><div><b>Showing code defaults, not live values.</b> ' + esc(why) +
-        ' Everything else on this page is read from HaTi’s source and is unaffected.</div></div>';
+      lede.innerHTML = '<b>Showing code defaults, not live values.</b> ' + esc(why) +
+        ' Everything else on this page is read from HaTi\u2019s source and is unaffected.';
     } else {
-      lede.textContent = 'Set in Team & Settings. These are the values live on this workspace, not the defaults.';
+      lede.innerHTML = 'Set in Team &amp; Settings. These are the values live on this workspace, not the defaults. ' +
+        'Read from the running HaTi at ' + esc(fmtDate(pulse.fetchedAt, true)) +
+        ', build <code>' + esc(pulse.version || 'unknown') + '</code>. ' +
+        'That endpoint returns caps and counts only \u2014 no contract, party or user data of any kind crosses it.';
     }
 
-    var rows = caps.map(function (c) {
+    html += caps.map(function (c) {
       var value = live && pulse.caps && pulse.caps[c.key] != null ? pulse.caps[c.key] : c.codeDefault;
       var suffix = c.key === 'aiMaxChars' ? ' chars' : (c.key === 'aiDailyLimit' ? ' requests' : '');
       var differs = live && pulse.caps && pulse.caps[c.key] != null && c.codeDefault != null && pulse.caps[c.key] !== c.codeDefault;
-      return '<tr><td style="width:250px"><b>' + esc(c.label) + '</b>' +
-        '<div class="path">' + esc(c.key) + (c.envVar ? ' · ' + esc(c.envVar) : '') + '</div></td>' +
-        '<td class="path">' + esc(c.note) + (differs ? '<div style="color:var(--amber)">code default ' + num(c.codeDefault) + '</div>' : '') + '</td>' +
-        '<td class="num" style="width:130px">' + (value == null ? nd() : num(value) + suffix) + '</td></tr>';
+      return '<div class="caprow"><div class="bd"><b>' + esc(c.label) + '</b>' +
+        '<span>' + esc(c.note) + (differs ? ' \u00b7 code default ' + num(c.codeDefault) : '') + '</span></div>' +
+        '<span class="v">' + (value == null ? nd() : num(value) + suffix) + '</span></div>';
     }).join('');
 
-    var usage = '';
     if (live && pulse.usage) {
-      var pct = pulse.usage.dailyLimit ? pulse.usage.count / pulse.usage.dailyLimit : 0;
-      usage = '<tr><td><b>Used so far today</b><div class="path">' + esc(pulse.usage.date || '') + '</div></td>' +
-        '<td class="path">Counted from the spend ledger, so a restart does not reset it</td>' +
-        '<td class="num"' + (pct > 0.7 ? ' style="color:var(--amber)"' : '') + '>' +
-        num(pulse.usage.count) + ' / ' + num(pulse.usage.dailyLimit) + '</td></tr>';
+      var over = pulse.usage.dailyLimit && pulse.usage.count / pulse.usage.dailyLimit > 0.7;
+      html += '<div class="caprow"><div class="bd"><b>Used so far today</b>' +
+        '<span>From the spend ledger, so a restart does not reset it.</span></div>' +
+        '<span class="v"' + (over ? ' style="color:var(--gold)"' : '') + '>' +
+        num(pulse.usage.count) + ' / ' + num(pulse.usage.dailyLimit) + '</span></div>';
     } else {
-      usage = '<tr><td><b>Used so far today</b></td><td class="path">Needs a running HaTi</td><td class="num">' + nd() + '</td></tr>';
+      html += '<div class="caprow"><div class="bd"><b>Used so far today</b><span>Needs a running HaTi to count.</span></div>' +
+        '<span class="v">' + nd() + '</span></div>';
     }
-
-    var key = '';
-    if (live) {
-      key = '<tr><td><b>AI key configured</b></td><td class="path">Whether a provider key is set — the key itself never leaves HaTi</td>' +
-        '<td class="num" style="color:' + (pulse.aiKeyConfigured ? 'var(--emerald)' : 'var(--amber)') + '">' +
-        (pulse.aiKeyConfigured ? 'yes' : 'no') + '</td></tr>';
-    }
-
-    html += '<table><tbody>' + rows + usage + key + '</tbody></table>';
 
     if (live) {
-      html += '<div class="blast-note">Read from the running HaTi at ' + esc(fmtDate(pulse.fetchedAt, true)) +
-        ', build <span class="path">' + esc(pulse.version || 'unknown') + '</span>. ' +
-        'That endpoint returns caps and counts only — no contract, party or user data of any kind crosses it.</div>';
+      html += '<div class="caprow"><div class="bd"><b>AI key configured</b>' +
+        '<span>Whether a provider key is set \u2014 the key itself never leaves HaTi.</span></div>' +
+        '<span class="badge ' + (pulse.aiKeyConfigured ? 'good' : 'gold') + '">' +
+        (pulse.aiKeyConfigured ? 'yes' : 'no') + '</span></div>';
     }
+
     $('capsBody').innerHTML = html;
   }
+
 
   /* ---- 3. where things are kept ---- */
   function renderData() {
@@ -566,28 +1007,28 @@
     var rows = st.tables.map(function (t) {
       var blob = (st.blobs || []).filter(function (b) { return b.record === 'appSettings' && t.name === 'settings'; })[0];
       return '<tr>' +
-        '<td><b>' + esc(t.name) + '</b><div class="path">' + t.columns.length + ' columns</div></td>' +
-        '<td>' + t.columns.map(function (c) { return '<span class="path">' + esc(c) + '</span>'; }).join(', ') +
-        (blob ? '<div style="margin-top:4px;color:var(--danger);font-size:11.5px">— and every custom template, in full</div>' : '') + '</td>' +
-        '<td class="path"' + (blob ? ' style="color:var(--danger)"' : '') + '>' + (blob ? 'see below' : 'server/server.js:' + t.line) + '</td>' +
+        '<td><b>' + esc(t.name) + '</b><div class="subnum">' + t.columns.length + ' columns</div></td>' +
+        '<td>' + t.columns.map(function (c) { return '<span class="codechip">' + esc(c) + '</span>'; }).join(' ') +
+        (blob ? '<div style="margin-top:5px;color:var(--badtx);font-size:11.5px">— and every custom template, in full</div>' : '') + '</td>' +
+        '<td class="r"' + (blob ? ' style="color:var(--badtx)"' : '') + '>' + (blob ? 'see below' : 'server.js:' + t.line) + '</td>' +
         '</tr>';
     }).join('');
 
-    var html = '<table><thead><tr><th style="width:150px">Holds</th><th>What’s inside</th><th style="width:140px">Note</th></tr></thead>' +
+    var html = '<table class="tbl"><thead><tr><th style="width:150px">Holds</th><th>What’s inside</th><th class="r" style="width:130px">Note</th></tr></thead>' +
       '<tbody>' + rows + '</tbody></table>';
 
     if (st.blobs && st.blobs.length) {
       html += st.blobs.map(function (b) {
-        return '<div class="blast-note"><b>Worth knowing.</b> ' + esc(b.note) +
+        return '<div class="note"><b>Worth knowing.</b> ' + esc(b.note) +
           (st.rewritesWholeRecord ? ' The settings route writes the whole record back on every save, so this is not theoretical.' : '') +
           ' Fine at two templates. Not fine at thirty with version history. ' +
-          '<span class="path">server/server.js:' + b.line + '</span></div>';
+          '<code>server/server.js:' + b.line + '</code></div>';
       }).join('');
     }
 
     if (st.settingKeys && st.settingKeys.length) {
-      html += '<div class="blast-note">The <span class="path">settings</span> table is a key/value store. ' +
-        'The keys written to it are: ' + st.settingKeys.map(function (k) { return '<span class="path">' + esc(k) + '</span>'; }).join(', ') + '.</div>';
+      html += '<div class="note">The <code>settings</code> table is a key/value store. ' +
+        'The keys written to it are: ' + st.settingKeys.map(function (k) { return '<span class="codechip">' + esc(k) + '</span>'; }).join(' ') + '.</div>';
     }
     $('dataBody').innerHTML = html;
   }
@@ -597,36 +1038,28 @@
   function renderBlast() {
     var d = scan.dependencies;
 
-    /* Three visual states, none of them obvious without being told. */
-    var html =
-      '<div class="key">' +
-        '<span class="k"><span class="sw on"></span><b>Reads it</b> — uses this data</span>' +
-        '<span class="k"><span class="sw risk"></span><b>Can break something already signed</b></span>' +
-        '<span class="k"><span class="sw off"></span>Not affected</span>' +
-      '</div>';
-
-    html += '<div class="blast"><div class="picks" id="picks">' +
+    var html = '<div class="blastwrap"><div class="picks2" id="picks">' +
       d.items.map(function (it, i) {
-        return '<button class="pick" aria-pressed="' + (i === 0) + '" data-k="' + esc(it.key) + '">' + esc(it.label) +
+        return '<button class="pick2" type="button" aria-pressed="' + (i === 0) + '" data-k="' + esc(it.key) + '">' + esc(it.label) +
           '<small>' + esc((it.fields || []).join(' · ')) + '</small></button>';
       }).join('') +
-      '</div><div class="deps" id="deps">' +
+      '</div><div class="deps2" id="deps">' +
       d.subsystems.map(function (s) {
-        return '<div class="dep" data-d="' + esc(s.id) + '"><div class="t">' + esc(s.title) + '</div>' +
+        return '<div class="dep2" data-d="' + esc(s.id) + '"><div class="t">' + esc(s.title) + '</div>' +
           '<div class="d">' + esc(s.desc) + '</div></div>';
       }).join('') +
-      '</div></div><div class="blast-note" id="blastNote"></div>';
+      '</div></div>';
 
     if (d.warnings && d.warnings.length) {
-      html += '<div class="warns"><h5>This map is out of date in ' + d.warnings.length + ' place' + (d.warnings.length === 1 ? '' : 's') + '</h5><ul>' +
+      html += '<div class="note"><b>This map is out of date in ' + d.warnings.length + ' place' + (d.warnings.length === 1 ? '' : 's') + '.</b><ul style="margin:6px 0 0;padding-left:18px">' +
         d.warnings.map(function (w) { return '<li>' + esc(w) + '</li>'; }).join('') + '</ul></div>';
     }
-    html += '<div class="blast-note" style="color:var(--n500)">These relationships are judgements about meaning, not something a parser can read out of code, so they are written by hand in <span class="path">' +
-      esc(d.source) + '</span>. Every subsystem and field named above is checked against HaTi’s source on each scan; anything stale is listed rather than quietly shown as fact.</div>';
+    html += '<div class="note" style="opacity:.8">These relationships are judgements about meaning, not something a parser can read out of code, so they are written by hand in <code>' +
+      esc(d.source) + '</code>. Every subsystem and field named above is checked against HaTi’s source on each scan; anything stale is listed rather than quietly shown as fact.</div>';
 
     $('blastBody').innerHTML = html;
 
-    var picks = $('blastBody').querySelectorAll('.pick');
+    var picks = $('blastBody').querySelectorAll('.pick2');
     picks.forEach(function (p) {
       p.addEventListener('click', function () {
         picks.forEach(function (x) { x.setAttribute('aria-pressed', String(x === p)); });
@@ -641,7 +1074,7 @@
     if (!item) return;
     currentPick = key;
     var risk = item.risk || [], on = item.reads || [];
-    $('blastBody').querySelectorAll('.dep').forEach(function (d) {
+    $('blastBody').querySelectorAll('.dep2').forEach(function (d) {
       var id = d.getAttribute('data-d');
       var isRisk = risk.indexOf(id) > -1;
       var isOn = isRisk || on.indexOf(id) > -1;
@@ -650,47 +1083,50 @@
       d.classList.toggle('off', !isOn);
     });
     $('blastNote').innerHTML = item.note;
+    $('blastNote').hidden = false;
   }
 
   /* ---- 5. not finished ---- */
   function renderGaps() {
     var g = scan.gaps;
     var html = '';
-    if (g.markerNote) {
-      html += '<div class="notice" style="background:var(--a100);border-color:var(--a300);color:var(--a800)"><div>' + esc(g.markerNote) + '</div></div>';
-    }
-    html += '<div class="gaps">' + g.gaps.map(function (x) {
-      var cls = x.severity === 'high' ? 'hi' : x.severity === 'medium' ? 'md' : x.severity === 'low' ? 'lo' : 'unset';
+    $('gapsBadge').textContent = g.gaps.length + ' gap' + (g.gaps.length === 1 ? '' : 's');
+    $('gapsBadge').hidden = false;
+
+    html += g.gaps.map(function (x) {
+      var cls = x.severity === 'high' ? ' hi' : x.severity === 'medium' ? ' md' : '';
       var title = x.severity ? 'Severity: ' + x.severity : 'The source does not state a severity';
-      return '<div class="gap"><span class="dot ' + cls + '" title="' + esc(title) + '"></span><div>' +
-        '<div class="t">' + esc(x.title) + (x.marker ? '<span class="flag">' + esc(x.marker) + '</span>' : '') + '</div>' +
-        (x.detail ? '<div class="d">' + esc(x.detail) + '</div>' : '') +
-        '<div class="src">' + esc(x.source) + ' ' + fixButton('gap', x.title) + '</div></div></div>';
-    }).join('') + '</div>';
+      return '<div class="gline"><span class="dot' + cls + '" title="' + esc(title) + '"></span><div>' +
+        '<b>' + esc(x.title) + (x.marker ? ' <span class="badge">' + esc(x.marker) + '</span>' : '') + '</b>' +
+        '<span>' + esc(x.source) + (x.detail ? ' · ' + esc(x.detail) : '') + ' ' + fixButton('gap', x.title) + '</span>' +
+        '</div></div>';
+    }).join('');
+
+    if (g.markerNote) html += '<div class="note">' + esc(g.markerNote) + '</div>';
 
     /* How the list has moved lately — the one thing on this panel that comes
        from the Mapper's own archive rather than from HaTi's source. */
     var mv = scan.gapMovement;
     if (mv && (mv.opened || mv.closed)) {
-      html += '<div class="blast-note"><b>' +
+      html += '<div class="note"><b>' +
         (mv.closed ? mv.closed + ' closed' : 'None closed') +
         ', ' + (mv.opened ? mv.opened + ' opened' : 'none opened') +
         ' in the last ' + mv.days + ' days.</b> Counted from the change log, so it only covers the time the Mapper has been watching.</div>';
     } else if (mv) {
-      html += '<div class="blast-note">Nothing on this list has opened or closed in the last ' + mv.days +
+      html += '<div class="note">Nothing on this list has opened or closed in the last ' + mv.days +
         ' days' + (mv.watchedSince ? ', and the Mapper has been watching since ' + esc(fmtDate(mv.watchedSince)) : '') + '.</div>';
     }
 
     if (g.ranked) {
       var sc = g.severityCounts;
-      html += '<div class="blast-note" style="color:var(--n500)">Ranked by the severity the documents state: ' +
+      html += '<div class="note" style="opacity:.8">Ranked by the severity the documents state: ' +
         sc.high + ' high, ' + sc.medium + ' medium, ' + sc.low + ' low' +
         (sc.unstated ? ', and ' + sc.unstated + ' that say nothing — those keep their source order underneath' : '') + '.</div>';
     } else {
-      html += '<div class="blast-note" style="color:var(--n500)">None of these sources states a severity, so none is shown. ' +
+      html += '<div class="note" style="opacity:.8">None of these sources states a severity, so none is shown. ' +
         'The order is the order the sources list them in, not a ranking. ' +
-        'To rank them, start a bullet in HaTi’s README or SECURITY.md with <span class="path">[high]</span>, ' +
-        '<span class="path">[medium]</span> or <span class="path">[low]</span> — nothing else needs to change here.</div>';
+        'To rank them, start a bullet in HaTi’s README or SECURITY.md with <code>[high]</code>, ' +
+        '<code>[medium]</code> or <code>[low]</code> — nothing else needs to change here.</div>';
     }
     $('gapsBody').innerHTML = html;
   }
@@ -703,11 +1139,11 @@
       p.hashes.length + ' URL hashes are handled before any session exists. Short list by design — if it grows, that is the finding.';
 
     var html = p.hashes.map(function (h) {
-      return '<div class="pub"><span class="u">' + esc(h.hash) + '=…</span><div>' +
-        '<div class="t"><b>' + esc(h.label || h.hash) + '</b></div>' +
-        '<div class="d">' + (h.detail ? esc(h.detail) : nd()) +
-        (h.beforeSession ? ' Handled in <span class="path">js/app.js:' + h.line + '</span>, before the session is checked.' : '') +
-        '</div></div></div>';
+      return '<div class="caprow"><div class="bd">' +
+        '<b><span class="codechip">' + esc(h.hash) + '=…</span> ' + esc(h.label || '') + '</b>' +
+        '<span>' + (h.detail ? esc(h.detail) : 'not detected') +
+        (h.beforeSession ? ' Handled in js/app.js:' + h.line + ', before the session is checked.' : '') +
+        '</span></div></div>';
     }).join('');
 
     html += p.routes.map(function (r) {
@@ -716,14 +1152,18 @@
       if (r.tokenGuarded) qual.push('checks its own bearer token in the handler');
       if (r.tokenInPath) qual.push('needs an unguessable token in the URL');
       if (r.middleware.length) qual.push('rate limited by ' + r.middleware.join(', '));
-      return '<div class="pub"><span class="u">' + esc(r.method) + ' ' + esc(r.path) + '</span><div>' +
-        '<div class="d">' + (qual.length ? esc(qual.join('; ')) + '.' : 'No login check and no other guard in the handler.') +
-        ' <span class="path">server/server.js:' + r.line + '</span></div></div></div>';
+      var bare = !qual.length;
+      return '<div class="caprow"><div class="bd">' +
+        '<b><span class="codechip">' + esc(r.method) + ' ' + esc(r.path) + '</span></b>' +
+        '<span' + (bare ? ' style="color:var(--badtx)"' : '') + '>' +
+        (bare ? 'No login check and no other guard in the handler.' : esc(qual.join('; ')) + '.') +
+        ' server/server.js:' + r.line + '</span></div>' +
+        (bare ? '<span class="badge bad">bare</span>' : '') + '</div>';
     }).join('');
 
-    html += '<div class="blast-note" style="color:var(--n500)">Derived by listing every <span class="path">app.get/post/put/patch/delete</span> ' +
-      'whose middleware chain does not include <span class="path">auth</span>. "No login check" is not the same as "anyone can read it" — ' +
-      'the qualifiers above say what actually guards each one.</div>';
+    html += '<div class="note">Derived by listing every <code>app.get/post/put/patch/delete</code> ' +
+      'whose middleware chain does not include <code>auth</code>. "No login check" is not the same as "anyone can read it" — ' +
+      'the notes above say what actually guards each one.</div>';
 
     $('publicBody').innerHTML = html;
   }
@@ -735,12 +1175,12 @@
      server never sends back a response body — only a status and a size band —
      so there is nothing here that could carry HaTi's data onto this page. */
   var VERDICT = {
-    'as-expected':      { cls: 'ok',       label: 'as written' },
-    'needs-login':      { cls: 'surprise', label: 'wants login' },
-    'unexpected-data':  { cls: 'surprise', label: 'gave data' },
-    'missing':          { cls: 'surprise', label: 'not there' },
-    'error':            { cls: 'surprise', label: 'errored' },
-    'unreachable':      { cls: 'unknown',  label: 'no answer' },
+    'as-expected':      { cls: 'good', label: 'as written' },
+    'needs-login':      { cls: 'bad',  label: 'wants login' },
+    'unexpected-data':  { cls: 'bad',  label: 'gave data' },
+    'missing':          { cls: 'bad',  label: 'not there' },
+    'error':            { cls: 'bad',  label: 'errored' },
+    'unreachable':      { cls: '',     label: 'no answer' },
   };
 
   function renderDoors(state) {
@@ -768,25 +1208,31 @@
 
     bar.textContent = 'Last asked ' + fmtDate(last.at, true) + '.';
 
-    var html = '<div class="blast-note"><b>' + esc(last.summary) + '</b></div>';
+    /* The tower leads with anything that answered when the code said it would
+       not, so it needs the result of this check as soon as there is one. */
+    doorsResult = last;
+    if (scan) { renderTowerDoors(); renderTowerAttention(); }
 
-    html += last.results.map(function (r) {
-      var v = VERDICT[r.verdict] || { cls: 'unknown', label: r.verdict };
-      return '<div class="knock ' + v.cls + '"><span class="v">' + esc(v.label) + '</span><div>' +
-        '<span class="u">' + esc(r.address) + '</span>' +
-        '<div class="d">' + esc(r.says) + '</div>' +
-        '<div class="d">The code led us to expect it ' + esc(r.expected) + '.</div></div></div>';
+    var html = last.results.map(function (r) {
+      var v = VERDICT[r.verdict] || { cls: '', label: r.verdict };
+      var surprise = r.verdict !== 'as-expected' && r.verdict !== 'unreachable';
+      return '<div class="knock2' + (surprise ? ' surprise' : '') + '">' +
+        '<span class="badge ' + v.cls + '">' + esc(v.label) + '</span><div class="bd">' +
+        '<span class="codechip">' + esc(r.address) + '</span>' +
+        '<div class="d">' + esc(r.says) + ' The code led us to expect it ' + esc(r.expected) + '.</div></div></div>';
     }).join('');
 
     if (last.skipped.length) {
       html += last.skipped.map(function (s) {
-        return '<div class="knock"><span class="v">left alone</span><div>' +
-          '<span class="u">' + esc(s.address) + '</span>' +
+        return '<div class="knock2"><span class="badge">left alone</span><div class="bd">' +
+          '<span class="codechip">' + esc(s.address) + '</span>' +
           '<div class="d">' + esc(s.reason) + '.</div></div></div>';
       }).join('');
     }
 
-    html += '<div class="doors-note"><b>What this did:</b> ' + last.requests +
+    html += '<div class="note"><b>' + esc(last.summary) + '</b></div>';
+
+    html += '<div class="note"><b>What this did:</b> ' + last.requests +
       ' plain request' + (last.requests === 1 ? '' : 's') + ' to ' + esc(last.site) +
       ', one at a time, ' + (last.throttleMs / 1000) + ' seconds apart, giving each ' +
       (last.timeoutMs / 1000) + ' seconds to answer, stopping at ' + last.cap +
@@ -836,12 +1282,14 @@
     var lede = $('watchLede');
     var body = $('watchBody');
     if (!watch) { body.innerHTML = skeleton(4); return; }
+    watchData = watch;
+    // The tower's calendar marks the days this log says something moved.
+    if (scan) renderTowerCal();
 
     if (!watch.watching) {
       lede.textContent = 'Every scan is compared with the one before, and anything that moved is kept here.';
-      body.innerHTML = '<div class="notice" style="background:var(--a100);border-color:var(--a300);color:var(--a800)"><div>' +
-        '<b>Just started watching.</b> This is the first scan, so there is nothing to compare it against yet. ' +
-        'Come back after the next one and anything that has moved will be listed here.</div></div>';
+      body.innerHTML = '<div class="note"><b>Just started watching.</b> This is the first scan, so there is nothing to compare it against yet. ' +
+        'Come back after the next one and anything that has moved will be listed here.</div>';
       return;
     }
 
@@ -852,27 +1300,27 @@
 
     var html = '';
     if (total === 0) {
-      html += '<div class="notice" style="background:var(--a100);border-color:var(--a300);color:var(--a800)"><div>' +
-        '<b>Nothing has moved' + (watchHours > 72 ? ' in ' + rangeLabel() : '') + '.</b> The Mapper has looked ' +
+      html += '<div class="note"><b>Nothing has moved' + (watchHours > 72 ? ' in ' + rangeLabel() : '') + '.</b> The Mapper has looked ' +
         watch.snapshots + ' time' + (watch.snapshots === 1 ? '' : 's') +
-        ' and found HaTi unchanged each time. That is a good sign, not a broken page.</div></div>';
+        ' and found HaTi unchanged each time. That is a good sign, not a broken page.</div>';
     } else {
       html += watch.rounds.map(function (r) {
-        return '<div class="round"><div class="when">' + esc(fmtDate(r.at, true)) +
+        return '<div class="round2"><div class="when">' + esc(fmtDate(r.at, true)) +
           (r.commit ? ' · code version ' + esc(r.commit) : '') + '</div>' +
           r.events.map(function (e) {
-            return '<div class="ev w' + (e.weight || 1) + '"><span class="k">' + esc(KIND_LABEL[e.kind] || e.kind) + '</span>' +
+            var w = e.weight || 1;
+            return '<div class="evrow"><span class="badge' + (w >= 3 ? ' bad' : w === 2 ? ' gold' : '') + '">' +
+              esc(KIND_LABEL[e.kind] || e.kind) + '</span>' +
               '<span class="x">' + esc(e.text) + '</span></div>';
           }).join('') + '</div>';
       }).join('');
     }
 
-    html += '<div class="blast-note" style="color:var(--n500)">A scan that finds nothing changed adds nothing here, so this stays a list of real events rather than a list of look-ups. ' +
+    lede.innerHTML = esc(lede.textContent) + ' <br>A scan that finds nothing changed adds nothing here, so this stays a list of real events rather than a list of look-ups. ' +
       'Everything noticed is kept for up to 90 days' +
       (watch.keptSince ? ' — this log goes back to ' + esc(fmtDate(watch.keptSince, true)) : '') + '.' +
       (watch.durable ? '' : ' <b>This log is being held in memory only</b> — it will be lost if the service restarts.') +
-      (watch.durable && !watch.archiveDurable ? ' <b>Nothing older than 72 hours can be kept</b> — the archive file cannot be written.' : '') +
-      '</div>';
+      (watch.durable && !watch.archiveDurable ? ' <b>Nothing older than 72 hours can be kept</b> — the archive file cannot be written.' : '');
 
     body.innerHTML = html;
   }
@@ -889,30 +1337,39 @@
     $('digestLede').textContent = 'Everything that moved ' + d.label + ', in one place.';
 
     if (d.quiet) {
-      body.innerHTML = '<div class="notice" style="background:var(--a100);border-color:var(--a300);color:var(--a800)"><div>' +
-        '<b>Nothing moved ' + esc(d.label) + '.</b> No screens, no addresses, no tables, no commits. ' +
-        'If a session was supposed to run, that is worth knowing too.</div></div>';
+      $('digestBadge').hidden = true;
+      body.innerHTML = '<div class="note"><b>Nothing moved ' + esc(d.label) + '.</b> No screens, no addresses, no tables, no commits. ' +
+        'If a session was supposed to run, that is worth knowing too.</div>';
       return;
     }
 
-    var html = '<div class="digest"><div class="head-line">' + esc(d.headline) + '</div>';
+    /* "Busy" is not a field the server sends — it is simply how many things
+       moved, which is the only thing that word could honestly mean here. */
+    var moved = d.sections.reduce(function (n, s) { return n + s.events.length; }, 0);
+    $('digestBadge').textContent = moved >= 4 ? 'busy night' : moved + ' event' + (moved === 1 ? '' : 's');
+    $('digestBadge').className = 'badge' + (moved >= 4 ? ' lav' : '');
+    $('digestBadge').hidden = false;
+
+    var html = '<div style="font-size:14px;font-weight:600;margin-bottom:10px">' + esc(d.headline) + '</div>';
 
     html += d.sections.map(function (s) {
-      return '<div class="sect"><h5>' + esc(s.title) + '</h5>' +
-        s.events.map(function (e) {
-          return '<p' + ((e.weight || 1) >= 3 ? ' class="big"' : '') + '>' + esc(e.text) + '</p>';
-        }).join('') + '</div>';
+      return s.events.map(function (e) {
+        var w = e.weight || 1;
+        return '<div class="evrow"><span class="badge' + (w >= 3 ? ' bad' : w === 2 ? ' gold' : '') + '">' +
+          esc(s.title) + '</span><span class="x">' + esc(e.text) + '</span></div>';
+      }).join('');
     }).join('');
 
     /* Numbered in the order the work happened, so the list reads as the story
        of the session rather than as an undifferentiated pile. The date sits
        above them because "since midnight" is relative and a date is not. */
     if (d.commits.length) {
-      html += '<div class="sect commits"><h5>The ' + d.commits.length +
-        (d.commits.length === 1 ? ' change' : ' changes') + ', in the order they happened</h5>' +
+      html += '<div class="commits" style="margin-top:12px;border-top:1px solid var(--line);padding-top:10px">' +
+        '<h5>The ' + d.commits.length + (d.commits.length === 1 ? ' change' : ' changes') +
+        ', in the order they happened</h5>' +
         '<div class="day">' + esc(fmtDate(d.commits[0].date)) + '</div>' +
         d.commits.map(function (c) {
-          return '<div class="commit"><span class="n">' + c.n + '</span>' +
+          return '<div class="commit2"><span class="n">' + c.n + '</span>' +
             '<span class="t">' + esc(c.subject) + '</span>' +
             '<span class="h" title="The reference number for this change">' + esc(c.sha) + '</span></div>';
         }).join('') + '</div>';
@@ -939,20 +1396,20 @@
       foot.push('Put together from ' + d.scanCount + ' look' + (d.scanCount === 1 ? '' : 's') +
         ' the Mapper took ' + d.label + '.');
     }
-    html += '<div class="foot">' + esc(foot.join(' ')) + '</div></div>';
-
+    html += '<div class="foot">' + esc(foot.join(' ')) + '</div>';
     body.innerHTML = html;
+    $('digestLede').textContent = foot.join(' ');
   }
 
   function loadDigest() {
     return apiGet('/api/digest').then(renderDigest, function () {
-      $('digestBody').innerHTML = '<div class="notice"><div>The summary could not be put together just now.</div></div>';
+      $('digestBody').innerHTML = '<div class="note">The summary could not be put together just now.</div>';
     });
   }
 
   function loadWatch() {
     return apiGet('/api/changes?hours=' + watchHours).then(renderWatch, function () {
-      $('watchBody').innerHTML = '<div class="notice"><div>The change log could not be read just now.</div></div>';
+      $('watchBody').innerHTML = '<div class="note">The change log could not be read just now.</div>';
     });
   }
 
@@ -970,18 +1427,18 @@
   /* ---- 7b. what changed in the code ---- */
   function renderChanges() {
     if (!scan.changes.length) {
-      $('changesBody').innerHTML = '<div class="notice"><div><b>No commit history.</b> The scan could not read the repository’s commits, so this panel has nothing to show. Everything else on this page comes from the source itself and is unaffected.</div></div>';
+      $('changesBody').innerHTML = '<div class="note"><b>No commit history.</b> The scan could not read the repository’s commits, so this panel has nothing to show. Everything else on this page comes from the source itself and is unaffected.</div>';
       return;
     }
     $('changesBody').innerHTML = scan.changes.map(function (c) {
       var files = c.fileCount != null ? c.fileCount + ' file' + (c.fileCount === 1 ? '' : 's') : null;
       var what;
-      if (c.areas === null) what = '<span class="none">areas not detected</span>';
-      else if (c.areas.length) what = 'Touched ' + esc(c.areas.join(', ')) + (files ? ' · ' + files : '');
+      if (c.areas === null) what = 'areas not detected';
+      else if (c.areas.length) what = 'Touched ' + c.areas.join(', ') + (files ? ' · ' + files : '');
       else what = (files || 'Files') + ', none in the tracked areas';
-      return '<div class="chg"><span class="when">' + esc(fmtDate(c.date)) + '</span><div>' +
-        '<div class="t">' + esc(c.subject) + '</div>' +
-        '<div class="d">' + what + ' <span class="path">' + esc(c.sha) + '</span></div></div></div>';
+      return '<div class="gline"><span class="dot"></span><div>' +
+        '<b>' + esc(c.subject) + '</b>' +
+        '<span>' + esc(fmtDate(c.date)) + ' · ' + esc(what) + ' · ' + esc(c.sha) + '</span></div></div>';
     }).join('');
   }
 
@@ -989,53 +1446,55 @@
   function renderWeight() {
     var w = scan.weight;
     var max = w.files.length ? w.files[0].bytes : 1;
-    var markPct = (w.threshold / max) * 100;
 
     /* A path is an address, not an answer. Each row leads with what the file
        IS and demotes the address to a chip, because the person reading this
        does not write code and should not have to decode one. */
-    var html = '<div class="files">' + w.files.map(function (f) {
+    /* A path is an address, not an answer. Each row leads with what the file
+       IS and demotes the address to a chip, because the person reading this
+       does not write code and should not have to decode one. */
+    var html = '<table class="tbl"><thead><tr><th>What it is</th><th style="width:210px">Lives in</th>' +
+      '<th class="r" style="width:80px">Size</th></tr></thead><tbody>' + w.files.map(function (f) {
       var big = f.bytes > w.threshold;
-      return '<div class="file' + (big ? ' big' : '') + '">' +
-        '<div class="top">' +
-        '<span class="nm">' + (f.name ? esc(f.name) : '<span class="none">no plain-English note yet</span>') + '</span>' +
-        '<span class="path" title="Where this file lives in HaTi">' + esc(f.path) + '</span>' +
-        (big ? fixButton('file-size', f.path) : '') +
-        '<span class="kb">' + kb(f.bytes) + (big ? ' · <b>over the line</b>' : '') + '</span></div>' +
-        (f.does ? '<div class="say">' + esc(f.does) + '</div>' : '') +
-        '<span class="track"><span class="fill" style="width:' + ((f.bytes / max) * 100).toFixed(1) + '%"></span></span>' +
-        '</div>';
-    }).join('') + '</div>';
+      return '<tr><td><b>' + (f.name ? esc(f.name) : nd('no plain-English note yet')) + '</b>' +
+        (f.does ? '<div class="subnum">' + esc(f.does) + '</div>' : '') +
+        '<div style="margin-top:5px;height:4px;border-radius:4px;background:var(--tile2);overflow:hidden">' +
+        '<span style="display:block;height:100%;width:' + ((f.bytes / max) * 100).toFixed(1) + '%;' +
+        'background:' + (big ? 'var(--gold)' : 'var(--lav)') + '"></span></div></td>' +
+        '<td><span class="codechip" title="Where this file lives in HaTi">' + esc(f.path) + '</span>' +
+        (big ? fixButton('file-size', f.path) : '') + '</td>' +
+        '<td class="r">' + kb(f.bytes) + (big ? '<div class="badge gold" style="margin-top:4px">over the line</div>' : '') + '</td></tr>';
+    }).join('') + '</tbody></table>';
 
-    html += '<div class="blast-note" style="color:var(--n500)"><b>What the sizes mean.</b> ' +
+    html += '<div class="note" style="opacity:.85"><b>What the sizes mean.</b> ' +
       'KB is how much text a file holds — ' + kb(w.threshold) + ' is roughly fifteen to twenty printed pages of code. ' +
       'Past that a file gets hard for a person, or for an AI session, to hold in mind at once, which is when mistakes creep in. ' +
       'That is all the gold colouring says: this one has outgrown comfortable.</div>';
 
     var worst = (scan.moduleFacts || []).filter(function (m) { return m.multiJob; })
       .sort(function (a, b) { return b.bytes - a.bytes; })[0];
-    html += '<div class="blast-note"><b>' + w.overThreshold + ' file' + (w.overThreshold === 1 ? ' is' : 's are') + ' past the comfortable line.</b>' +
-      (worst ? ' <span class="path">' + esc(worst.module) + '</span> carries ' + worst.sections.length +
+    html += '<div class="note"><b>' + w.overThreshold + ' file' + (w.overThreshold === 1 ? ' is' : 's are') + ' past the comfortable line.</b>' +
+      (worst ? ' <code>' + esc(worst.module) + '</code> carries ' + worst.sections.length +
         ' separately-banner-ed jobs and ' + worst.exportCount + ' exported names in ' + kb(worst.bytes) +
         '. Splitting it would make every future session on that area faster and safer.' : '') + '</div>';
 
     $('weightBody').innerHTML = html;
 
     if (!w.orphans.length) {
-      $('orphanBody').innerHTML = '<div class="notice" style="background:var(--a100);border-color:var(--a300);color:var(--a800)"><div>' +
-        'Every one of the ' + w.exportCount + ' names attached to <code>window</code> is referenced somewhere else in the repository. Nothing to remove.</div></div>';
+      $('orphanBody').innerHTML = '<div class="note">Every one of the ' + w.exportCount +
+        ' names attached to <code>window</code> is referenced somewhere else in the repository. Nothing to remove.</div>';
       return;
     }
     var byFile = {};
     w.orphans.forEach(function (o) { (byFile[o.exportedFrom] = byFile[o.exportedFrom] || []).push(o.name); });
-    $('orphanBody').innerHTML = '<table><thead><tr><th style="width:220px">Exported from</th><th>Never referenced anywhere else</th></tr></thead><tbody>' +
+    $('orphanBody').innerHTML = '<table class="tbl"><thead><tr><th style="width:220px">Exported from</th><th>Never referenced anywhere else</th></tr></thead><tbody>' +
       Object.keys(byFile).map(function (f) {
-        return '<tr><td class="path">' + esc(f) + '</td><td>' +
+        return '<tr><td><span class="codechip">' + esc(f) + '</span></td><td>' +
           byFile[f].map(function (n) {
-            return '<span class="path">' + esc(n) + '</span>' + fixButton('orphan', n);
+            return '<span class="codechip">' + esc(n) + '</span>' + fixButton('orphan', n);
           }).join(' ') + '</td></tr>';
       }).join('') +
-      '</tbody></table><div class="blast-note">' + w.orphans.length + ' of ' + w.exportCount +
+      '</tbody></table><div class="note">' + w.orphans.length + ' of ' + w.exportCount +
       ' exported names. Each appears exactly once outside the export blocks — its own declaration — so nothing calls it. ' +
       'Worth a look before assuming any of them is load-bearing.</div>';
   }
@@ -1047,9 +1506,10 @@
     var when = new Date(scan.scannedAt);
     var ageMs = Date.now() - when.getTime();
     var dayOld = ageMs > 24 * 60 * 60 * 1000;
-    el.textContent = 'scanned ' + fmtDate(scan.scannedAt, true) +
-      (scan.cached ? ' · cached' : '') + (dayOld ? ' · over a day old' : '');
-    el.className = 'stamp' + (dayOld || scan.stale ? ' old' : '');
+    el.innerHTML = 'Scanned ' + esc(fmtDate(scan.scannedAt, true)) +
+      (scan.cached ? ' · cached' : '') +
+      (dayOld ? ' · <b style="color:var(--gold)">over a day old</b>' : '');
+    el.style.color = dayOld || scan.stale ? 'var(--gold)' : '';
     el.title = scan.requestCount != null
       ? scan.requestCount + ' GitHub requests, ' + scan.fileCount + ' files read, ' + (scan.tookMs || 0) + ' ms'
       : '';
@@ -1075,33 +1535,8 @@
     el.hidden = false;
   }
 
-  /* ---- how much of HaTi the scanner could read ---- */
-
-  /* Every panel is built by matching patterns against source somebody else is
-     free to change. When that changes shape nothing breaks loudly — the panels
-     just fill up with "not detected". This is the number that makes that
-     visible before it matters. */
-  function renderHealth() {
-    var el = $('health');
-    var h = scan.health;
-    if (!h || h.percent == null) { el.hidden = true; return; }
-
-    var grade = h.percent >= 95 ? 'good' : h.percent >= 85 ? 'fair' : 'poor';
-    var missed = h.attempts - h.resolved;
-    var tail = h.percent === 100
-      ? 'Everything it looks for, it found.'
-      : missed + ' of the ' + num(h.attempts) + ' things it looks for came back as “not detected” or with a warning. ' +
-        (grade === 'poor'
-          ? '<b>That is low enough to be worth a look</b> — usually it means HaTi moved and the patterns here need updating.'
-          : 'Usually that means HaTi has moved slightly since these patterns were written.');
-
-    el.className = 'health ' + grade;
-    el.innerHTML = '<span class="pct">' + h.percent + '%</span><span>' +
-      '<b>The scanner could read ' + h.percent + '% of what it looks for.</b> ' + tail + '</span>';
-    el.title = h.resolved + ' of ' + h.attempts + ' facts resolved · ' + h.warnings +
-      ' warning' + (h.warnings === 1 ? '' : 's');
-    el.hidden = false;
-  }
+  /* How much of HaTi the scanner could read now lives on the control tower,
+     as the "Scanner grip" card — see renderTowerGrip. */
 
   /* ==================================================================== */
   /*  Which way things are moving                                          */
@@ -1113,7 +1548,7 @@
 
   var SPARK_W = 150, SPARK_H = 34;
 
-  function sparkline(values) {
+  function sparkline(values, colour) {
     var min = Math.min.apply(null, values);
     var max = Math.max.apply(null, values);
     var span = (max - min) || 1;
@@ -1130,11 +1565,12 @@
       pts[pts.length - 1].x.toFixed(1) + ',' + (SPARK_H - pad);
     var last = pts[pts.length - 1];
 
+    var c = colour || 'var(--lav)';
     return '<svg width="' + SPARK_W + '" height="' + SPARK_H + '" viewBox="0 0 ' + SPARK_W + ' ' + SPARK_H +
-      '" role="img" aria-hidden="true" focusable="false">' +
-      '<polygon class="area" points="' + area + '"></polygon>' +
-      '<polyline class="line" points="' + line + '"></polyline>' +
-      '<circle class="dot" cx="' + last.x.toFixed(1) + '" cy="' + last.y.toFixed(1) + '" r="2.2"></circle>' +
+      '" role="img" aria-hidden="true" focusable="false" style="margin:3px 0">' +
+      '<polygon points="' + area + '" fill="' + c + '" opacity=".18"></polygon>' +
+      '<polyline class="line" points="' + line + '" fill="none" stroke="' + c + '" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"></polyline>' +
+      '<circle cx="' + last.x.toFixed(1) + '" cy="' + last.y.toFixed(1) + '" r="2.2" fill="' + c + '"></circle>' +
       '</svg>';
   }
 
@@ -1168,11 +1604,11 @@
     if (!t) { el.hidden = true; return; }
 
     if (!t.enough) {
-      el.innerHTML = '<h3>Which way things are moving</h3>' +
-        '<p class="lede">Not enough history yet. Lines need at least three scans that found something different; ' +
+      el.innerHTML = '<div class="chead"><h3>Which way things are moving</h3></div>' +
+        '<div class="note">Not enough history yet. Lines need at least three scans that found something different; ' +
         'the Mapper has ' + t.points.length + '. ' +
-        (t.watchedSince ? 'It has been watching since ' + esc(fmtDate(t.watchedSince, true)) + '.' : '') +
-        ' Come back after a few days and this fills in.</p>';
+        (t.watchedSince ? 'It has been watching since ' + esc(fmtDate(t.watchedSince, true)) + '. ' : '') +
+        'Come back after a few days and this fills in.</div>';
       el.hidden = false;
       return;
     }
@@ -1180,34 +1616,45 @@
     var cards = TREND_SERIES.map(function (s) {
       var values = t.points.map(function (p) { return p[s.key]; }).filter(function (v) { return typeof v === 'number'; });
       if (values.length < 3) {
-        return '<div class="spark"><div class="t">' + esc(s.label) + '</div>' +
+        return '<div class="spark">' +
+          '<div class="t">' + esc(s.label) + '</div>' +
           '<div class="v">' + (values.length ? esc(s.fmt(values[values.length - 1])) : '—') + '</div>' +
           '<div class="d">Not measured for long enough to draw.</div></div>';
       }
       var dir = direction(values, t.days, s);
-      return '<div class="spark ' + dir.klass + '"><div class="t">' + esc(s.label) + '</div>' +
+      /* "up" here means moving the way the owner would not want, whichever
+         way the number itself went — so it is drawn in the warning colour. */
+      var colour = dir.klass === 'up' ? 'var(--gold)' : dir.klass === 'down' ? 'var(--lav)' : 'var(--tx3)';
+      return '<div class="spark ' + dir.klass + '">' +
+        '<div class="t">' + esc(s.label) + '</div>' +
         '<div class="v">' + esc(s.fmt(values[values.length - 1])) + '</div>' +
-        sparkline(values) +
+        sparkline(values, colour) +
         '<div class="d">' + esc(dir.text) + '</div></div>';
     }).join('');
 
-    el.innerHTML = '<h3>Which way things are moving</h3>' +
-      '<p class="lede">Each line is one reading per scan that found something different, over the last ' + t.days + ' days. ' +
-      'The shape is the point; the numbers underneath are where it stands now.</p>' +
+    el.innerHTML = '<div class="chead"><h3>Which way things are moving</h3>' +
+      '<span class="badge" style="margin-left:auto">' + t.points.length + ' readings</span></div>' +
       '<div class="spark-grid">' + cards + '</div>' +
-      '<div class="foot">Drawn from ' + t.points.length + ' readings kept in the change log’s archive — counts and byte sizes only, ' +
-      'no names and no paths.</div>';
+      '<div class="note">Each line is one reading per scan that found something different, over the last ' + t.days + ' days. ' +
+      'The shape is the point; the numbers above are where each stands now. Drawn from the change log\u2019s archive \u2014 ' +
+      'counts and byte sizes only, no names and no paths.</div>';
     el.hidden = false;
   }
 
+
   function loadTrends() {
-    return apiGet('/api/trends?days=90').then(renderTrends, function () { $('trends').hidden = true; });
+    return apiGet('/api/trends?days=90').then(function (t) {
+      trends = t;
+      renderTrends(t);
+      /* The tower's chart, calendar and "was X% a week ago" line all read the
+         same series, so they are only truthful once it has arrived. */
+      if (scan) renderTower();
+    }, function () { $('trends').hidden = true; });
   }
 
   function renderAll() {
     renderDrift();
-    renderGlance();
-    renderHealth();
+    renderTower();
     renderScreens();
     renderCost();
     renderData();
@@ -1221,10 +1668,13 @@
 
   function load(refresh) {
     setLoading();
+    /* The Rescan control is an icon, so its "working" state is the icon
+       turning rather than its label changing — setting textContent here would
+       throw the SVG away and leave an empty circle. */
     $('rescan').disabled = true;
-    $('rescan').textContent = refresh ? 'Rescanning…' : 'Rescan';
+    $('rescan').classList.add('spin');
     $('stamp').textContent = refresh ? 'rescanning…' : 'scanning…';
-    $('stamp').className = 'stamp';
+    $('stamp').style.color = '';
 
     /* The two routes are independent on purpose: the seven code-derived panels
        must render whether or not a HaTi is running, so a pulse failure never
@@ -1244,13 +1694,13 @@
         loadWatchRules();
         loadTrends();
         $('rescan').disabled = false;
-        $('rescan').textContent = 'Rescan';
+        $('rescan').classList.remove('spin');
       })
       .catch(function (e) {
         $('rescan').disabled = false;
-        $('rescan').textContent = 'Rescan';
+        $('rescan').classList.remove('spin');
         $('stamp').textContent = e.noBackend ? 'no backend' : 'scan failed';
-        $('stamp').className = 'stamp old';
+        $('stamp').style.color = 'var(--badtx)';
         /* Rescan retries the same request, so it only helps when the backend
            is there and the scan itself failed. Offering it for a missing
            backend just invites the same error again. */
@@ -1260,12 +1710,11 @@
           : 'Nothing on this page is current. Press Rescan to try again.';
         // Repeated failures raise a banner of their own; go and look.
         loadWatchRules();
-        var msg = '<div class="notice bad"><div><b>' + headline + '</b> ' + esc(e.message || 'Unknown error') +
-          '<br>' + footer + '</div></div>';
-        ['screensBody', 'costBody', 'dataBody', 'blastBody', 'gapsBody', 'publicBody', 'changesBody', 'weightBody', 'orphanBody']
+        var msg = '<div class="note bad"><b>' + headline + '</b> ' + esc(e.message || 'Unknown error') +
+          '<br>' + footer + '</div>';
+        TOWER_IDS.concat(['screensBody', 'costBody', 'dataBody', 'blastBody', 'gapsBody',
+          'publicBody', 'changesBody', 'weightBody', 'orphanBody', 'capsBody'])
           .forEach(function (id) { $(id).innerHTML = msg; });
-        $('capsBody').innerHTML = msg;
-        $('glance').innerHTML = '';
       });
   }
 
@@ -1590,7 +2039,7 @@
     }
     var b = e.target.closest('button[data-tab]');
     if (!b) return;
-    var tab = document.querySelector('.nav button[data-p="' + b.getAttribute('data-tab') + '"]');
+    var tab = document.querySelector('.pills button[data-p="' + b.getAttribute('data-tab') + '"]');
     if (tab) { tab.click(); askOpen(false); }
   });
 
@@ -1623,11 +2072,13 @@
       : '—';
     var st = $('setKeyState');
     if (cfg.configured) {
-      st.className = 'state good';
+      st.className = 'state';
+      st.style.color = 'var(--goodtx)';
       st.textContent = 'Saved · ' + cfg.hint +
         (cfg.source === 'environment' ? ' (from this service’s environment)' : '');
     } else {
       st.className = 'state';
+      st.style.color = '';
       st.textContent = cfg.environmentFallback
         ? 'Not set here — falling back to the service environment.'
         : 'Not set. The assistant cannot answer until you add one.';
@@ -1635,7 +2086,7 @@
     $('setEmail').textContent = (authInfo && authInfo.email) || '—';
     $('setStorageNote').innerHTML = cfg.storageIsDurable
       ? 'Your account, your key, the day’s question count and the change log are written to this service’s disk.'
-      : '<b>This service has no permanent disk.</b> Your account, your key and the change log are held in memory, so they will be lost when it restarts or redeploys. Attach a disk in your hosting dashboard and point <code style="font-family:var(--mono)">MAPPER_DATA</code> at it to make them permanent.';
+      : '<b>This service has no permanent disk.</b> Your account, your key and the change log are held in memory, so they will be lost when it restarts or redeploys. Attach a disk in your hosting dashboard and point <code>MAPPER_DATA</code> at it to make them permanent.';
   }
 
   function settingsState(id, kind, text) {
@@ -1690,7 +2141,7 @@
 
   var watch = null;
 
-  var TRIP_ICON = '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">' +
+  var TRIP_ICON = '<svg width="18" height="18" style="flex:none;margin-top:2px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">' +
     '<path d="M12 9v4M12 17h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>';
 
   function renderTripped(tripped, trouble) {
@@ -1702,19 +2153,19 @@
        is nothing to dismiss — it stays until a scan works again. It goes
        first, because while it is showing, everything below it is stale. */
     if (trouble) {
-      html += '<div class="trip"' + ' id="scanTrouble">' + TRIP_ICON + '<div class="body">' +
-        '<h4>The Mapper cannot read HaTi’s code</h4>' +
-        '<p>It has failed ' + trouble.failedScans + ' times in a row, since ' + esc(fmtDate(trouble.since, true)) + '. ' +
+      html += '<div class="trip" id="scanTrouble">' + TRIP_ICON + '<div class="bd">' +
+        '<b>The Mapper cannot read HaTi’s code</b>' +
+        '<div>It has failed ' + trouble.failedScans + ' times in a row, since ' + esc(fmtDate(trouble.since, true)) + '. ' +
         'Reason: ' + esc(trouble.reason || 'not recorded') + '. ' +
         'Everything on this page is the last scan that worked, so it will look correct while describing older code.' +
         (trouble.emailed ? ' You have been emailed about this once; there will not be another until a scan succeeds.' : '') +
-        '</p></div></div>';
+        '</div></div></div>';
     }
 
     html += list.map(function (t) {
-      return '<div class="trip">' + TRIP_ICON + '<div class="body">' +
-        '<h4>' + esc(t.title) + '</h4>' +
-        '<p>' + esc(t.text) + '</p>' +
+      return '<div class="trip">' + TRIP_ICON + '<div class="bd">' +
+        '<b>' + esc(t.title) + '</b>' +
+        '<div>' + esc(t.text) + '</div>' +
         '<div class="when">noticed ' + esc(fmtDate(t.at, true)) + ' ' + fixButton('tripped', t.key) + '</div>' +
         '</div><button type="button" data-key="' + esc(t.key) + '">Dismiss</button></div>';
     }).join('');
@@ -1747,8 +2198,8 @@
       if (r.name === 'aiRequests' && !w.canWatchLiveUsage) {
         why += ' Right now the Mapper cannot reach the running HaTi, so this one cannot be checked.';
       }
-      return '<div class="rule"><div class="body"><div class="say">' + say + '</div>' +
-        '<div class="why">' + esc(why) + '</div></div>' +
+      return '<div class="rule"><div class="bd"><b>' + say + '</b>' +
+        '<div class="subnum">' + esc(why) + '</div></div>' +
         '<button type="button" class="toggle" data-rule="' + esc(r.name) + '" aria-pressed="' + (r.on ? 'true' : 'false') + '">' +
         (r.on ? 'On' : 'Off') + '</button></div>';
     }).join('');

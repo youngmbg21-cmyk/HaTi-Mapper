@@ -4,439 +4,403 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
-<title>HaTi — Platform map (internal)</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%232c455d'/%3E%3Cpath d='M4 4v8M12 4v8M4 8h8' stroke='%23fff' stroke-width='1.6' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
+<title>HaTi — Control tower (internal)</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%232dd4bf'/%3E%3Cpath d='M4 3v10M12 3v10M4 8h8' stroke='%23042f2e' stroke-width='1.8' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
-:root{
-  --bg:#f4f3f0; --surface:#ffffff; --text:#1d1f20; --accent:#5980a6; --divider:#eeece7;
-  --n100:#f5f5f8; --n200:#e7e7ea; --n300:#d4d4d7; --n400:#b7b7ba; --n500:#98989b;
-  --n600:#7a7a7d; --n700:#5d5d60; --n800:#424244; --n900:#2b2b2d;
-  --a100:#eef6ff; --a300:#b5d9fd; --a700:#416180; --a800:#2c455d;
-  --emerald:#2e8763; --emerald-d:#1e6b4d; --amber:#b8862b; --danger:#b0453c;
-  --proc:#2e9f80; --mfg:#b45309; --dist:#0369a1; --sales:#b8862b; --mktg:#7c3aed; --corp:#2e8763;
+/* ------------------------------------------------------------------ tokens
+   Dark is the resting state; `.light` on <body> swaps every token and nothing
+   else. They live on <body> rather than on the shell so the assistant, the
+   toast and the sign-in card — all of which sit outside the shell — are
+   coloured by the same switch. */
+body{
+  --sh:#0b1120; --card:#0f172a; --tile:#1e293b; --tile2:#293548; --line:#1e293b;
+  --tx:#f1f5f9; --tx2:#94a3b8; --tx3:#64748b;
+  --lav:#2dd4bf; --lavd:#14b8a6; --gold:#f59e0b;
+  --onlav:#042f2e; --ongold:#3b2503;
+  --good:#123f31; --goodtx:#6ee7b7; --bad:#46201f; --badtx:#fca5a5;
+  --shadow:0 8px 40px -8px rgba(0,0,0,.55);
   --font:"IBM Plex Sans",system-ui,-apple-system,sans-serif;
   --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,monospace;
-  --r-sm:5px; --r-md:10px;
-  --shadow:0 1px 2px rgba(43,43,45,.05), 0 10px 26px -12px rgba(43,43,45,.20);
 }
+body.light{
+  --sh:#f1f5f9; --card:#ffffff; --tile:#f8fafc; --tile2:#e2e8f0; --line:#e2e8f0;
+  --tx:#0f172a; --tx2:#475569; --tx3:#94a3b8;
+  --lav:#0d9488; --lavd:#99f6e4; --gold:#d97706;
+  --onlav:#f0fdfa; --ongold:#fffbeb;
+  --good:#d1fae5; --goodtx:#065f46; --bad:#fee2e2; --badtx:#991b1b;
+  --shadow:0 8px 40px -14px rgba(15,23,42,.28);
+}
+
 *{box-sizing:border-box;}
 /* A `display` rule beats the hidden attribute, so anything given display:flex
    or display:grid stays visible when hidden. Restate it once, globally, rather
    than remembering a [hidden] override for every such rule. */
 [hidden]{display:none !important;}
-body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font);font-size:15px;line-height:1.55;-webkit-font-smoothing:antialiased;}
-.wrap{max-width:1140px;margin:0 auto;padding:24px 22px 72px;}
+html{background:#020617;}
+body{margin:0;background:var(--sh);color:var(--tx);font-family:var(--font);font-size:15px;line-height:1.55;
+  -webkit-font-smoothing:antialiased;min-height:100vh;transition:background .25s,color .25s;}
+body.light{background:var(--sh);}
+a{color:inherit;}
+.mono{font-family:var(--mono);}
+:focus-visible{outline:2px solid var(--lav);outline-offset:2px;border-radius:6px;}
+@media(prefers-reduced-motion:reduce){*{transition:none !important;}}
 
-/* ---------- dev banner ---------- */
-.devbar{display:flex;align-items:flex-start;gap:11px;background:#fdf6e7;border:1px solid #ecd9a8;border-left:3px solid var(--amber);border-radius:var(--r-sm);padding:11px 14px;margin-bottom:20px;}
-.devbar-ic{flex:none;width:17px;height:17px;margin-top:1px;color:var(--amber);}
-.devbar h4{margin:0 0 2px;font-size:14.5px;font-weight:600;color:#7a5715;}
-.devbar p{margin:0;font-size:13.5px;color:#8a6a2e;line-height:1.5;}
-.devbar code{font-family:var(--mono);font-size:12.5px;background:#f7ecd2;padding:1px 5px;border-radius:3px;}
+.shell{min-height:100vh;padding:16px 22px 22px;}
+/* Every panel reserves a screenful. A short panel that collapsed the document
+   would drag the reader up with it when they switched tabs. */
+.panel{min-height:calc(100vh - 140px);}
+.shell .inner{max-width:1440px;margin:0 auto;overflow-anchor:none;}
 
-/* ---------- header ---------- */
-.head{display:flex;align-items:flex-end;justify-content:space-between;gap:18px;flex-wrap:wrap;margin-bottom:16px;}
-.head h1{margin:0;font-size:25px;font-weight:600;letter-spacing:-0.015em;}
-.head .sub{margin:3px 0 0;font-size:14px;color:var(--n600);}
-.head-actions{display:flex;gap:7px;align-items:center;}
-.btn{display:inline-flex;align-items:center;gap:7px;font-family:var(--font);font-weight:600;font-size:14px;color:var(--text);background:var(--surface);border:1px solid var(--divider);border-radius:var(--r-sm);padding:8px 15px;cursor:pointer;transition:border-color .15s,background .15s;}
-.btn:hover{border-color:var(--n300);}
-.btn-primary{background:var(--a800);border-color:var(--a800);color:#fff;}
-.btn-primary:hover{background:var(--a700);border-color:var(--a700);}
-.btn[disabled]{opacity:.55;cursor:default;}
-.stamp{font-family:var(--mono);font-size:12.5px;color:var(--n500);}
-.stamp.old{color:var(--amber);font-weight:500;}
+/* ------------------------------------------------------------------ topbar
+   Pinned, so the tabs are always under the cursor however far down the page
+   you have read. The shell's own top padding is folded into this rule so the
+   bar does not jump when it sticks. */
+.topbar{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:14px;
+  padding:8px 8px 16px;flex-wrap:wrap;background:var(--sh);}
+.brand{font-size:19px;font-weight:700;letter-spacing:-0.02em;display:flex;align-items:center;gap:9px;flex:none;}
+.brand i{width:26px;height:26px;border-radius:8px;background:var(--lav);display:flex;align-items:center;justify-content:center;}
+.brand i svg{width:14px;height:14px;color:var(--onlav);}
+.pills{margin:0 auto;display:flex;flex-wrap:wrap;justify-content:center;gap:4px;background:var(--card);border:1px solid var(--line);border-radius:22px;padding:4px;}
+.pills button{font-family:var(--font);font-size:13px;font-weight:600;color:var(--tx2);background:none;border:0;border-radius:999px;
+  padding:7px 15px;cursor:pointer;white-space:nowrap;transition:background .15s,color .15s;}
+.pills button:hover{color:var(--tx);}
+.pills button[aria-selected="true"]{background:var(--lav);color:var(--onlav);}
+.tops{display:flex;align-items:center;gap:8px;flex:none;}
+.iconbtn{width:36px;height:36px;flex:none;border-radius:50%;border:1px solid var(--line);background:var(--card);color:var(--tx2);
+  display:flex;align-items:center;justify-content:center;cursor:pointer;transition:color .15s,border-color .15s,background .15s;}
+.iconbtn:hover{color:var(--tx);border-color:var(--tx3);}
+.iconbtn[aria-selected="true"]{background:var(--lav);color:var(--onlav);border-color:var(--lav);}
+.iconbtn:disabled{opacity:.45;cursor:default;}
+.iconbtn.spin svg{animation:spin .9s linear infinite;}
+@keyframes spin{to{transform:rotate(360deg);}}
+.who{display:flex;align-items:center;gap:9px;background:var(--card);border:1px solid var(--line);border-radius:999px;padding:4px 14px 4px 5px;}
+.who .av{width:28px;height:28px;flex:none;border-radius:50%;background:var(--lav);color:var(--onlav);font-size:11px;font-weight:700;
+  display:flex;align-items:center;justify-content:center;}
+.who b{display:block;font-size:12.5px;font-weight:600;line-height:1.2;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.who span{display:block;font-size:10.5px;color:var(--tx3);line-height:1.2;}
+@media(max-width:900px){.who div{display:none;}.who{padding:4px;}}
+/* On a phone the wrapped pill rows would eat the screen, so the bar gives up
+   its pin and scrolls away with everything else. */
+@media(max-width:700px){.topbar{position:static;}}
 
-/* ---------- segmented nav ---------- */
-/* Pinned to the top of the window, so switching tabs is one click from
-   wherever you have read to. The hairline gives the pinned row an edge, so
-   content scrolling underneath it does not look like it belongs to it.
-   The tabs WRAP rather than scroll sideways. At this type size all nine no
-   longer fit across the column, and a scrolling strip slides the whole row
-   when you click a tab near its end — so the tabs move out from under the
-   cursor, which is the same complaint as the page jumping. Wrapped, every tab
-   is always visible and always in the same place. */
-.nav{position:sticky;top:0;z-index:20;display:flex;flex-wrap:wrap;gap:2px;background:var(--bg);padding:10px 0 11px;margin-bottom:4px;border-bottom:1px solid var(--divider);}
-/* On a phone the wrapped rows would eat most of the screen, so the row gives
-   up its pin there and simply scrolls away with the rest of the page. */
-@media (max-width:700px){.nav{position:static;}}
-.nav button{flex:none;font-family:var(--font);font-size:13.5px;font-weight:600;color:var(--n600);background:none;border:0;border-radius:var(--r-sm);padding:8px 13px;cursor:pointer;white-space:nowrap;transition:background .12s,color .12s;}
-.nav button:hover{color:var(--text);background:var(--n100);}
-.nav button[aria-selected="true"]{background:var(--a800);color:#fff;}
+/* ------------------------------------------------------------------- grids */
+.grid1{display:grid;grid-template-columns:1.35fr .82fr 1fr;gap:12px;margin-bottom:12px;}
+.grid2{display:grid;grid-template-columns:1.05fr .85fr 1.25fr .9fr;gap:12px;margin-bottom:12px;}
+.grid3{display:grid;grid-template-columns:1.9fr 1fr;gap:12px;margin-bottom:12px;align-items:start;}
+.grid4{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;align-items:start;}
+@media(max-width:1100px){.grid2{grid-template-columns:1fr 1fr;}}
+@media(max-width:980px){.grid1{grid-template-columns:1fr 1fr;}.grid3,.grid4{grid-template-columns:1fr;}}
+@media(max-width:640px){.grid1,.grid2,.grid3,.grid4{grid-template-columns:1fr;}}
 
-/* ---------- cards ---------- */
-.card{background:var(--surface);border:1px solid var(--divider);border-radius:var(--r-md);box-shadow:var(--shadow);padding:22px 24px;margin-bottom:16px;}
-.card > h2{margin:0 0 4px;font-size:17px;font-weight:600;letter-spacing:-0.01em;}
-.card > .lede{margin:0 0 17px;font-size:13.5px;color:var(--n600);line-height:1.5;}
-.eyebrow{font-family:var(--mono);font-size:10.5px;font-weight:600;letter-spacing:.13em;text-transform:uppercase;color:var(--n500);}
+/* ------------------------------------------------------------------- cards */
+.card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:16px 17px;min-width:0;margin-bottom:12px;}
+.card:last-child{margin-bottom:0;}
+.tblwrap{overflow-x:auto;}
+.chead{display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap;}
+.chead h3{margin:0;font-size:14.5px;font-weight:600;letter-spacing:-0.01em;}
+.chead .seg{margin-left:auto;display:flex;gap:2px;background:var(--tile);border-radius:999px;padding:3px;flex-wrap:wrap;}
+.chead .seg button{font-family:var(--font);font-size:11px;font-weight:600;color:var(--tx3);background:none;border:0;border-radius:999px;padding:4px 10px;cursor:pointer;}
+.chead .seg button[aria-pressed="true"],.chead .seg button.on{background:var(--tx);color:var(--sh);}
+.chead .go{margin-left:auto;}
+.ph{display:flex;align-items:baseline;gap:12px;margin:2px 6px 14px;flex-wrap:wrap;}
+.ph h2{margin:0;font-size:22px;font-weight:700;letter-spacing:-0.02em;}
+.ph span{font-size:12.5px;color:var(--tx3);}
 
-/* ---------- glance strip ---------- */
-.glance{display:grid;grid-template-columns:repeat(auto-fit,minmax(112px,1fr));gap:1px;background:var(--divider);border:1px solid var(--divider);border-radius:var(--r-md);overflow:hidden;margin-bottom:14px;}
-.g{background:var(--surface);padding:15px 17px;}
-.g .n{font-family:var(--mono);font-size:24px;font-weight:600;letter-spacing:-0.02em;line-height:1.1;}
-.g .l{font-size:12.5px;color:var(--n600);margin-top:3px;}
-.g.warn .n{color:var(--amber);}
+/* -------------------------------------------------------------- primitives */
+.bignum{font-size:30px;font-weight:700;letter-spacing:-0.03em;line-height:1.05;}
+.subnum{font-size:11.5px;color:var(--tx3);margin-top:3px;}
+.delta{display:inline-flex;align-items:center;gap:3px;font-size:11px;font-weight:700;border-radius:999px;padding:2px 8px;vertical-align:6px;margin-left:7px;}
+.delta.good{background:var(--good);color:var(--goodtx);}
+.delta.bad{background:var(--bad);color:var(--badtx);}
+.delta.flat{background:var(--tile2);color:var(--tx2);}
+.duo{display:flex;gap:26px;margin-bottom:6px;flex-wrap:wrap;}
+.badge{display:inline-block;font-size:9.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;border-radius:5px;padding:2px 7px;background:var(--tile2);color:var(--tx2);}
+.badge.lav{background:var(--lav);color:var(--onlav);}
+.badge.gold{background:var(--gold);color:var(--ongold);}
+.badge.good{background:var(--good);color:var(--goodtx);}
+.badge.bad{background:var(--bad);color:var(--badtx);}
+.codechip{font-family:var(--mono);font-size:11px;background:var(--tile);border-radius:6px;padding:2px 7px;color:var(--tx2);white-space:nowrap;}
+.note{background:var(--tile);border-radius:13px;padding:11px 14px;font-size:12.5px;color:var(--tx2);line-height:1.55;margin-top:12px;}
+.note b{color:var(--tx);font-weight:600;}
+.note.bad{background:var(--bad);color:var(--badtx);}
+.note.bad b{color:var(--badtx);}
+.note code{font-family:var(--mono);font-size:11.5px;background:var(--tile2);border-radius:5px;padding:1px 5px;}
+.nd{color:var(--tx3);font-style:italic;}
+.btn{display:inline-flex;align-items:center;gap:7px;font-family:var(--font);font-weight:600;font-size:13px;color:var(--tx);background:var(--tile);
+  border:1px solid var(--line);border-radius:999px;padding:8px 15px;cursor:pointer;transition:background .15s,border-color .15s,color .15s;}
+.btn:hover{border-color:var(--tx3);}
+.btn:disabled{opacity:.5;cursor:default;}
+.btn-primary{background:var(--lav);border-color:var(--lav);color:var(--onlav);}
+.btn-primary:hover{background:var(--lavd);border-color:var(--lavd);}
+.state{font-size:12px;color:var(--tx3);}
+.stamp{font-family:var(--mono);font-size:11px;color:var(--tx3);}
 
-/* ---------- how much the scanner could read ---------- */
-.health{display:flex;align-items:center;gap:10px;margin:-6px 0 14px;font-size:13.5px;color:var(--n600);line-height:1.5;}
-.health .pct{flex:none;font-family:var(--mono);font-size:14px;font-weight:600;padding:3px 9px;border-radius:999px;background:var(--n100);color:var(--n700);}
-.health.good .pct{background:#eef7f2;color:var(--emerald-d);}
-.health.fair .pct{background:#fdf6e7;color:#8a6a2e;}
-.health.poor .pct{background:#fdf1f0;color:#8f322b;}
-.health b{color:var(--text);font-weight:600;}
+/* -------------------------------------------------------------- the charts */
+.chartwrap{position:relative;margin-top:8px;padding-top:22px;}
+.chip{position:absolute;font-size:11px;font-weight:600;background:var(--tile2);border:1px solid var(--line);border-radius:999px;padding:3px 9px;color:var(--tx);white-space:nowrap;}
+.chip i{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:5px;}
+.axis{display:flex;justify-content:space-between;font-size:10px;color:var(--tx3);margin-top:5px;padding:0 4px;font-family:var(--mono);}
+.bars{display:grid;grid-template-columns:repeat(7,1fr);gap:7px;align-items:end;height:118px;margin-top:34px;}
+.bcol{position:relative;display:flex;flex-direction:column;justify-content:flex-end;height:100%;}
+.bar{border-radius:8px;background:var(--tile2);width:100%;min-height:2px;}
+.bar.hatch{background:repeating-linear-gradient(45deg,var(--tile2) 0 3px,var(--card) 3px 6px);}
+.bar.hi{background:var(--lav);}
+.bar.au{background:var(--gold);}
+.bval{position:absolute;top:-22px;left:50%;transform:translateX(-50%);font-size:10.5px;font-weight:700;background:var(--tile2);border:1px solid var(--line);border-radius:999px;padding:1px 7px;}
+.blabels{display:grid;grid-template-columns:repeat(7,1fr);gap:7px;margin-top:6px;text-align:center;font-size:10px;color:var(--tx3);font-family:var(--mono);}
+.spark-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px;}
+.spark{background:var(--tile);border-radius:12px;padding:10px 12px;min-width:0;}
+.spark .t{font-size:10px;color:var(--tx3);line-height:1.3;}
+.spark .v{font-size:17px;font-weight:700;letter-spacing:-0.02em;margin-top:1px;}
+.spark .d{font-size:10.5px;color:var(--tx3);line-height:1.4;}
+.spark.up .v{color:var(--gold);}
+.spark.down .v{color:var(--lav);}
+.bubbles{position:relative;height:196px;margin-top:4px;}
+.bub{position:absolute;border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;}
+.bub b{font-size:inherit;font-weight:700;letter-spacing:-0.02em;}
+.bub span{font-size:9.5px;font-weight:500;opacity:.75;line-height:1.2;}
 
-/* ---------- which way things are moving ---------- */
-.trends{background:var(--surface);border:1px solid var(--divider);border-radius:var(--r-md);box-shadow:var(--shadow);padding:15px 18px 13px;margin-bottom:14px;}
-.trends h3{margin:0 0 2px;font-size:15px;font-weight:600;}
-.trends .lede{margin:0 0 13px;font-size:13.5px;color:var(--n600);line-height:1.5;}
-.spark-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:14px 18px;}
-.spark .t{font-size:12.5px;color:var(--n600);}
-.spark .v{font-family:var(--mono);font-size:18px;font-weight:600;letter-spacing:-0.02em;line-height:1.2;margin-top:1px;}
-.spark svg{display:block;margin:4px 0 3px;overflow:visible;}
-.spark .line{fill:none;stroke:var(--accent);stroke-width:1.6;stroke-linejoin:round;stroke-linecap:round;}
-.spark .area{fill:var(--a100);stroke:none;}
-.spark .dot{fill:var(--accent);}
-.spark.up .line{stroke:var(--amber);} .spark.up .area{fill:#fdf6e7;} .spark.up .dot{fill:var(--amber);}
-.spark.down .line{stroke:var(--emerald);} .spark.down .area{fill:#eef7f2;} .spark.down .dot{fill:var(--emerald);}
-.spark .d{font-size:12.5px;color:var(--n600);line-height:1.45;}
-.spark.up .d{color:#8a6a2e;} .spark.down .d{color:var(--emerald-d);}
-.trends .foot{margin-top:12px;padding-top:10px;border-top:1px solid var(--divider);font-size:13px;color:var(--n500);line-height:1.5;}
+/* ------------------------------------------------------------- the calendar */
+.cal{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:14px 15px;display:flex;flex-direction:column;margin-bottom:12px;}
+.cal .head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
+.cal .head .mon{font-size:12.5px;font-weight:600;background:var(--tile);border-radius:999px;padding:6px 13px;}
+.cal .days{display:grid;grid-template-columns:repeat(7,1fr);gap:5px;flex:1;align-content:start;}
+.cal .dow{font-size:10px;font-family:var(--mono);color:var(--tx3);text-align:center;letter-spacing:.06em;text-transform:uppercase;}
+.cal .d{aspect-ratio:1/.92;display:flex;align-items:center;justify-content:center;font-size:11.5px;font-weight:500;color:var(--tx2);border-radius:10px;background:var(--tile);}
+.cal .d.blank{background:transparent;}
+.cal .d.scan{background:var(--tile2);color:var(--tx);}
+.cal .d.hot{background:var(--lav);color:var(--onlav);font-weight:700;}
+.cal .d.today{outline:2px solid var(--gold);outline-offset:-2px;color:var(--tx);font-weight:700;}
+.cal .foot{display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--tile);border-radius:12px;padding:10px 13px;margin-top:11px;}
+.cal .foot .v{font-size:20px;font-weight:700;letter-spacing:-0.02em;}
+.cal .foot .l{font-size:10.5px;color:var(--tx3);}
 
-/* ---------- tables ---------- */
-table{width:100%;border-collapse:collapse;font-size:14px;}
-th{text-align:left;font-family:var(--mono);font-size:10.5px;font-weight:600;letter-spacing:.11em;text-transform:uppercase;color:var(--n500);padding:0 12px 9px 0;border-bottom:1px solid var(--divider);}
-td{padding:10px 12px 10px 0;border-bottom:1px solid var(--divider);vertical-align:top;}
-tr:last-child td{border-bottom:0;}
-tbody tr:hover{background:#fcfcfb;}
-.path{font-family:var(--mono);font-size:12.5px;color:var(--n500);}
-.tier{display:inline-block;font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:.05em;padding:2px 7px;border-radius:999px;}
-.tier.fast{background:var(--a100);color:var(--a800);}
-.tier.deep{background:#f3ecfd;color:#5b21b6;}
-.num{font-family:var(--mono);text-align:right;white-space:nowrap;}
+/* ----------------------------------------------------------------- the rows */
+.minis{display:flex;gap:8px;margin:10px 0 4px;}
+.mini{flex:1;display:flex;align-items:center;gap:8px;background:var(--tile);border-radius:12px;padding:9px 11px;min-width:0;}
+.mini .ic{width:26px;height:26px;border-radius:8px;display:flex;align-items:center;justify-content:center;flex:none;}
+.mini .ic.ok{background:var(--good);color:var(--goodtx);}
+.mini .ic.no{background:var(--bad);color:var(--badtx);}
+.mini b{font-size:16px;font-weight:700;display:block;line-height:1.1;}
+.mini span{font-size:10px;color:var(--tx3);display:block;}
+.rows{display:flex;flex-direction:column;gap:7px;}
+.row{display:flex;align-items:center;gap:10px;background:var(--tile);border-radius:13px;padding:8px 10px;}
+.row .ic{width:34px;height:34px;border-radius:10px;flex:none;display:flex;align-items:center;justify-content:center;}
+.row .ic.sev-hi{background:var(--bad);color:var(--badtx);}
+.row .ic.sev-md{background:var(--gold);color:var(--ongold);}
+.row .ic.sev-lo{background:var(--tile2);color:var(--tx2);}
+.row .bd{flex:1;min-width:0;}
+.row .bd b{display:block;font-size:12.5px;font-weight:600;line-height:1.25;}
+.row .tag{display:inline-block;font-size:9.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;border-radius:5px;padding:1px 6px;margin-top:3px;background:var(--tile2);color:var(--tx2);}
+.row .tag.hi{background:var(--bad);color:var(--badtx);}
+.row .kchip{flex:none;font-size:12px;font-weight:700;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:6px 10px;font-family:var(--mono);}
+.statehead{display:flex;align-items:baseline;gap:8px;}
+.filerow{display:flex;align-items:center;gap:9px;padding:7px 0;border-bottom:1px solid var(--line);}
+.filerow:last-child{border-bottom:0;}
+.filerow .sw{width:20px;height:14px;border-radius:4px;flex:none;}
+.filerow .nm{flex:1;min-width:0;font-size:12px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:var(--mono);color:var(--tx2);}
+.filerow .kb{flex:none;font-size:12px;font-weight:700;font-family:var(--mono);}
+.caprow{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line);}
+.caprow:last-child{border-bottom:0;}
+.caprow .bd{flex:1;min-width:0;}
+.caprow .bd b{display:block;font-size:12.5px;font-weight:600;}
+.caprow .bd span{display:block;font-size:11px;color:var(--tx3);margin-top:1px;line-height:1.4;}
+.caprow .v{flex:none;font-family:var(--mono);font-size:13px;font-weight:700;}
+.knock2{display:flex;gap:11px;align-items:flex-start;background:var(--tile);border-radius:13px;padding:10px 12px;margin-bottom:7px;}
+.knock2 .bd{flex:1;min-width:0;}
+.knock2 .bd .d{font-size:12px;color:var(--tx2);margin-top:3px;line-height:1.5;}
+.knock2 .badge{margin-top:2px;min-width:78px;text-align:center;}
+/* A door that did not behave as the code describes is the whole point of this
+   card, so it is marked on the row itself rather than only in its badge. */
+.knock2.surprise{background:var(--bad);}
+.knock2.surprise .bd .d{color:var(--badtx);}
+.knock2.surprise .codechip{background:rgba(0,0,0,.25);color:var(--badtx);}
+.gline{display:flex;gap:10px;align-items:flex-start;padding:9px 0;border-bottom:1px solid var(--line);}
+.gline:last-child{border-bottom:0;}
+.gline .dot{flex:none;width:8px;height:8px;border-radius:50%;margin-top:5px;background:var(--tile2);}
+.gline .dot.hi{background:#ef4444;}
+.gline .dot.md{background:var(--gold);}
+.gline b{display:block;font-size:12.5px;font-weight:600;line-height:1.35;}
+.gline span{display:block;font-size:11px;color:var(--tx3);margin-top:1px;line-height:1.45;}
+.evrow{display:flex;gap:9px;align-items:flex-start;padding:5px 0;}
+.evrow .badge{flex:none;min-width:66px;text-align:center;margin-top:1px;}
+.evrow .x{font-size:12.5px;color:var(--tx2);line-height:1.5;}
+.round2{padding:10px 0;border-bottom:1px solid var(--line);}
+.round2:last-child{border-bottom:0;}
+.round2 .when{font-family:var(--mono);font-size:10px;color:var(--tx3);margin-bottom:4px;}
+.commits h5{margin:0 0 2px;font-family:var(--mono);font-size:9.5px;font-weight:600;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--tx3);}
+.commits .day{font-family:var(--mono);font-size:10px;font-weight:600;color:var(--lav);margin-bottom:4px;}
+.foot{font-size:11.5px;color:var(--tx3);line-height:1.5;margin-top:10px;}
+.commit2{display:flex;gap:10px;align-items:baseline;padding:7px 0;border-bottom:1px solid var(--line);}
+.commit2:last-child{border-bottom:0;}
+.commit2 .n{flex:none;width:22px;height:22px;border-radius:50%;background:var(--lav);color:var(--onlav);font-size:11px;font-weight:700;
+  display:flex;align-items:center;justify-content:center;align-self:flex-start;}
+.commit2 .t{flex:1;font-size:12.5px;color:var(--tx2);line-height:1.45;}
+.commit2 .h{flex:none;font-family:var(--mono);font-size:10px;color:var(--tx3);background:var(--tile);border-radius:6px;padding:2px 7px;}
+.stream2{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:var(--tx2);background:var(--tile);border-radius:999px;padding:5px 12px;}
+.stream2 i{width:8px;height:8px;border-radius:50%;display:block;flex:none;}
 
-/* ---------- stream chips ---------- */
-.streams{display:flex;flex-wrap:wrap;gap:6px 12px;margin-top:10px;align-items:center;}
-.stream{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--n700);}
-.stream i{width:4px;height:12px;border-radius:2px;display:block;}
+/* ----------------------------------------------------------------- tables */
+.tbl{width:100%;border-collapse:collapse;font-size:13px;}
+.tbl th{text-align:left;font-family:var(--mono);font-size:9.5px;font-weight:600;letter-spacing:.11em;text-transform:uppercase;color:var(--tx3);
+  padding:0 12px 10px 0;border-bottom:1px solid var(--line);}
+.tbl td{padding:11px 12px 11px 0;border-bottom:1px solid var(--line);vertical-align:top;line-height:1.45;}
+.tbl tr:last-child td{border-bottom:0;}
+.tbl td b{font-weight:600;}
+.tbl .dim{color:var(--tx2);}
+.tbl .r{text-align:right;font-family:var(--mono);white-space:nowrap;}
 
-/* ---------- blast radius ---------- */
-.blast{display:grid;grid-template-columns:210px 1fr;gap:18px;}
-@media(max-width:720px){.blast{grid-template-columns:1fr;}}
-.picks{display:flex;flex-direction:column;gap:5px;}
-.pick{text-align:left;font-family:var(--font);font-size:14px;font-weight:500;color:var(--n800);background:var(--surface);border:1px solid var(--divider);border-left:3px solid var(--n300);border-radius:var(--r-sm);padding:9px 11px;cursor:pointer;transition:border-color .15s,background .15s;}
-.pick:hover{background:var(--n100);}
-.pick[aria-pressed="true"]{background:var(--a100);border-color:var(--a300);border-left-color:var(--accent);color:var(--a800);font-weight:600;}
-.pick small{display:block;font-family:var(--mono);font-size:11px;color:var(--n500);font-weight:400;margin-top:2px;}
-.pick[aria-pressed="true"] small{color:var(--a700);}
-.deps{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:7px;align-content:start;}
-.dep{border:1px solid var(--divider);border-radius:var(--r-sm);padding:9px 11px;transition:opacity .22s,border-color .22s,background .22s,transform .22s;}
-.dep .t{font-size:13.5px;font-weight:600;}
-.dep .d{font-size:12.5px;color:var(--n600);margin-top:2px;line-height:1.45;}
-.dep.off{opacity:.22;}
-.dep.on{border-color:var(--accent);background:var(--a100);}
-.dep.on.risk{border-color:var(--danger);background:#fdf1f0;}
-.dep.on .d{color:var(--a700);}
-.dep.on.risk .d{color:#8f322b;}
-.blast-note{margin-top:13px;font-size:13.5px;color:var(--n600);line-height:1.55;border-top:1px solid var(--divider);padding-top:11px;}
-.blast-note b{color:var(--text);font-weight:600;}
+/* ------------------------------------------------------------ what breaks */
+.picks2{display:flex;flex-direction:column;gap:6px;}
+.pick2{text-align:left;font-family:var(--font);font-size:13px;font-weight:600;color:var(--tx2);background:var(--tile);border:1px solid transparent;
+  border-radius:12px;padding:9px 12px;cursor:pointer;transition:background .15s,color .15s,border-color .15s;}
+.pick2:hover{color:var(--tx);}
+.pick2[aria-pressed="true"]{background:var(--lav);color:var(--onlav);}
+.pick2 small{display:block;font-family:var(--mono);font-size:9.5px;font-weight:400;opacity:.7;margin-top:2px;}
+.deps2{display:grid;grid-template-columns:repeat(auto-fill,minmax(148px,1fr));gap:7px;align-content:start;}
+.dep2{border-radius:12px;padding:9px 11px;background:var(--tile);transition:opacity .2s,background .2s;}
+.dep2 .t{font-size:12.5px;font-weight:600;}
+.dep2 .d{font-size:11px;color:var(--tx3);margin-top:1px;line-height:1.4;}
+.dep2.off{opacity:.28;}
+.dep2.on{background:var(--lav);}
+.dep2.on .t{color:var(--onlav);}
+.dep2.on .d{color:var(--onlav);opacity:.78;}
+.dep2.on.risk{background:var(--bad);}
+.dep2.on.risk .t{color:var(--badtx);}
+.dep2.on.risk .d{color:var(--badtx);opacity:.78;}
+.blastwrap{display:grid;grid-template-columns:220px 1fr;gap:14px;align-items:start;}
+@media(max-width:720px){.blastwrap{grid-template-columns:1fr;}}
+.keyline{display:flex;flex-wrap:wrap;gap:8px 18px;align-items:center;margin-bottom:12px;font-size:12px;color:var(--tx2);}
+.keyline .sw{display:inline-block;width:22px;height:13px;border-radius:4px;vertical-align:-2px;margin-right:6px;}
 
-/* legend for the three states a box can be in */
-.key{display:flex;flex-wrap:wrap;gap:7px 18px;align-items:center;margin-bottom:12px;padding-bottom:11px;border-bottom:1px solid var(--divider);}
-.key .k{display:inline-flex;align-items:center;gap:7px;font-size:13.5px;color:var(--n700);}
-.key .sw{flex:none;width:26px;height:16px;border-radius:3px;border:1px solid var(--divider);}
-.key .sw.on{border-color:var(--accent);background:var(--a100);}
-.key .sw.risk{border-color:var(--danger);background:#fdf1f0;}
-.key .sw.off{opacity:.22;background:var(--surface);}
-.key b{color:var(--text);font-weight:600;}
-
-/* ---------- gap list ---------- */
-.gaps{display:flex;flex-direction:column;gap:0;}
-.gap{display:flex;gap:11px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--divider);}
-.gap:last-child{border-bottom:0;}
-.dot{flex:none;width:7px;height:7px;border-radius:50%;margin-top:6px;}
-.dot.hi{background:var(--danger);} .dot.md{background:var(--amber);} .dot.lo{background:var(--n400);}
-.dot.unset{background:transparent;border:1.5px solid var(--n300);}
-.gap .t{font-size:14.5px;font-weight:600;}
-.gap .d{font-size:13.5px;color:var(--n600);margin-top:2px;line-height:1.5;}
-.gap .src{font-family:var(--mono);font-size:11px;color:var(--n500);margin-top:3px;}
-
-/* ---------- file sizes ----------
-   Each row leads with what the file IS. The path is still there, demoted to a
-   chip, because it is the answer to a different question. */
-.files{display:flex;flex-direction:column;}
-.file{padding:11px 0;border-top:1px solid var(--divider);}
-.file:first-child{border-top:0;}
-.file .top{display:flex;gap:9px;align-items:baseline;flex-wrap:wrap;}
-.file .nm{font-size:15.5px;font-weight:600;color:var(--text);}
-.file .path{font-family:var(--mono);font-size:12px;color:var(--n600);background:var(--n100);border-radius:4px;padding:1px 7px;}
-.file .kb{margin-left:auto;font-family:var(--mono);font-size:13px;color:var(--n600);font-variant-numeric:tabular-nums;white-space:nowrap;}
-.file .kb b{color:var(--amber);font-weight:600;}
-.file .say{font-size:14.5px;color:var(--n700);line-height:1.55;margin-top:3px;max-width:70ch;}
-.file .track{display:block;height:7px;background:var(--n100);border-radius:999px;overflow:hidden;margin-top:8px;}
-/* display:block matters: as a plain inline span the fill's width and height
-   were ignored and every bar rendered empty. */
-.file .fill{display:block;height:100%;border-radius:999px;background:var(--accent);}
-.file.big .fill{background:var(--amber);}
-
-/* ---------- public surface ---------- */
-.pub{display:flex;gap:11px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--divider);}
-.pub:last-child{border-bottom:0;}
-.pub .u{font-family:var(--mono);font-size:13px;color:var(--a800);background:var(--a100);padding:2px 7px;border-radius:3px;flex:none;}
-.pub .d{font-size:13.5px;color:var(--n600);line-height:1.5;}
-
-/* ---------- knocking on the doors ---------- */
-.doors{display:flex;align-items:center;gap:11px;flex-wrap:wrap;margin:0 0 13px;padding-bottom:12px;border-bottom:1px solid var(--divider);}
-.doors .state{font-size:13.5px;color:var(--n600);line-height:1.5;}
-.knock{display:flex;gap:11px;align-items:flex-start;padding:9px 0;border-bottom:1px solid var(--divider);}
-.knock:last-child{border-bottom:0;}
-.knock .v{flex:none;font-family:var(--mono);font-size:10px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;padding:2px 7px;border-radius:3px;margin-top:2px;min-width:74px;text-align:center;background:var(--n100);color:var(--n600);}
-.knock.ok .v{background:#eef7f2;color:var(--emerald-d);}
-.knock.surprise .v{background:#fdf1f0;color:#8f322b;}
-.knock.unknown .v{background:#fdf6e7;color:#8a6a2e;}
-.knock .u{font-family:var(--mono);font-size:13px;color:var(--a800);}
-.knock .d{font-size:13.5px;color:var(--n600);line-height:1.5;margin-top:2px;}
-.knock.surprise .d{color:#8f322b;}
-.doors-note{margin:11px 0 0;font-size:13.5px;color:var(--n600);line-height:1.55;}
-.doors-note b{color:var(--text);font-weight:600;}
-
-/* ---------- changes ---------- */
-.chg{display:flex;gap:13px;padding:11px 0;border-bottom:1px solid var(--divider);}
-.chg:last-child{border-bottom:0;}
-.chg .when{font-family:var(--mono);font-size:12px;color:var(--n500);flex:none;width:66px;padding-top:1px;}
-.chg .t{font-size:14.5px;font-weight:600;}
-.chg .d{font-size:13.5px;color:var(--n600);margin-top:2px;line-height:1.5;}
-
-/* ---------- states added when the mockup became an app ---------- */
-.panel[hidden]{display:none;}
-/* Switching tabs must not move the page, and the page can only hold its
-   position if the document stays tall enough to reach it. A short panel that
-   collapsed the document would drag the scroll — and the reader — up with it,
-   so every panel reserves a screenful. The cost is some white space under the
-   shortest ones, which is worth it. */
-.panel{min-height:calc(100vh - 100px);}
-/* Chrome shifts the scroll position on its own when content above the viewport
-   changes height, which is exactly what swapping panels does. This is a page
-   of independent panels, not a feed, so that guesswork is unwanted. */
-.wrap{overflow-anchor:none;}
-:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:3px;}
-@media(prefers-reduced-motion:reduce){*{transition:none!important;}}
-
-/* loading */
-.skel{display:flex;flex-direction:column;gap:9px;padding:4px 0 2px;}
-.skel i{display:block;height:10px;border-radius:3px;background:linear-gradient(90deg,var(--n100) 25%,#ececf0 37%,var(--n100) 63%);background-size:400% 100%;animation:sh 1.4s ease infinite;}
-.skel i:nth-child(2){width:88%} .skel i:nth-child(3){width:72%} .skel i:nth-child(4){width:80%} .skel i:nth-child(5){width:60%}
-@keyframes sh{0%{background-position:100% 50%}100%{background-position:0 50%}}
-@media(prefers-reduced-motion:reduce){.skel i{animation:none;}}
-.loading-note{font-size:13.5px;color:var(--n600);margin-top:10px;line-height:1.5;}
-.loading-note b{color:var(--text);font-weight:600;}
-
-/* muted / missing values */
-.none{font-style:italic;color:var(--n500);}
-.flag{display:inline-block;font-family:var(--mono);font-size:10.5px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;padding:2px 6px;border-radius:3px;background:#fdf6e7;color:#8a6a2e;margin-left:6px;vertical-align:1px;}
-.flag.info{background:var(--a100);color:var(--a800);}
-
-/* degraded panel notice */
-.notice{display:flex;gap:9px;align-items:flex-start;background:#fdf6e7;border:1px solid #ecd9a8;border-radius:var(--r-sm);padding:10px 12px;margin-bottom:14px;font-size:13.5px;color:#8a6a2e;line-height:1.5;}
-.notice.bad{background:#fdf1f0;border-color:#eec7c3;color:#8f322b;}
-.notice b{font-weight:600;}
-.notice code{font-family:var(--mono);font-size:12.5px;background:rgba(0,0,0,.05);padding:1px 5px;border-radius:3px;}
-
-/* stale-map warnings under "what breaks what" */
-.warns{margin-top:12px;border-top:1px solid var(--divider);padding-top:11px;}
-.warns h5{margin:0 0 5px;font-size:13.5px;font-weight:600;color:#8f322b;}
-.warns ul{margin:0;padding-left:17px;}
-.warns li{font-size:13px;color:var(--n600);line-height:1.5;}
-
-/* ---------- change log ---------- */
-.round{padding:11px 0;border-bottom:1px solid var(--divider);}
-.round:last-child{border-bottom:0;}
-.round .when{font-family:var(--mono);font-size:11px;color:var(--n500);margin-bottom:5px;}
-.ev{display:flex;gap:9px;align-items:flex-start;padding:3px 0;}
-.ev .k{flex:none;font-family:var(--mono);font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--n500);background:var(--n100);padding:2px 6px;border-radius:3px;margin-top:2px;min-width:58px;text-align:center;}
-.ev.w3 .k{background:#fdf1f0;color:#8f322b;} .ev.w2 .k{background:#fdf6e7;color:#8a6a2e;}
-.ev .x{font-size:14px;color:var(--n800);line-height:1.5;}
-.ev.w3 .x{font-weight:500;}
-
-/* ---------- a tripwire went off ---------- */
-.tripped{margin-bottom:14px;}
-.trip{display:flex;gap:11px;align-items:flex-start;background:#fdf1f0;border:1px solid #eec7c3;border-left:3px solid var(--danger);border-radius:var(--r-sm);padding:11px 14px;margin-bottom:7px;}
-.trip .ic{flex:none;width:17px;height:17px;margin-top:1px;color:var(--danger);}
-.trip .body{flex:1;min-width:0;}
-.trip h4{margin:0 0 2px;font-size:14.5px;font-weight:600;color:#8f322b;}
-.trip p{margin:0;font-size:13.5px;color:#8f322b;line-height:1.5;}
-.trip .when{font-family:var(--mono);font-size:11px;color:#a9635c;margin-top:3px;}
-.trip button{flex:none;font-family:var(--font);font-size:13px;font-weight:600;color:#8f322b;background:transparent;border:1px solid #eec7c3;border-radius:var(--r-sm);padding:4px 10px;cursor:pointer;}
-.trip button:hover{background:#fbe6e4;}
-
-/* ---------- watch rules ---------- */
-.rule{display:flex;gap:14px;align-items:flex-start;padding:12px 0;border-bottom:1px solid var(--divider);}
-.rule:last-child{border-bottom:0;}
-.rule .body{flex:1;min-width:0;}
-.rule .say{font-size:14.5px;color:var(--text);line-height:1.5;}
-.rule .why{font-size:13px;color:var(--n600);margin-top:3px;line-height:1.45;}
-.rule input{width:78px;font-family:var(--mono);font-size:14px;color:var(--text);background:var(--bg);border:1px solid var(--divider);border-radius:var(--r-sm);padding:3px 8px;margin:0 5px;}
-.rule .toggle{flex:none;font-family:var(--font);font-size:13px;font-weight:600;min-width:52px;padding:5px 12px;border-radius:999px;border:1px solid var(--divider);background:var(--surface);color:var(--n600);cursor:pointer;}
-.rule .toggle[aria-pressed="true"]{background:var(--a800);border-color:var(--a800);color:#fff;}
-
-/* ---------- draft a fix prompt ---------- */
-.fixbtn{display:inline-block;font-family:var(--font);font-size:11px;font-weight:600;letter-spacing:.02em;color:var(--a800);background:var(--a100);border:1px solid var(--a300);border-radius:999px;padding:1px 8px;margin-left:6px;cursor:pointer;vertical-align:1px;white-space:nowrap;}
-.fixbtn:hover{background:#e2effd;}
-.trip .fixbtn{color:#8f322b;background:#fbe6e4;border-color:#eec7c3;}
-.trip .fixbtn:hover{background:#f7d8d5;}
-.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;}
-.srcs button.copy{font-weight:600;}
-
-/* ---------- last night ---------- */
-.digest .head-line{font-size:15px;font-weight:600;color:var(--text);line-height:1.5;margin-bottom:11px;}
-.digest .sect{padding:9px 0;border-top:1px solid var(--divider);}
-.digest .sect h5{margin:0 0 4px;font-family:var(--mono);font-size:10.5px;font-weight:600;letter-spacing:.11em;text-transform:uppercase;color:var(--n500);}
-.digest .sect p{margin:0 0 3px;font-size:14px;color:var(--n800);line-height:1.5;}
-.digest .sect p:last-child{margin-bottom:0;}
-.digest .sect p.big{font-weight:500;}
-.digest .foot{margin-top:11px;padding-top:10px;border-top:1px solid var(--divider);font-size:13.5px;color:var(--n600);line-height:1.5;}
-/* The night's changes, numbered in the order they happened. */
-.digest .commits .day{font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--a700);padding:1px 0 3px;}
-.digest .commit{display:flex;gap:11px;align-items:baseline;padding:7px 0;border-top:1px solid var(--divider);font-variant-numeric:tabular-nums;}
-.digest .commit .n{flex:none;width:22px;text-align:right;font-weight:700;color:var(--a700);font-size:13.5px;}
-.digest .commit .t{flex:1;color:var(--n800);line-height:1.5;}
-.digest .commit .h{flex:none;font-family:var(--mono);font-size:11px;color:var(--n600);background:var(--n100);border-radius:4px;padding:2px 7px;}
-
-/* ---------- how far back to look ---------- */
-.range{display:flex;flex-wrap:wrap;gap:4px;margin:0 0 13px;}
-.range button{font-family:var(--font);font-size:13px;font-weight:600;color:var(--n600);background:var(--surface);border:1px solid var(--divider);border-radius:999px;padding:4px 11px;cursor:pointer;transition:background .12s,color .12s,border-color .12s;}
-.range button:hover{border-color:var(--n300);color:var(--text);}
-.range button[aria-pressed="true"]{background:var(--a800);border-color:var(--a800);color:#fff;}
-.range button[disabled]{opacity:.5;cursor:default;}
-
-/* ---------- assistant ---------- */
-.ask-launch{position:fixed;right:20px;bottom:20px;z-index:40;display:inline-flex;align-items:center;gap:8px;background:var(--a800);color:#fff;border:0;border-radius:999px;padding:11px 18px;cursor:pointer;font-family:var(--font);font-weight:600;font-size:14.5px;box-shadow:0 3px 16px rgba(43,43,45,.28);transition:background .15s,transform .15s;}
-.ask-launch:hover{background:var(--a700);transform:translateY(-1px);}
-.ask-launch[hidden]{display:none;}
-
-.ask{position:fixed;right:20px;bottom:20px;z-index:41;width:min(440px,calc(100vw - 40px));height:min(620px,calc(100vh - 40px));display:flex;flex-direction:column;background:var(--surface);border:1px solid var(--divider);border-radius:var(--r-md);box-shadow:0 8px 40px -8px rgba(43,43,45,.34);overflow:hidden;}
-.ask[hidden]{display:none;}
-.ask-head{flex:none;display:flex;align-items:flex-start;gap:10px;padding:13px 15px;border-bottom:1px solid var(--divider);}
-.ask-head h3{margin:0;font-size:15.5px;font-weight:600;}
-.ask-head .brain{display:flex;align-items:center;gap:5px;font-size:12.5px;color:var(--n600);margin-top:2px;}
-.ask-head .brain i{width:6px;height:6px;border-radius:50%;background:var(--n400);display:block;}
-.ask-head .brain.live i{background:var(--emerald);}
-.ask-acts{margin-left:auto;flex:none;display:flex;align-items:center;gap:2px;}
-.ask-x{flex:none;display:inline-flex;align-items:center;justify-content:center;background:none;border:0;color:var(--n500);cursor:pointer;line-height:1;padding:5px;border-radius:4px;}
-.ask-x:hover{background:var(--n100);color:var(--text);}
-.ask-x.close{font-size:19px;padding:2px 7px;}
-
-/* Expanded: wider and taller, for reading a long answer without scrolling it
-   through a letterbox. The preference is remembered between visits. */
-.ask.expanded{width:min(860px,calc(100vw - 40px));height:calc(100vh - 40px);}
-.ask.expanded .msg{max-width:76%;}
-
-/* a brief confirmation, for actions whose effect is easy to miss */
-.toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);z-index:60;background:var(--n900);color:#fff;font-size:14px;padding:9px 16px;border-radius:999px;box-shadow:0 3px 16px rgba(43,43,45,.3);opacity:0;transition:opacity .18s;pointer-events:none;}
-.toast.on{opacity:1;}
-
-.ask-feed{flex:1;overflow-y:auto;padding:14px 15px;display:flex;flex-direction:column;gap:12px;}
-.msg{max-width:92%;font-size:14.5px;line-height:1.6;}
-.msg.me{align-self:flex-end;background:var(--a800);color:#fff;border-radius:10px 10px 2px 10px;padding:9px 12px;}
-.msg.bot{align-self:flex-start;color:var(--text);}
-.msg.bot .body{background:var(--n100);border-radius:10px 10px 10px 2px;padding:10px 13px;}
-.msg.bot p{margin:0 0 8px;} .msg.bot p:last-child{margin:0;}
-.msg.bot ul,.msg.bot ol{margin:6px 0;padding-left:19px;} .msg.bot li{margin:3px 0;}
-.msg.bot code{font-family:var(--mono);font-size:13px;background:rgba(0,0,0,.06);padding:1px 4px;border-radius:3px;}
-.msg.bot strong{font-weight:600;}
-.msg.err .body{background:#fdf1f0;color:#8f322b;}
-.watch{margin-top:8px;background:#fdf6e7;border-left:2px solid var(--amber);border-radius:3px;padding:8px 11px;font-size:13.5px;color:#8a6a2e;line-height:1.5;}
-.srcs{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px;}
-.srcs button{font-family:var(--font);font-size:12.5px;font-weight:500;color:var(--a800);background:var(--a100);border:1px solid var(--a300);border-radius:999px;padding:3px 10px;cursor:pointer;}
-.srcs button:hover{background:#e2effd;}
-.typing{display:flex;gap:4px;padding:11px 13px;background:var(--n100);border-radius:10px;align-self:flex-start;}
-.typing i{width:6px;height:6px;border-radius:50%;background:var(--n400);animation:bo 1.2s infinite;}
-.typing i:nth-child(2){animation-delay:.15s} .typing i:nth-child(3){animation-delay:.3s}
-@keyframes bo{0%,60%,100%{opacity:.3;transform:translateY(0)}30%{opacity:1;transform:translateY(-3px)}}
-@media(prefers-reduced-motion:reduce){.typing i{animation:none;opacity:.6;}}
-
-.sugg{display:flex;flex-wrap:wrap;gap:6px;padding:0 15px 12px;}
-.sugg button{font-family:var(--font);font-size:13px;color:var(--n700);background:var(--surface);border:1px solid var(--divider);border-radius:999px;padding:6px 11px;cursor:pointer;text-align:left;}
-.sugg button:hover{border-color:var(--n300);background:var(--n100);}
-
-.ask-foot{flex:none;border-top:1px solid var(--divider);padding:11px 13px;}
-.ask-form{display:flex;gap:8px;align-items:flex-end;}
-.ask-form textarea{flex:1;font-family:var(--font);font-size:14.5px;color:var(--text);background:var(--bg);border:1px solid var(--divider);border-radius:var(--r-sm);padding:9px 11px;resize:none;max-height:110px;line-height:1.5;}
-.ask-form textarea:focus{outline:2px solid var(--accent);outline-offset:1px;}
-.ask-note{font-size:12px;color:var(--n500);margin-top:7px;line-height:1.45;}
-
-/* key entry */
-.keybox{padding:14px 15px;overflow-y:auto;}
-.keybox h4{margin:0 0 5px;font-size:14.5px;font-weight:600;}
-.keybox p{margin:0 0 11px;font-size:13.5px;color:var(--n600);line-height:1.55;}
-.keybox input{width:100%;font-family:var(--mono);font-size:13.5px;color:var(--text);background:var(--bg);border:1px solid var(--divider);border-radius:var(--r-sm);padding:9px 11px;}
-.keybox input:focus{outline:2px solid var(--accent);outline-offset:1px;}
-.keybox .row{display:flex;gap:8px;align-items:center;margin-top:10px;}
-.keybox .err{margin:10px 0 0;font-size:13.5px;color:#8f322b;line-height:1.5;}
-.keybox a{color:var(--a800);}
-.keybox ol{margin:0 0 11px;padding-left:18px;font-size:13.5px;color:var(--n600);line-height:1.6;}
-
-/* ---------- sign in / set up / reset ---------- */
-.auth{max-width:400px;margin:9vh auto;background:var(--surface);border:1px solid var(--divider);border-radius:var(--r-md);box-shadow:var(--shadow);padding:26px 26px 22px;}
-.auth h1{margin:6px 0 4px;font-size:20px;font-weight:600;letter-spacing:-0.01em;}
-.auth .lede{margin:0 0 18px;font-size:14px;color:var(--n600);line-height:1.55;}
-.auth label{display:block;font-family:var(--mono);font-size:10.5px;font-weight:600;letter-spacing:.13em;text-transform:uppercase;color:var(--n500);margin:0 0 5px;}
-.auth input{width:100%;font-family:var(--font);font-size:15px;color:var(--text);background:var(--bg);border:1px solid var(--divider);border-radius:var(--r-sm);padding:10px 12px;}
-.auth input:focus{outline:2px solid var(--accent);outline-offset:1px;}
-.auth .field{margin-bottom:13px;}
-.auth .hint{font-size:12.5px;color:var(--n500);margin-top:5px;line-height:1.45;}
-.auth .actions{display:flex;gap:9px;align-items:center;margin-top:18px;}
-.auth .btn{padding:9px 16px;font-size:14.5px;}
-.auth .link{background:none;border:0;color:var(--a800);font-family:var(--font);font-size:13.5px;cursor:pointer;padding:4px 2px;text-decoration:underline;}
-.auth .link:hover{color:var(--a700);}
-.auth .msg{margin:14px 0 0;font-size:13.5px;line-height:1.55;padding:10px 12px;border-radius:var(--r-sm);}
-.auth .msg.bad{background:#fdf1f0;color:#8f322b;}
-.auth .msg.good{background:#eef7f2;color:var(--emerald-d);}
-.auth .msg.info{background:var(--a100);color:var(--a800);}
-.auth .foot{margin-top:16px;padding-top:14px;border-top:1px solid var(--divider);display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;}
-.auth code{font-family:var(--mono);font-size:13px;background:var(--n100);padding:1px 5px;border-radius:3px;}
-
-/* ---------- "is this what's live?" ---------- */
-.drift{display:inline-flex;align-items:center;gap:7px;margin-top:8px;font-size:13.5px;font-weight:500;padding:4px 11px;border-radius:999px;border:1px solid var(--divider);background:var(--surface);color:var(--n700);}
-.drift i{flex:none;width:7px;height:7px;border-radius:50%;background:var(--n400);display:block;}
-.drift.ok{background:#eef7f2;border-color:#bfe0d0;color:var(--emerald-d);}
-.drift.ok i{background:var(--emerald);}
-.drift.warn{background:#fdf6e7;border-color:#ecd9a8;color:#8a6a2e;}
-.drift.warn i{background:var(--amber);}
-.drift.unknown{background:var(--n100);border-color:var(--n200);color:var(--n600);}
-.drift.unknown i{background:var(--n400);}
-
-/* ---------- account chip in the header ---------- */
-.who{display:flex;align-items:center;gap:7px;font-size:13px;color:var(--n600);}
-.who .dot{width:6px;height:6px;border-radius:50%;background:var(--emerald);display:block;}
-
-/* ---------- settings panel ---------- */
-.setrow{display:flex;gap:16px;align-items:flex-start;padding:14px 0;border-bottom:1px solid var(--divider);}
+/* ------------------------------------------------------------- settings */
+.setrow{display:flex;gap:18px;align-items:flex-start;padding:13px 0;border-bottom:1px solid var(--line);flex-wrap:wrap;}
 .setrow:last-child{border-bottom:0;}
-.setrow .lhs{flex:none;width:190px;}
-.setrow .lhs b{display:block;font-size:14.5px;font-weight:600;}
-.setrow .lhs span{display:block;font-size:13px;color:var(--n600);margin-top:2px;line-height:1.45;}
-.setrow .rhs{flex:1;min-width:0;}
-.setrow input{width:100%;font-family:var(--mono);font-size:14px;color:var(--text);background:var(--bg);border:1px solid var(--divider);border-radius:var(--r-sm);padding:9px 11px;}
-.setrow input:focus{outline:2px solid var(--accent);outline-offset:1px;}
-.setrow .actions{display:flex;gap:8px;align-items:center;margin-top:9px;flex-wrap:wrap;}
-.setrow .state{font-size:13.5px;color:var(--n600);}
-.setrow .state.good{color:var(--emerald-d);}
-.setrow .state.bad{color:#8f322b;}
+.setrow .lhs{flex:1;min-width:210px;}
+.setrow .lhs b{display:block;font-size:13px;font-weight:600;}
+.setrow .lhs span{display:block;font-size:11.5px;color:var(--tx3);margin-top:2px;line-height:1.45;}
+.setrow .rhs{flex:none;width:min(320px,100%);}
+.setrow input{width:100%;font-family:var(--mono);font-size:13px;color:var(--tx);background:var(--tile);border:1px solid var(--line);
+  border-radius:10px;padding:9px 11px;}
+.setrow .actions{display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap;}
+.rule{display:flex;gap:10px;align-items:center;padding:11px 0;border-bottom:1px solid var(--line);flex-wrap:wrap;}
+.rule:last-of-type{border-bottom:0;}
+.rule .bd{flex:1;min-width:200px;font-size:12.5px;color:var(--tx2);line-height:1.5;}
+.rule .bd b{color:var(--tx);font-weight:600;}
+.rule input{width:82px;font-family:var(--mono);font-size:13px;color:var(--tx);background:var(--tile);border:1px solid var(--line);
+  border-radius:8px;padding:3px 8px;margin:0 4px;}
+.rule .toggle{flex:none;font-family:var(--font);font-size:12px;font-weight:600;min-width:54px;padding:5px 13px;border-radius:999px;
+  border:1px solid var(--line);background:var(--tile);color:var(--tx2);cursor:pointer;}
+.rule .toggle[aria-pressed="true"]{background:var(--lav);border-color:var(--lav);color:var(--onlav);}
+.fixbtn{display:inline-block;font-family:var(--font);font-size:11px;font-weight:600;color:var(--onlav);background:var(--lav);border:0;
+  border-radius:999px;padding:2px 9px;margin-left:6px;cursor:pointer;vertical-align:1px;white-space:nowrap;}
 
+/* ---------------------------------------------------------------- tripwire */
+.tripped{margin-bottom:12px;}
+.trip{display:flex;gap:11px;align-items:flex-start;background:var(--bad);border:1px solid var(--line);border-radius:14px;padding:12px 15px;margin-bottom:8px;}
+.trip .bd{flex:1;min-width:0;font-size:13px;color:var(--badtx);line-height:1.5;}
+.trip .bd b{color:var(--tx);font-weight:600;display:block;}
+.trip .when{font-family:var(--mono);font-size:10.5px;opacity:.8;margin-top:3px;}
+.trip button{flex:none;font-family:var(--font);font-size:12px;font-weight:600;color:var(--badtx);background:transparent;
+  border:1px solid var(--badtx);border-radius:999px;padding:4px 12px;cursor:pointer;}
+
+/* ---------------------------------------------------------------- skeleton */
+.sk{height:13px;border-radius:6px;background:var(--tile);margin:9px 0;animation:pulse 1.4s ease-in-out infinite;}
+@keyframes pulse{0%,100%{opacity:.55;}50%{opacity:1;}}
+.loading-note{font-size:12.5px;color:var(--tx2);margin-top:10px;line-height:1.55;}
+.loading-note b{color:var(--tx);font-weight:600;}
+
+/* ------------------------------------------------------------------ footer */
+.footer{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:14px;padding:0 6px;font-size:11px;color:var(--tx3);flex-wrap:wrap;}
+.drift{display:inline-flex;align-items:center;gap:7px;font-size:11px;font-weight:600;padding:3px 10px;border-radius:999px;
+  border:1px solid var(--line);background:var(--card);color:var(--tx2);}
+.drift i{flex:none;width:7px;height:7px;border-radius:50%;background:var(--tx3);display:block;}
+.drift.ok{background:var(--good);border-color:transparent;color:var(--goodtx);}
+.drift.ok i{background:var(--goodtx);}
+.drift.warn{background:var(--gold);border-color:transparent;color:var(--ongold);}
+.drift.warn i{background:var(--ongold);}
+.drift.unknown{background:var(--tile2);color:var(--tx2);}
+
+/* -------------------------------------------------------------- assistant */
+.ask-launch{position:fixed;right:20px;bottom:20px;z-index:40;display:inline-flex;align-items:center;gap:8px;background:var(--lav);color:var(--onlav);
+  border:0;border-radius:999px;padding:11px 18px;cursor:pointer;font-family:var(--font);font-weight:600;font-size:14px;
+  box-shadow:0 3px 18px rgba(0,0,0,.4);transition:background .15s,transform .15s;}
+.ask-launch:hover{background:var(--lavd);transform:translateY(-1px);}
+.ask{position:fixed;right:20px;bottom:20px;z-index:41;width:min(440px,calc(100vw - 40px));height:min(620px,calc(100vh - 40px));
+  display:flex;flex-direction:column;background:var(--card);border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow);overflow:hidden;}
+.ask.expanded{width:min(760px,calc(100vw - 40px));height:min(86vh,calc(100vh - 40px));}
+.ask.expanded .msg{max-width:76%;}
+.ask-head{flex:none;display:flex;align-items:flex-start;gap:10px;padding:13px 16px;border-bottom:1px solid var(--line);}
+.ask-head h3{margin:0;font-size:15px;font-weight:600;}
+.ask-head .brain{display:flex;align-items:center;gap:5px;font-size:11.5px;color:var(--tx3);margin-top:2px;}
+.ask-head .brain i{width:6px;height:6px;border-radius:50%;background:var(--tx3);display:block;}
+.ask-head .brain.live i{background:var(--lav);}
+.ask-acts{margin-left:auto;flex:none;display:flex;align-items:center;gap:2px;}
+.ask-x{flex:none;display:inline-flex;align-items:center;justify-content:center;background:none;border:0;color:var(--tx3);cursor:pointer;
+  line-height:1;padding:5px;border-radius:6px;}
+.ask-x:hover{background:var(--tile);color:var(--tx);}
+.ask-x.close{font-size:19px;padding:2px 8px;}
+.ask-feed{flex:1;overflow-y:auto;padding:14px 16px;display:flex;flex-direction:column;gap:12px;}
+.msg{max-width:92%;font-size:14px;line-height:1.6;}
+.msg.you{align-self:flex-end;background:var(--lav);color:var(--onlav);border-radius:14px 14px 4px 14px;padding:9px 13px;}
+.msg.bot{align-self:flex-start;color:var(--tx2);}
+.msg.bot b{color:var(--tx);font-weight:600;}
+.msg.bot code{font-family:var(--mono);font-size:12.5px;background:var(--tile);border-radius:5px;padding:1px 5px;}
+.msg.err{color:var(--badtx);}
+.srcs{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;}
+.srcs button{font-family:var(--font);font-size:11.5px;font-weight:600;color:var(--onlav);background:var(--lav);border:0;border-radius:999px;
+  padding:3px 11px;cursor:pointer;}
+.sugg{flex:none;display:flex;flex-direction:column;gap:6px;padding:0 16px 10px;}
+.sugg button{font-family:var(--font);font-size:12.5px;color:var(--tx2);background:var(--tile);border:1px solid var(--line);border-radius:12px;
+  padding:7px 12px;cursor:pointer;text-align:left;}
+.sugg button:hover{color:var(--tx);border-color:var(--tx3);}
+.ask-foot{flex:none;border-top:1px solid var(--line);padding:11px 14px;}
+.ask-form{display:flex;gap:8px;align-items:flex-end;}
+.ask-form textarea{flex:1;font-family:var(--font);font-size:14px;color:var(--tx);background:var(--tile);border:1px solid var(--line);
+  border-radius:12px;padding:9px 12px;resize:none;max-height:110px;line-height:1.5;}
+.ask-note{font-size:11px;color:var(--tx3);margin-top:7px;line-height:1.45;}
+.keybox{padding:14px 16px;border-bottom:1px solid var(--line);font-size:13px;color:var(--tx2);line-height:1.55;}
+.keybox h4{margin:0 0 6px;font-size:14px;font-weight:600;color:var(--tx);}
+.keybox ol{margin:9px 0;padding-left:19px;}
+.keybox input{width:100%;font-family:var(--mono);font-size:13px;color:var(--tx);background:var(--tile);border:1px solid var(--line);
+  border-radius:10px;padding:9px 11px;margin-top:9px;}
+.keybox .row{display:flex;align-items:center;gap:9px;margin-top:9px;}
+.keybox .err{color:var(--badtx);font-size:12.5px;margin:8px 0 0;}
+
+/* -------------------------------------------------------------- sign-in */
+.auth{max-width:410px;margin:9vh auto;background:var(--card);border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow);padding:26px 26px 22px;}
+.auth .brand{margin-bottom:16px;}
+.auth h2{margin:0 0 5px;font-size:20px;font-weight:700;letter-spacing:-0.02em;}
+.auth .lede{margin:0 0 18px;font-size:13px;color:var(--tx3);line-height:1.55;}
+.auth .field{margin-bottom:13px;}
+.auth label{display:block;font-family:var(--mono);font-size:9.5px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--tx3);margin:0 0 5px;}
+.auth input{width:100%;font-family:var(--font);font-size:15px;color:var(--tx);background:var(--tile);border:1px solid var(--line);border-radius:10px;padding:10px 12px;}
+.auth .hint{font-size:11.5px;color:var(--tx3);margin-top:5px;}
+.auth .actions{display:flex;align-items:center;gap:10px;margin-top:18px;flex-wrap:wrap;}
+.auth .link{background:none;border:0;color:var(--lav);font-family:var(--font);font-size:13px;cursor:pointer;padding:4px 2px;text-decoration:underline;}
+.auth .msg{margin:14px 0 0;font-size:13px;line-height:1.55;padding:10px 13px;border-radius:11px;background:var(--tile);color:var(--tx2);}
+.auth .msg.bad{background:var(--bad);color:var(--badtx);}
+.auth .msg.ok{background:var(--good);color:var(--goodtx);}
+.auth .foot{margin-top:14px;padding-top:13px;border-top:1px solid var(--line);}
+.auth code{font-family:var(--mono);font-size:12.5px;background:var(--tile);padding:1px 5px;border-radius:5px;}
+
+.toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);z-index:60;background:var(--tx);color:var(--sh);font-size:13.5px;
+  font-weight:600;padding:9px 17px;border-radius:999px;box-shadow:var(--shadow);opacity:0;transition:opacity .18s;pointer-events:none;}
+.toast.on{opacity:1;}
 </style>
 </head>
 <body>
 
-<!-- Sign in / set up / forgotten password / reset. One card, four states,
-     driven by app.js. Nothing is fetched until there is a session. -->
+<!-- ============================================================== SIGN IN -->
 <div class="auth" id="auth" hidden>
-  <div class="eyebrow">HaTi · internal</div>
-  <h1 id="authTitle">Platform map</h1>
-  <p class="lede" id="authLede"></p>
-  <form id="authForm">
+  <div class="brand"><i><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 3v10M12 3v10M4 8h8"/></svg></i>hati mapper</div>
+  <h2 id="authTitle">Sign in</h2>
+  <p class="lede" id="authLede">This page lists HaTi's file paths, its open addresses and its known weaknesses, so it sits behind your own sign-in.</p>
+  <form id="authForm" autocomplete="on">
     <div class="field" id="fEmail">
       <label for="authEmail">Email</label>
       <input id="authEmail" type="email" autocomplete="username" spellcheck="false">
@@ -461,252 +425,263 @@ tbody tr:hover{background:#fcfcfb;}
   </div>
 </div>
 
-<div class="wrap" id="app" hidden>
+<!-- ================================================================== APP -->
+<div class="shell" id="app" hidden>
+<div class="inner">
 
   <!-- Pinned to the top until dismissed. Only ever filled in by a tripwire the
        owner armed themselves. -->
   <div class="tripped" id="tripped" hidden></div>
 
-  <div class="devbar">
-    <svg class="devbar-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 9v4M12 17h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
-    <div>
-      <h4>Internal tool — for your eyes only</h4>
-      <p>This page lists HaTi's file paths, its endpoints that work without logging in, and its known weaknesses, which is why it sits behind your own sign-in. It reads HaTi's source from GitHub, and asks the running HaTi for nothing but caps and counts through one read-only endpoint — switch that off any time by clearing <code>MAPPER_TOKEN</code> in HaTi's environment.</p>
+  <div class="topbar">
+    <div class="brand"><i><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 3v10M12 3v10M4 8h8"/></svg></i>hati mapper</div>
+
+    <nav class="pills" role="tablist">
+      <button role="tab" aria-selected="true"  data-p="tower">Control tower</button>
+      <button role="tab" aria-selected="false" data-p="screens">Screens</button>
+      <button role="tab" aria-selected="false" data-p="cost">Money</button>
+      <button role="tab" aria-selected="false" data-p="public">Doors</button>
+      <button role="tab" aria-selected="false" data-p="changes">Changes</button>
+      <button role="tab" aria-selected="false" data-p="blast">What breaks what</button>
+      <button role="tab" aria-selected="false" data-p="data">Where things are kept</button>
+      <button role="tab" aria-selected="false" data-p="weight">Getting bulky</button>
+    </nav>
+
+    <div class="tops">
+      <button class="iconbtn" id="themeBtn" title="Switch between dark and light" aria-label="Switch between dark and light"></button>
+      <button class="iconbtn" id="rescan" title="Read HaTi again" aria-label="Read HaTi again" disabled>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.6-6.3"/><path d="M21 3v6h-6"/></svg>
+      </button>
+      <button class="iconbtn" role="tab" aria-selected="false" data-p="settings" title="Settings" aria-label="Settings">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 8.9 19a1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 5 8.9a1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+      </button>
+      <div class="who"><span class="av" id="whoAv">HM</span><div><b id="whoName">The owner</b><span id="whoSub">signed in · one account</span></div></div>
     </div>
   </div>
 
-  <div class="head">
-    <div>
-      <div class="eyebrow">Settings · internal</div>
-      <h1>Platform map</h1>
-      <p class="sub">What's in HaTi, what it costs to run, and what depends on what.</p>
-      <!-- Whether the code described below is the code your customers are
-           actually using. Filled in once the pulse answers. -->
-      <span class="drift unknown" id="drift" hidden><i></i><span id="driftText"></span></span>
+  <!-- ========================================================= CONTROL TOWER -->
+  <section class="panel" data-panel="tower">
+    <div class="grid1">
+      <!-- What a day at HaTi's own caps could cost, and how much of today's
+           allowance has actually gone. A roof, never a bill. -->
+      <div class="card" id="towerBurn"></div>
+      <!-- Which days the Mapper looked, and which of those found something. -->
+      <div class="cal" id="towerCal"></div>
+      <!-- Routes answering without a login check, and how the live check went. -->
+      <div class="card" id="towerDoors"></div>
     </div>
-    <div class="head-actions">
-      <span class="stamp" id="stamp">scanning…</span>
-      <button class="btn btn-primary" id="rescan" disabled>Rescan</button>
-    </div>
-  </div>
 
-  <div class="glance" id="glance"></div>
-
-  <!-- How much of what the scanner looks for it could actually read. A falling
-       number is the early warning that HaTi moved and the panels above are
-       filling up with "not detected". -->
-  <div class="health" id="health" hidden></div>
-
-  <!-- Which way things are moving. Drawn from the archive's measurements, so
-       it needs a few scans' worth of history before it says anything. -->
-  <div class="trends" id="trends" hidden></div>
-
-  <nav class="nav" role="tablist">
-    <button role="tab" aria-selected="true" data-p="screens">Screens</button>
-    <button role="tab" aria-selected="false" data-p="cost">Where the money goes</button>
-    <button role="tab" aria-selected="false" data-p="data">Where things are kept</button>
-    <button role="tab" aria-selected="false" data-p="blast">What breaks what</button>
-    <button role="tab" aria-selected="false" data-p="gaps">Not finished</button>
-    <button role="tab" aria-selected="false" data-p="public">Open to the public</button>
-    <button role="tab" aria-selected="false" data-p="changes">What changed</button>
-    <button role="tab" aria-selected="false" data-p="weight">Getting bulky</button>
-    <button role="tab" aria-selected="false" data-p="settings">Settings</button>
-  </nav>
-
-  <!-- SCREENS -->
-  <section class="panel" data-panel="screens">
-    <div class="card">
-      <h2>Every screen in HaTi</h2>
-      <p class="lede" id="screensLede">Reading the nav and the view modules…</p>
-      <div id="screensBody"></div>
-    </div>
-  </section>
-
-  <!-- COST -->
-  <section class="panel" data-panel="cost" hidden>
-    <div class="card">
-      <h2>Where the money goes</h2>
-      <p class="lede">Every feature that calls Anthropic, which model it uses, and the caps that apply.</p>
-      <div id="costBody"></div>
-    </div>
-    <div class="card">
-      <h2>Caps in force right now</h2>
-      <p class="lede" id="capsLede">Set in Team &amp; Settings. Asking the running HaTi…</p>
-      <div id="capsBody"></div>
-    </div>
-  </section>
-
-  <!-- DATA -->
-  <section class="panel" data-panel="data" hidden>
-    <div class="card">
-      <h2>Where things are kept</h2>
-      <p class="lede">Server mode stores everything in one SQLite file. Static mode keeps it in the browser.</p>
-      <div id="dataBody"></div>
-    </div>
-  </section>
-
-  <!-- BLAST -->
-  <section class="panel" data-panel="blast" hidden>
-    <div class="card">
-      <h2>What breaks what</h2>
-      <p class="lede">Pick something on the left to see everything that depends on it. Red means changing it can break something that's already signed.</p>
-      <div id="blastBody"></div>
-    </div>
-  </section>
-
-  <!-- GAPS -->
-  <section class="panel" data-panel="gaps" hidden>
-    <div class="card">
-      <h2>Not finished yet</h2>
-      <p class="lede">Gathered from your README, SECURITY.md and the notes left in the code.</p>
-      <div id="gapsBody"></div>
-    </div>
-  </section>
-
-  <!-- PUBLIC -->
-  <section class="panel" data-panel="public" hidden>
-    <div class="card">
-      <h2>Open to the public</h2>
-      <p class="lede" id="publicLede">Everything that works without logging in. Worth knowing exactly what they are.</p>
-      <!-- The list above is what the code says. This asks the live site.
-           Owner-triggered only — nothing here ever runs on its own. -->
-      <div class="doors" id="doorsBar">
-        <button class="btn" id="doorsGo">Check the live site</button>
-        <span class="state" id="doorsState"></span>
+    <div class="grid2">
+      <div class="card">
+        <div class="chead"><h3>Needs attention</h3><div class="seg"><button class="on" type="button">Worst first</button></div></div>
+        <div id="towerAttention"></div>
       </div>
-      <div id="doorsBody"></div>
-      <div id="publicBody"></div>
+      <!-- How much of what the scanner looks for it could actually read. A
+           falling number is the early warning that HaTi moved and the panels
+           are quietly filling up with "not detected". -->
+      <div class="card" id="towerGrip"></div>
+      <div class="card" id="towerMap"></div>
+      <div class="card" id="towerWeight"></div>
+    </div>
+
+    <!-- Which way things are moving. Drawn from the archive's measurements, so
+         it needs a few scans' worth of history before it says anything. -->
+    <div class="card" id="trends" hidden></div>
+  </section>
+
+  <!-- ================================================================ SCREENS -->
+  <section class="panel" data-panel="screens" hidden>
+    <div class="ph"><h2>Every screen in HaTi</h2><span id="screensLede">Reading the nav and the view modules…</span></div>
+    <div class="card tblwrap"><div id="screensBody"></div></div>
+    <div class="card" id="streamsCard" hidden>
+      <div class="chead"><h3>Value streams</h3></div>
+      <div id="streamsBody"></div>
     </div>
   </section>
 
-  <!-- CHANGES -->
+  <!-- ================================================================== MONEY -->
+  <section class="panel" data-panel="cost" hidden>
+    <div class="ph"><h2>Where the money goes</h2><span>every feature that calls Anthropic, which model, and the caps that apply</span></div>
+    <div class="grid3">
+      <div class="card tblwrap"><div id="costBody"></div></div>
+      <div>
+        <div class="card">
+          <div class="chead"><h3>Caps in force right now</h3><span class="badge" id="capsLive" style="margin-left:auto">from the code</span></div>
+          <div id="capsBody"></div>
+          <div class="note" id="capsLede">Set in Team &amp; Settings. Asking the running HaTi…</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================================================================== DOORS -->
+  <section class="panel" data-panel="public" hidden>
+    <div class="ph"><h2>Open to the public</h2><span id="publicLede">Everything that works without logging in. Worth knowing exactly what they are.</span></div>
+    <div class="grid4">
+      <div class="card">
+        <div class="chead"><h3>Knocking on the doors</h3>
+          <span class="state" id="doorsState" style="margin-left:auto"></span>
+          <button class="btn" id="doorsGo" type="button">Check the live site</button>
+        </div>
+        <!-- The list beside this is what the code says. This asks the live
+             site. Owner-triggered only — nothing here ever runs on its own. -->
+        <div id="doorsBody"></div>
+      </div>
+      <div class="card">
+        <div class="chead"><h3>Open by design</h3></div>
+        <div id="publicBody"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================================================================ CHANGES -->
   <section class="panel" data-panel="changes" hidden>
-    <!-- The question actually asked every morning: what did last night's
-         session do? The same events as below, grouped into one report. -->
-    <div class="card">
-      <h2>Last night</h2>
-      <p class="lede" id="digestLede">Everything that moved since midnight, in one place.</p>
-      <div id="digestBody"></div>
+    <div class="ph"><h2>What changed</h2><span>last night's report, the watch log, and what is still not finished</span></div>
+    <div class="grid4">
+      <!-- The question actually asked every morning: what did last night's
+           session do? The same events as below, grouped into one report. -->
+      <div class="card">
+        <div class="chead"><h3>Last night</h3><span class="badge" id="digestBadge" style="margin-left:auto" hidden></span></div>
+        <div id="digestBody"></div>
+        <div class="note" id="digestLede">Everything that moved since midnight, in one place.</div>
+      </div>
+      <div class="card">
+        <div class="chead"><h3>Not finished yet</h3><span class="badge" id="gapsBadge" style="margin-left:auto" hidden></span></div>
+        <div id="gapsBody"></div>
+      </div>
     </div>
     <div class="card">
-      <h2>What the Mapper has watched change</h2>
-      <p class="lede" id="watchLede">Every time this page scans HaTi it compares what it finds with last time. Anything that moved is written down here.</p>
-      <!-- How far back to look. 72 hours is the working set; anything longer
-           is served from the archive. -->
-      <div class="range" id="watchRange" role="group" aria-label="How far back to look">
-        <button type="button" data-h="72" aria-pressed="true">72 hours</button>
-        <button type="button" data-h="168" aria-pressed="false">7 days</button>
-        <button type="button" data-h="720" aria-pressed="false">30 days</button>
-        <button type="button" data-h="2160" aria-pressed="false">90 days</button>
+      <div class="chead"><h3>What the Mapper has watched change</h3>
+        <!-- How far back to look. 72 hours is the working set; anything longer
+             is served from the archive. -->
+        <div class="seg" id="watchRange" role="group" aria-label="How far back to look">
+          <button type="button" data-h="72" aria-pressed="true">72 hours</button>
+          <button type="button" data-h="168" aria-pressed="false">7 days</button>
+          <button type="button" data-h="720" aria-pressed="false">30 days</button>
+          <button type="button" data-h="2160" aria-pressed="false">90 days</button>
+        </div>
       </div>
       <div id="watchBody"></div>
+      <div class="note" id="watchLede">Every time this page scans HaTi it compares what it finds with last time. Anything that moved is written down here.</div>
     </div>
     <div class="card">
-      <h2>What changed in the code</h2>
-      <p class="lede">Read from the git history and grouped by what it means, not by which files moved.</p>
+      <div class="chead"><h3>What changed in the code</h3></div>
       <div id="changesBody"></div>
+      <div class="note">Read from the git history and grouped by what it means, not by which files moved.</div>
     </div>
   </section>
 
-  <!-- WEIGHT -->
+  <!-- ======================================================= WHAT BREAKS WHAT -->
+  <section class="panel" data-panel="blast" hidden>
+    <div class="ph"><h2>What breaks what</h2><span>pick something to see everything that depends on it — red means it can break something already signed</span></div>
+    <div class="card">
+      <div class="keyline">
+        <span><span class="sw" style="background:var(--lav)"></span><b>Reads it</b> — uses this data</span>
+        <span><span class="sw" style="background:var(--bad)"></span><b>Can break something already signed</b></span>
+        <span><span class="sw" style="background:var(--tile);opacity:.4"></span>Not affected</span>
+      </div>
+      <div id="blastBody"></div>
+      <div class="note" id="blastNote" hidden></div>
+    </div>
+  </section>
+
+  <!-- ================================================= WHERE THINGS ARE KEPT -->
+  <section class="panel" data-panel="data" hidden>
+    <div class="ph"><h2>Where things are kept</h2><span>server mode stores everything in one SQLite file; static mode keeps it in the browser</span></div>
+    <div class="card tblwrap"><div id="dataBody"></div></div>
+  </section>
+
+  <!-- ========================================================== GETTING BULKY -->
   <section class="panel" data-panel="weight" hidden>
+    <div class="ph"><h2>Getting bulky</h2><span>files past roughly 60&nbsp;KB get hard to work on, and hard for an AI session to hold in mind</span></div>
+    <div class="card"><div id="weightBody"></div></div>
     <div class="card">
-      <h2>Getting bulky</h2>
-      <p class="lede">Files past roughly 60&nbsp;KB get hard to work on and hard for an AI session to hold in mind.</p>
-      <div id="weightBody"></div>
-    </div>
-    <div class="card">
-      <h2>Attached to <code style="font-family:var(--mono);font-size:14px">window</code> but never used</h2>
-      <p class="lede">HaTi shares everything through <code style="font-family:var(--mono);font-size:13px">window</code>, which makes "is this reachable from anywhere?" a cheap question to ask. These names are exported and then referenced nowhere else in the repository.</p>
+      <div class="chead"><h3>Attached to <code class="codechip">window</code> but never used</h3></div>
       <div id="orphanBody"></div>
+      <div class="note">HaTi shares everything through <code>window</code>, which makes "is this reachable from anywhere?" a cheap question to ask. These names are exported and then referenced nowhere else in the repository.</div>
     </div>
   </section>
 
-  <!-- SETTINGS -->
+  <!-- =============================================================== SETTINGS -->
   <section class="panel" data-panel="settings" hidden>
-    <div class="card">
-      <h2>The assistant's AI key</h2>
-      <p class="lede">The chat assistant answers using Claude, the same AI engine HaTi itself uses. Your key is stored on this service and never sent to your browser — only the last four characters are ever shown back.</p>
-      <div class="setrow">
-        <div class="lhs">
-          <b>Anthropic API key</b>
-          <span>From <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener" style="color:var(--a800)">console.anthropic.com</a> → Create key. It begins <code style="font-family:var(--mono);font-size:13px">sk-ant-</code>.</span>
-        </div>
-        <div class="rhs">
-          <input id="setKey" type="password" placeholder="sk-ant-…" autocomplete="off" spellcheck="false">
-          <div class="actions">
-            <button class="btn btn-primary" id="setKeySave">Save key</button>
-            <button class="btn" id="setKeyClear">Remove</button>
-            <span class="state" id="setKeyState"></span>
+    <div class="ph"><h2>Settings</h2><span>the assistant's key, what is worth interrupting you for, and your account</span></div>
+    <div class="grid4">
+      <div>
+        <div class="card">
+          <div class="chead"><h3>The assistant's AI key</h3></div>
+          <div class="note" style="margin-top:0;margin-bottom:4px">The chat assistant answers using Claude, the same AI engine HaTi itself uses. Your key is stored on this service and never sent to your browser — only the last four characters are ever shown back.</div>
+          <div class="setrow">
+            <div class="lhs"><b>Anthropic API key</b>
+              <span>From <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener" style="color:var(--lav)">console.anthropic.com</a> → Create key. It begins <code class="codechip">sk-ant-</code>.</span>
+            </div>
+            <div class="rhs">
+              <input id="setKey" type="password" placeholder="sk-ant-…" autocomplete="off" spellcheck="false">
+              <div class="actions">
+                <button class="btn btn-primary" id="setKeySave" type="button">Save key</button>
+                <button class="btn" id="setKeyClear" type="button">Remove</button>
+                <span class="state" id="setKeyState"></span>
+              </div>
+            </div>
           </div>
+          <div class="caprow"><div class="bd"><b>Model</b><span>Which Claude model answers your questions.</span></div><span class="v" id="setModel">—</span></div>
+          <div class="caprow"><div class="bd"><b>Questions today</b><span>A daily ceiling so a runaway loop cannot run up a bill.</span></div><span class="v" id="setBudget">—</span></div>
         </div>
-      </div>
-      <div class="setrow">
-        <div class="lhs">
-          <b>Model</b>
-          <span>Which Claude model answers your questions.</span>
-        </div>
-        <div class="rhs"><span class="state" id="setModel">—</span></div>
-      </div>
-      <div class="setrow">
-        <div class="lhs">
-          <b>Questions today</b>
-          <span>A daily ceiling so a runaway loop cannot run up a bill.</span>
-        </div>
-        <div class="rhs"><span class="state" id="setBudget">—</span></div>
-      </div>
-    </div>
 
-    <div class="card">
-      <h2>Being told about things</h2>
-      <p class="lede">The dashboard always shows everything. These are the things worth interrupting you for.</p>
-      <!-- Set once, then stop thinking about them. Checked on every scan. -->
-      <div id="watchRules"></div>
-      <div class="setrow">
-        <div class="lhs">
-          <b>Email me each morning</b>
-          <span>A summary of everything that moved overnight, sent once a day after 6am.</span>
-        </div>
-        <div class="rhs">
-          <div class="actions" style="margin-top:0">
-            <button class="btn" id="setDigest" aria-pressed="false">Off</button>
-            <span class="state" id="setDigestState"></span>
+        <div class="card">
+          <div class="chead"><h3>Your account</h3></div>
+          <div class="note" style="margin-top:0;margin-bottom:4px">This Mapper has one account — yours. Signing in is what keeps HaTi's file paths, open addresses and known weaknesses off the open internet.</div>
+          <div class="caprow"><div class="bd"><b>Signed in as</b><span>The only account on this Mapper.</span></div><span class="v" id="setEmail">—</span></div>
+          <div class="setrow">
+            <div class="lhs"><b>Change password</b><span>You need your current one. Other devices are signed out.</span></div>
+            <div class="rhs">
+              <input id="setPwCurrent" type="password" placeholder="Current password" autocomplete="current-password" style="margin-bottom:8px">
+              <input id="setPwNew" type="password" placeholder="New password" autocomplete="new-password">
+              <div class="actions">
+                <button class="btn btn-primary" id="setPwSave" type="button">Change password</button>
+                <span class="state" id="setPwState"></span>
+              </div>
+            </div>
           </div>
+          <div class="setrow">
+            <div class="lhs"><b>Sign out</b><span>End this session, or every session everywhere.</span></div>
+            <div class="rhs"><div class="actions" style="margin-top:0">
+              <button class="btn" id="setSignOut" type="button">Sign out</button>
+              <button class="btn" id="setSignOutAll" type="button">Sign out everywhere</button>
+            </div></div>
+          </div>
+          <div class="note" id="setStorageNote"></div>
         </div>
       </div>
-    </div>
 
-    <div class="card">
-      <h2>Your account</h2>
-      <p class="lede">This Mapper has one account — yours. Signing in is what keeps HaTi's file paths, open addresses and known weaknesses off the open internet.</p>
-      <div class="setrow">
-        <div class="lhs"><b>Signed in as</b><span>The only account on this Mapper.</span></div>
-        <div class="rhs"><span class="state" id="setEmail">—</span></div>
-      </div>
-      <div class="setrow">
-        <div class="lhs"><b>Change password</b><span>You need your current one. Other devices are signed out.</span></div>
-        <div class="rhs">
-          <input id="setPwCurrent" type="password" placeholder="Current password" autocomplete="current-password" style="margin-bottom:8px">
-          <input id="setPwNew" type="password" placeholder="New password" autocomplete="new-password">
-          <div class="actions">
-            <button class="btn btn-primary" id="setPwSave">Change password</button>
-            <span class="state" id="setPwState"></span>
+      <div>
+        <div class="card">
+          <div class="chead"><h3>Being told about things</h3></div>
+          <div class="note" style="margin-top:0;margin-bottom:4px">The dashboard always shows everything. These are the things worth interrupting you for. Set once, then stop thinking about them — they are checked on every scan.</div>
+          <div id="watchRules"></div>
+          <div class="setrow">
+            <div class="lhs"><b>Email me each morning</b><span>A summary of everything that moved overnight, sent once a day after 6am.</span></div>
+            <div class="rhs"><div class="actions" style="margin-top:0">
+              <button class="btn" id="setDigest" type="button" aria-pressed="false">Off</button>
+              <span class="state" id="setDigestState"></span>
+            </div></div>
           </div>
         </div>
-      </div>
-      <div class="setrow">
-        <div class="lhs"><b>Sign out</b><span>End this session, or every session everywhere.</span></div>
-        <div class="rhs">
-          <div class="actions" style="margin-top:0">
-            <button class="btn" id="setSignOut">Sign out</button>
-            <button class="btn" id="setSignOutAll">Sign out everywhere</button>
-          </div>
+
+        <div class="card">
+          <div class="chead"><h3>Internal tool — for your eyes only</h3></div>
+          <div class="note" style="margin-top:0">This page lists HaTi's file paths, its addresses that work without logging in, and its known weaknesses, which is why it sits behind your own sign-in. It reads HaTi's source from GitHub, and asks the running HaTi for nothing but caps and counts through one read-only endpoint — switch that off any time by clearing <code>MAPPER_TOKEN</code> in HaTi's environment.</div>
         </div>
       </div>
-      <div class="blast-note" id="setStorageNote"></div>
     </div>
   </section>
 
+  <div class="footer">
+    <span><span class="stamp" id="stamp">scanning…</span></span>
+    <span class="drift unknown" id="drift" hidden><i></i><span id="driftText"></span></span>
+    <span>Numbers only ever cross from the running HaTi — never content.</span>
+  </div>
+
+</div>
 </div>
 
 <!-- The assistant. Reads only what this dashboard already shows — never HaTi's
@@ -734,16 +709,16 @@ tbody tr:hover{background:#fcfcfb;}
   <!-- shown when no AI key is set -->
   <div class="keybox" id="askKey" hidden>
     <h4>The assistant needs a brain</h4>
-    <p>It answers using Claude, the same AI engine HaTi itself uses. To switch it on, paste an Anthropic key below. It is stored on this service and never sent to your browser.</p>
+    <p style="margin:0">It answers using Claude, the same AI engine HaTi itself uses. To switch it on, paste an Anthropic key below. It is stored on this service and never sent to your browser.</p>
     <ol>
       <li>Go to <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">console.anthropic.com</a> and sign in</li>
       <li>Click <b>Create key</b>, give it a name like “HaTi Mapper”</li>
-      <li>Copy the key — it starts with <code style="font-family:var(--mono);font-size:13px">sk-ant-</code></li>
+      <li>Copy the key — it starts with <code class="codechip">sk-ant-</code></li>
     </ol>
     <input id="askKeyInput" type="password" placeholder="sk-ant-…" autocomplete="off" spellcheck="false">
     <div class="row">
-      <button class="btn btn-primary" id="askKeySave">Save key</button>
-      <span class="path" id="askKeyState"></span>
+      <button class="btn btn-primary" id="askKeySave" type="button">Save key</button>
+      <span class="state" id="askKeyState"></span>
     </div>
     <p class="err" id="askKeyErr" hidden></p>
   </div>

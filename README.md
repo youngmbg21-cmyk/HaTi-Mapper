@@ -1,24 +1,36 @@
 # HaTi-Mapper
 
 An internal diagnostic dashboard for [HaTi](https://github.com/youngmbg21-cmyk/mkataba-clm),
-the contract lifecycle platform. Eight panels answering eight questions about
-the product, written for someone who does not read code:
+the contract lifecycle platform. A control tower and seven panels answering the
+questions worth asking about the product, written for someone who does not read
+code:
 
-| Panel | Answers |
+| Screen | Answers |
 |---|---|
+| **Control tower** | The morning question — is anything wrong? Spend, the scan calendar, open doors, what needs attention, how much of HaTi the scanner could read, and where the weight sits |
 | **Screens** | Every screen in the product, what a person does there, and the file it lives in |
-| **Where the money goes** | Every feature that calls Anthropic, which model, which cap, which screens use it — and roughly what it costs |
-| **Where things are kept** | Every database table and what is inside it |
+| **Money** | Every feature that calls Anthropic, which model, which cap, which screens use it — and roughly what it costs |
+| **Doors** | Everything that works without logging in — and, on request, whether the live site really behaves that way |
+| **Changes** | Last night's report, what is still not finished, what the Mapper has watched move over 72 hours or up to 90 days, and recent commits |
 | **What breaks what** | Pick a piece of data, see everything that depends on it — and what changing it can break that is already signed |
-| **Not finished** | Known gaps, gathered from the code and the written documents |
-| **Open to the public** | Everything that works without logging in — and, on request, whether the live site really behaves that way |
-| **What changed** | What the Mapper itself has watched move, over 72 hours or up to 90 days, plus recent commits |
+| **Where things are kept** | Every database table and what is inside it |
 | **Getting bulky** | File sizes, and the names published on `window` that nothing references |
+| **Settings** | The assistant's key, what is worth interrupting you for, and your account. Reached from the gear in the top right, not the tab row |
 
 There is also an **assistant** — a chat panel that can explain any of it in plain
 English. It reads the same data the tabs show and nothing else.
 
-**"Is this what's live?"** A badge under the title answers the one question
+**The control tower is a summary, never a second source.** Every figure on it
+is read from the same scan the panels below are drawn from, so the two can
+never disagree; the verification suite asserts exactly that. Where a card needs
+history the Mapper has not gathered yet — the spend line, the "was 96% a week
+ago" comparison — it says so rather than drawing a shape that means nothing.
+
+**Dark by default, light on request.** The switch is the sun in the top right.
+The choice is remembered in this browser only: it is a preference about a
+screen, not a fact about HaTi, so it never reaches the server.
+
+**"Is this what's live?"** A badge in the footer answers the one question
 that could make everything else on the page misleading: whether the code being
 described is the code your customers are actually using. The scan knows which
 version it read; HaTi's pulse reports which version is deployed. Green means
@@ -27,12 +39,11 @@ number of commits behind when that can be worked out and no number when it
 cannot. Grey means HaTi is not answering, so the honest reply is "can't tell" —
 never "probably fine".
 
-Seven of the eight panels are read from HaTi's **source code**. Only "Where the
-money goes" needs anything from a running HaTi, and all it asks for is caps and
-a count.
+Everything but one panel is read from HaTi's **source code**. Only "Money"
+needs anything from a running HaTi, and all it asks for is caps and a count.
 
-**"The scanner could read 96% of what it looks for."** One line under the
-headline numbers. Every panel is built by matching patterns against source that
+**"The scanner could read 96% of what it looks for."** The "Scanner grip"
+card on the control tower. Every panel is built by matching patterns against source that
 someone else is free to change, and when it changes shape nothing breaks
 loudly — the panels quietly fill up with "not detected" and still look fine.
 This counts the facts the scan set out to establish against the ones it
@@ -229,13 +240,14 @@ Three things make it possible:
   position by itself when content above the viewport changes height, which is
   exactly what swapping panels does. That guesswork suits a feed and not a page
   of independent panels.
-- **The tabs wrap rather than scroll sideways.** At this type size the nine no
-  longer fit across the column, and a scrolling strip slides the whole row when
-  you click a tab near its end — the tabs move out from under the cursor, which
-  is the same complaint on the other axis. Wrapped onto two rows, every tab is
-  always visible and always in the same place. On a phone the rows would eat
-  the screen, so below 700px the row gives up its pin and scrolls away with
-  everything else.
+- **The tabs wrap rather than scroll sideways.** A scrolling strip slides the
+  whole row when you click a tab near its end — the tabs move out from under
+  the cursor, which is the same complaint on the other axis. Wrapped, every tab
+  is always visible and always in the same place. Settings is the one screen
+  not in the row: it is the gear in the top right, beside the theme switch and
+  Rescan, because it is a place you go rather than a panel you read. On a phone
+  the rows would eat the screen, so below 700px the bar gives up its pin and
+  scrolls away with everything else.
 
 The one case that cannot be honoured is scrolling deeper than a panel reaches —
 from the bottom of the long file list to a short panel, say. There is no
