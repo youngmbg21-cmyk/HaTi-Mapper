@@ -3544,6 +3544,7 @@
     renderFeed(true);
     $('askSend').disabled = true;
     $('askInput').value = '';
+    $('askInput').style.height = '';
 
     var payload = chat.history
       .filter(function (m) { return !m.error; })
