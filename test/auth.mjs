@@ -508,6 +508,26 @@ try {
     /could not read HaTi’s commit history/.test(noVersion.message),
     JSON.stringify(noVersion));
 
+  /* NO SCAN YET is a different fact from A SCAN COULD NOT READ ITS VERSION,
+     and the badge said the second when the first was true — on every first
+     load after a restart, because the page asks for the scan and the pulse
+     together and the pulse always wins that race. The owner's first sight of
+     a correctly configured Mapper was therefore a sentence implying it was
+     broken. `scanPending` marks the difference and tells the page to ask
+     again once the scan has landed. */
+  const noScanYet = driftVerdict(null, { available: true, version: '9f8e7d6c5b4a' });
+  check('Before the first scan lands, the badge says HaTi IS answering',
+    noScanYet.state === 'unknown' && noScanYet.scanPending === true &&
+      /HaTi is answering/.test(noScanYet.message) && !/could not read/.test(noScanYet.message),
+    noScanYet.message);
+  check('And that is not confused with a scan that genuinely could not read its version',
+    !noVersion.scanPending && !driftVerdict({ commit: null }, { available: true, version: '9f8e7d6c5b4a' }).scanPending,
+    'scanPending is set for a missing scan only');
+  check('Nor with HaTi not answering at all, which is a different sentence again',
+    driftVerdict(null, { available: false, reason: 'nope' }).scanPending !== true &&
+      /isn’t answering/.test(driftVerdict(null, { available: false, reason: 'nope' }).message),
+    driftVerdict(null, { available: false, reason: 'nope' }).message);
+
   /* ---- history older than 72 hours survives ----
      The working set is still 72 hours and the default view is unchanged. What
      changed is that nothing is thrown away: every round is archived when it

@@ -2841,6 +2841,15 @@
            the scan the server has just cached, and asking first would answer
            "no scan has finished yet" to questions that now have real answers. */
         loadLaunch();
+        /* The badge is worked out server-side from the CACHED scan, and the
+           two requests above went out together — so on the first load after a
+           restart the pulse was always answered before there was a scan to
+           compare it against, and the badge read as a fault. Ask once more now
+           that there is one. Only in that case: `scanPending` is set by
+           driftVerdict for this exact situation and nothing else. */
+        if (pulse && pulse.drift && pulse.drift.scanPending) {
+          apiGet('/api/pulse').then(function (p) { pulse = p; renderDrift(); renderTower(); }, function () {});
+        }
         $('rescan').disabled = false;
         $('rescan').classList.remove('spin');
       })
