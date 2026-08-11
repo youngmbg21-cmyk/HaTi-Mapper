@@ -24,6 +24,11 @@ because they need a hosting dashboard or a change to HaTi itself:
   degrades rather than breaking, and the Settings tab says which.
 - **Set `MAPPER_URL`** (optional) to this dashboard's own address, so emails
   you asked for can link back to it.
+- **Work through the "Ready?" tab.** It is new, and eleven of its
+  twenty-two items are questions only you can answer — starting with the two
+  that most first-time owners find out about too late: a copy of the code on
+  your own computer, and a copy of the live data on your own computer. GitHub
+  is neither. The tab carries the steps for each one.
 - **Add a repository secret named `HATI_SCAN_TOKEN`** if you want the checks
   that now run on every push (W17) to read the real HaTi rather than the
   stand-in. A fine-grained token with read-only Contents permission on
@@ -349,6 +354,73 @@ about HaTi's current source, because nothing in this sandbox could reach it.
 
 Nothing was abandoned, nothing was left unattempted, and no item was left
 half-finished at a boundary.
+
+---
+
+## "Ready?" — the launch checklist
+
+The one thing the dashboard could not answer. Everything else here reports on
+HaTi; nothing reported on whether the owner was in a position to show it to
+anyone or let real people into it, and there was no line anywhere saying what
+"ready" meant.
+
+**What shipped.** A ninth tab, second in the row. Twenty-two items in six
+groups, each tagged with the gate it blocks — a demo, a launch, or neither —
+and a needle across the top with the two gates marked on it as posts.
+
+**Two gates rather than one score,** because "ready to demo" and "ready to let
+real people put real contracts in it" are different questions, and the gap
+between them is where a first launch usually comes apart. A demo item blocks
+both.
+
+**The needle is penned in by the gates.** This is the whole design. Twenty-one
+of twenty-two done is 95% by arithmetic, and 95% reads as "basically there"
+even when the one thing outstanding is an address serving contracts to anyone
+who asks. So the needle's position is derived from the verdict rather than the
+other way round: while a demo item is open it cannot reach the demo post,
+whatever else is ticked. The number and the sentence next to it can therefore
+never disagree. `test/launch.mjs` walks 4,096 combinations of ticks and
+failures asserting that, on top of the hand-picked cases.
+
+**Eleven items the Mapper settles itself** — is it reading the real HaTi or the
+test stand-in, can it see the running site, is the deployed version the one
+being described, does the state survive a restart, does anything answer without
+a login, have the open doors been knocked on, is the spend tripwire armed.
+Those have no tick box, and the server returns 400 to a tick on one of them: a
+box you can tick for something measurable is an invitation to lie to yourself.
+
+**Eleven items only the owner can answer,** each with a numbered set of steps —
+including the two the owner had just found out about the hard way. A copy of
+the code on their own computer is a demo blocker; a copy of the live data is a
+launch blocker; and a card beside the list spells out why GitHub is neither,
+since cloning a repository saves what HaTi *is* and nothing about what is *in*
+it.
+
+**Ticks go stale.** Six items carry a life — seven days for the data copy and
+the demo walk-through, thirty for the code copy and the phone check, ninety for
+the restore test and the stranger test. Past it the tick stops counting and
+says how long ago it was made. The date is stamped by the server, never taken
+from the browser, which the suite checks by sending a forged one.
+
+**"Can't tell" never opens a gate,** drawn amber with the reason rather than
+red — the same rule the scanner-grip figure runs on.
+
+**Two things the checklist turned up while it was being built.** The tab row
+had about two characters of slack left at eight tabs, and a ninth wrapped it
+onto a second line, which took 10px off every tile on the control tower and
+failed the layout check — the pill sizing was re-measured at every breakpoint.
+And the assistant's source chips named a `gaps` tab that has never existed
+("Not finished" is a card on Changes), so that chip had always looked clickable
+and done nothing.
+
+**New:** `lib/launch.mjs`, `test/launch.mjs`, `GET`/`PUT /api/launch`, a
+`get_launch_readiness` tool for the assistant computed from the same evaluation
+the tab draws, and a `--warntx` token — amber that can carry body text, because
+`--gold` is a badge background and reads 3.56:1 on white. It is measured in
+both themes by the same suite that measures the two greys.
+
+**Verification.** `npm run verify`: **767 checks, 0 failures** (334 + 72 + 242
++ 69 + 50).
 
 ---
 
@@ -722,14 +794,16 @@ hash — nothing else. Nothing else in HaTi was touched.
 ## Verification
 
 `npm run verify` drives the real front end with the pre-installed Chromium
-against a real server, and runs three suites in one command:
+against a real server, and runs five suites in one command:
 
 | Suite | What it covers | Checks |
 |---|---|---|
-| `test/verify.mjs` | The eight points below, through the real browser | 200 |
-| `test/chat-loop.mjs` | The assistant's tool loop, its budget and its key precedence | 61 |
-| `test/auth.mjs` | The login, the limits, the history, and the libraries directly | 209 |
-| **Total** | | **470 checks, 0 failures** |
+| `test/verify.mjs` | The eight points below, through the real browser | 334 |
+| `test/chat-loop.mjs` | The assistant's tool loop, its budget and its key precedence | 72 |
+| `test/auth.mjs` | The login, the limits, the history, and the libraries directly | 242 |
+| `test/copilot.mjs` | The assistant's register, its charts and its renderer | 69 |
+| `test/launch.mjs` | The launch checklist: the gates, the needle, staleness, the routes | 50 |
+| **Total** | | **767 checks, 0 failures** |
 
 The eight points the browser run exists for:
 
