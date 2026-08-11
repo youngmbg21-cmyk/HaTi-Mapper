@@ -841,6 +841,12 @@ a{color:inherit;}
 .toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);z-index:60;background:var(--tx);color:var(--sh);font-size:13.5px;
   font-weight:600;padding:9px 17px;border-radius:999px;box-shadow:var(--shadow);opacity:0;transition:opacity .18s;pointer-events:none;}
 .toast.on{opacity:1;}
+/* A toast with something to press has to be pressable, and has to stay long
+   enough to be read first. */
+.toast.act{pointer-events:auto;display:inline-flex;align-items:center;gap:12px;padding-right:7px;}
+.toast.act button{font-family:var(--font);font-size:12.5px;font-weight:700;color:var(--tx);background:var(--sh);
+  border:0;border-radius:999px;padding:5px 13px;cursor:pointer;}
+.toast.act button:hover{background:var(--tile2);}
 
 /* ------------------------------------------------------- the warnings popup
    The circle on the grip card opens this. A popup rather than a jump to

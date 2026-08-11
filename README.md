@@ -146,6 +146,14 @@ chip saying what it is holding back and how to get out again. A counter reading
 nought is left as plain text, because a button that filters to an empty list is
 a button that punishes curiosity.
 
+**A tick says where the row went.** The list opens on what is left, so ticking
+something makes it vanish — correct, and also exactly how a first, exploratory
+tick reads to somebody who has not met the list before: as though they have
+deleted something and cannot get it back. So a tick raises a message naming the
+item, saying it has moved out of what's left, and carrying **Undo** for long
+enough to read the sentence and press it. Switching to **Everything** shows
+every ticked item with its box filled, and un-ticking is always one click.
+
 **Some of what the Mapper measures, the Mapper can also fix.** Where an item is
 about one of the Mapper's own settings — the AI-requests tripwire is the one
 today — the row carries a button that puts it right there and then, rather than
