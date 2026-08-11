@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell($env:GIT_TERMINAL_PROMPT = \"0\"; git clone https://github.com/youngmbg21-cmyk/HaTi-Mapper.git \"C:\\\\Claude Projects\\\\HaTi-Mapper\")",
+      "PowerShell(Get-Location; \\(Get-ChildItem -Force -LiteralPath \"C:\\\\Claude Projects\\\\HaTi-Mapper\" | Measure-Object\\).Count; Get-ChildItem -Force -LiteralPath \"C:\\\\Claude Projects\\\\HaTi-Mapper\" | Select-Object -ExpandProperty FullName)",
+      "PowerShell($env:GIT_TERMINAL_PROMPT = \"0\"; git init -b main; if \\($?\\) { git remote add origin https://github.com/youngmbg21-cmyk/HaTi-Mapper.git; git fetch origin })"
+    ]
+  }
+}
