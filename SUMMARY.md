@@ -424,6 +424,63 @@ both themes by the same suite that measures the two greys.
 
 ---
 
+## The seven checks that only ever failed against the real HaTi
+
+CI had been red on every commit for weeks, and none of it was what it looked
+like. The suite passes against the stand-in in `test/fixture/`; CI reads the
+real repository through `HATI_SCAN_TOKEN`; and seven checks had been written
+around the stand-in's own addresses, file sizes and commit messages. They were
+asserting that the stand-in is the stand-in.
+
+Two of them turned out to be the Mapper being wrong rather than the test.
+
+**Thirty-one of fifty-nine files had nothing said about them, silently.** The
+"Getting bulky" panel showed each as "no plain-English note yet" with no
+sentence, no warning, and a scanner-grip figure still reporting 96% — which is
+exactly the decay that figure exists to catch, going uncaught. Two fixes: the
+gap is now declared (`weight.undescribed`), warned about, and counted against
+the grip; and `describeFiles` learned to read a file's own opening comment,
+which HaTi writes on almost every module (`// HaTi — the redline engine: what
+changed, as storable ops.`). That is a convention in HaTi's source, so reading
+it is the same act as every other parser here rather than invention. It sits
+last in the precedence order, under the hand-written phrasebook. Thirty-one
+undescribed became nought.
+
+**The engine room claimed to be the biggest file in the product.** It was when
+the sentence was written; a front-end view has since overtaken it, and the
+sentence sat directly above a bar chart contradicting it. It now checks the
+ranking before claiming it.
+
+The other five were the test being wrong about HaTi rather than the Mapper:
+
+| Check | Was asserting | Now asserts |
+|---|---|---|
+| The warnings circle | that it is always drawn | present exactly when the payload carries warnings, absent when it does not |
+| A destructured token ceiling | that it is 3000 | that it was resolved through the helper at all — HaTi has since moved it to 2500 |
+| Every file says what it is for | that all of them do | that each either says so or is declared undescribed and warned about |
+| The engine room | that it is the first row | found by being `server/server.js`, and only calling itself biggest when it is |
+| Numbered oldest first | two commit messages the stand-in ships | that each row steps back through the payload's own newest-first list |
+| Two door checks | `GET /health` and `POST /api/advice/request` — neither of which the real HaTi has | the stand-in HaTi hands its four behaviours to doors the scan really found, chosen through the Mapper's own planner |
+
+**And a crash.** When the digest card came back empty, `numbered[0]` threw, the
+catch reported "the verification run itself completed: false", and the sixty
+checks after it never ran — one missing commit list blanked half the suite.
+Guarded.
+
+**New: the suite can be run against a real checkout.** `HATI_FIXTURE=/path/to/
+mkataba-clm npm run verify` reads HaTi off disk, including its git log for the
+commit history, and says at the top of the run that it is doing so. Without it
+none of the above could have been confirmed on a machine that cannot download
+the repository — which is the same wall `BUGLOG.md` records the original build
+run hitting, and the reason it was able to state that no work item in that run
+was verified against the live HaTi.
+
+**Verification.** `npm run verify`: **774 checks, 0 failures** against the
+stand-in, and **774 checks, 0 failures** against a real checkout of HaTi at
+`a13a14d`.
+
+---
+
 ## After the run — four fixes from reading the real screen
 
 The owner looked at the running dashboard and raised three things; a fourth
@@ -803,7 +860,11 @@ against a real server, and runs five suites in one command:
 | `test/auth.mjs` | The login, the limits, the history, and the libraries directly | 242 |
 | `test/copilot.mjs` | The assistant's register, its charts and its renderer | 69 |
 | `test/launch.mjs` | The launch checklist: the gates, the needle, staleness, the routes | 50 |
-| **Total** | | **767 checks, 0 failures** |
+| **Total** | | **774 checks, 0 failures** |
+
+Green against the stand-in in `test/fixture/` **and** against a real checkout
+of HaTi (`HATI_FIXTURE=/path/to/mkataba-clm npm run verify`), which is new —
+see below.
 
 The eight points the browser run exists for:
 

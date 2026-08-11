@@ -572,10 +572,32 @@ already in the payload:
   seal · Audit trail."* Both the file and its proof identifier are already
   checked to still exist on every scan, so this cannot drift into a lie.
 - **The file every route is answered in** counts its own routes — *"The engine
-  room. Every request HaTi answers arrives here, all 41 of them."*
+  room. Every request HaTi answers arrives here, all 108 of them."* It used to
+  finish *"that is why it is the biggest file in the product"*, which was true
+  when it was written and is not any more; a front-end view has since overtaken
+  it, so the sentence now checks the ranking before claiming it rather than
+  contradicting the bar drawn underneath it.
 - **Anything nothing else explains** falls through to `FILE_COPY` in
-  `data/copy.js`, which is two entries long, and a file even that cannot
-  explain says **"no plain-English note yet"** rather than being guessed at.
+  `data/copy.js`.
+- **And failing all of that, the file's own opening comment.** HaTi names
+  almost every module on its first line — `// HaTi — the redline engine: what
+  changed, as storable ops.` — and the phone modules say the same thing in a
+  ruled block. That is a convention in HaTi's own source, so reading it is the
+  same kind of act as every other parser here. It sits last in the order
+  because a sentence somebody wrote for the owner beats a sentence somebody
+  wrote for the next programmer. Two things are stepped over: the note about
+  globals being window-attached that nearly every module carries, since it is
+  true of all of them and so describes none of them, and shouted labels like
+  `THE PHONE.` with no lower-case letter in them, which are headings rather
+  than sentences.
+- **A file even that cannot explain** says **"no plain-English note yet"**
+  rather than being guessed at — and now says it *out loud*: it is listed in
+  `weight.undescribed`, raises a warning of its own, and counts against the
+  scanner-grip figure. Before, a file nobody could explain was a silent blank
+  row while the grip still reported 96%, which is precisely the decay that
+  figure exists to catch. Against HaTi as it stood when this was written, that
+  was 31 of 59 files, including the biggest one in the product; reading the
+  opening comments took it to nought.
 
 The panel also explains its own units, because "195 KB" means nothing on its
 own: a kilobyte is how much text a file holds, 60 KB is roughly fifteen to
@@ -912,10 +934,10 @@ drives, then the suite itself. No live HaTi and no deployed Mapper is involved �
 the suite starts its own server on a spare port, and the panels that need a
 running HaTi assert the "cannot reach it" wording instead.
 
-`npm run verify` is four files. `test/verify.mjs` drives the dashboard,
+`npm run verify` is five files. `test/verify.mjs` drives the dashboard,
 `test/chat-loop.mjs` drives the assistant's tool loop against a stand-in model,
-`test/auth.mjs` drives the login, and `test/copilot.mjs` drives the Copilot
-panel — the register read at call time rather than frozen, flipping restating
+`test/auth.mjs` drives the login, `test/launch.mjs` drives the launch checklist,
+and `test/copilot.mjs` drives the Copilot panel — the register read at call time rather than frozen, flipping restating
 the answer on screen in place, both versions cached, every prompt path carrying
 the register, the model unable to inject markup through a reply, and an unknown
 chart kind showing a card rather than breaking the panel.
@@ -926,7 +948,20 @@ can read this repository but not HaTi's, so CI falls back to the stand-in in
 HaTi, add a repository secret named `HATI_SCAN_TOKEN`** — a fine-grained token
 with read-only Contents permission on `youngmbg21-cmyk/mkataba-clm` and nothing
 else. It is also the answer if the default token's rate limit ever proves too
-tight. With no such secret the workflow uses the run's own token, so it works
+tight.
+
+**To run the suite against the real HaTi without downloading it, point
+`HATI_FIXTURE` at a checkout:** `HATI_FIXTURE=/path/to/mkataba-clm npm run
+verify`. The run says at the top that it is reading a checkout, and it reads
+that checkout's git log for the commit history rather than looking for the
+stand-in's hand-written one. This is worth having because several checks only
+ever failed against the real repository and passed happily against the
+stand-in — they had been written around the stand-in's own addresses, file
+sizes and commit messages, which is a way of asserting that the stand-in is
+the stand-in. Those are now written against whatever HaTi actually is: the
+stand-in HaTi in the door checks hands its behaviours to doors the scan really
+found, and the checks on file descriptions, commit order and AI token ceilings
+assert the property rather than the value HaTi happened to have on the day. With no such secret the workflow uses the run's own token, so it works
 unchanged either way.
 
 ---
@@ -1036,6 +1071,10 @@ the scan marks rather than guesses:
   and says why that is the whole list.
 - **Severity on the "Not finished" panel.** None of the sources — README,
   `SECURITY.md`, the code — states one, so none is shown.
+- **A file nobody has described**, when nothing in `data/copy.js` names it, no
+  screen resolves to it and its own opening comment cannot be read. It is
+  listed, warned about and counted against the grip figure rather than left as
+  a blank row.
 - **A commit's areas**, when its file list could not be fetched.
 - **A screen's module**, if `setView()` dispatches to a function that is not
   declared in any scanned file.

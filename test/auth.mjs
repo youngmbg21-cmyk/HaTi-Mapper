@@ -994,14 +994,42 @@ try {
   check('An entry for a file that no longer exists is reported, not left to rot',
     missingFile.warnings.some(w => /describes a file "js\/templates\.js"/.test(w)),
     missingFile.warnings.filter(w => /file "/.test(w)).join(' | '));
+  /* "Nothing can explain it" now means something narrower than it did: a file
+     that opens by saying what it is gets described from its own words, which
+     is reading rather than guessing. So the mute file has to be genuinely
+     mute — no opening comment at all. */
+  const mute = (function () {
+    const extra = new Map(readFixture(FIXTURE_DIR).files);
+    extra.set('js/mystery.js', Buffer.from('const x = 1;\nwindow.mystery = x;\n'.repeat(40)));
+    const s = buildScan({ files: extra, commits: null });
+    return { row: s.weight.files.find(f => f.path === 'js/mystery.js'), scan: s };
+  })();
   check('A file nothing can explain says so rather than being guessed at',
-    (function () {
-      const extra = new Map(readFixture(FIXTURE_DIR).files);
-      extra.set('js/mystery.js', Buffer.from('/* nothing references this */\n'.repeat(40)));
-      const s = buildScan({ files: extra, commits: null });
-      const row = s.weight.files.find(f => f.path === 'js/mystery.js');
-      return row && row.name === null && row.does === null;
-    })(), 'an unexplained file must come back with no sentence at all');
+    mute.row && mute.row.name === null && mute.row.does === null,
+    'an unexplained file must come back with no sentence at all');
+  check('And it is declared and warned about, not left as a silent blank',
+    mute.scan.weight.undescribed.includes('js/mystery.js') &&
+      mute.scan.warnings.some(w => w.startsWith('js/mystery.js has no plain-English note')),
+    (mute.scan.weight.undescribed || []).join(', ') || 'nothing declared undescribed');
+
+  /* The other half of the same rule: a file that DOES say what it is gets
+     described from that, with the provenance recorded so the panel is never
+     passing a code comment off as hand-written copy. */
+  const spoke = (function () {
+    const extra = new Map(readFixture(FIXTURE_DIR).files);
+    extra.set('js/spoken.js', Buffer.from(
+      '// HaTi — the clause ledger: every clause anyone has ever agreed to.\n' +
+      '// Globals are window-attached like every module (see components.js).\n' +
+      'const y = 2;\n'.repeat(40)));
+    const s = buildScan({ files: extra, commits: null });
+    return s.weight.files.find(f => f.path === 'js/spoken.js');
+  })();
+  check('A file that says what it is is described from its own opening comment',
+    spoke && spoke.from === 'header' && spoke.name === 'The clause ledger' &&
+      spoke.does === 'Every clause anyone has ever agreed to.',
+    spoke ? `${spoke.from}: ${spoke.name} — ${spoke.does}` : 'no row for js/spoken.js');
+  check('And the note every module carries is not mistaken for that file\'s own',
+    spoke && !/window-attached/.test(spoke.does || ''), spoke ? spoke.does : 'n/a');
 
   /* ---- knocking on the doors ----
      "Open to the public" is a claim about HaTi's source. This is the one place
@@ -1033,20 +1061,24 @@ try {
   check('Each skipped door says why in plain English',
     planned.skipped.every(s => /^not checked: /.test(s.reason)));
 
-  /* The stand-in HaTi. One answer per door, chosen to produce one of each
-     verdict against the fixture's own list of open routes. */
+  /* The stand-in HaTi. One answer per door, so one of each verdict appears.
+     Which door gets which answer is decided below, once the scan has said what
+     doors there actually are — hard-coding the stand-in repository's addresses
+     meant that reading the real HaTi, where there is no /health, left the
+     "answers as the code says" verdict with no door to appear on. */
+  const stubRoles = { needsLogin: null, gaveData: null, noAnswer: null };
   stubHati = await new Promise((resolve, reject) => {
     const srv = http.createServer((req, res) => {
-      const url = req.url.split('?')[0];
-      if (url === '/') return res.writeHead(200, { 'Content-Type': 'text/html' }).end('<!doctype html><title>HaTi</title>');
-      if (url === '/health') return res.writeHead(200, { 'Content-Type': 'application/json' }).end('{"ok":true}');
+      const address = `${req.method} ${req.url.split('?')[0]}`;
       // The code says no login is needed; something in front of it disagrees.
-      if (url === '/api/status') return res.writeHead(401).end('{"error":"sign in"}');
+      if (address === stubRoles.needsLogin) return res.writeHead(401).end('{"error":"sign in"}');
       // The code says this one checks its own bearer token. It does not.
-      if (url === '/api/pulse') return res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ secret: 'x'.repeat(200) }));
+      if (address === stubRoles.gaveData) {
+        return res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ secret: 'x'.repeat(200) }));
+      }
       // Nothing answers at all.
-      if (url === '/api/advice/rates') return req.socket.destroy();
-      res.writeHead(404).end('{}');
+      if (address === stubRoles.noAnswer) return req.socket.destroy();
+      res.writeHead(200, { 'Content-Type': 'application/json' }).end('{"ok":true}');
     });
     srv.listen(STUB_PORT, () => resolve(srv)).on('error', reject);
   });
@@ -1077,26 +1109,49 @@ try {
   check('And the limits are stated up front, not after the fact',
     before.body.cap === CHECK_CAP && before.body.throttleMs === THROTTLE_MS, JSON.stringify(before.body));
 
-  await doorsCall('GET', '/api/scan');           // there must be a list of doors first
+  const doorsScan = await doorsCall('GET', '/api/scan');   // there must be a list of doors first
+
+  /* Hand each behaviour to a door this HaTi actually has, using the Mapper's
+     own planner rather than a guess. A door that serves the app shell is kept
+     out of the two roles that read as findings. */
+  const realPlan = planCheck(doorsScan.body.public.routes);
+  const doorAddr = r => r && `${r.method} ${r.path}`;
+  const guardedDoor = realPlan.plan.filter(r => r.tokenGuarded)[0];
+  const plainDoors = realPlan.plan.filter(r => !r.tokenGuarded)
+    .sort((a, b) => (a.servesShell ? 1 : 0) - (b.servesShell ? 1 : 0));
+  stubRoles.gaveData = doorAddr(guardedDoor);
+  stubRoles.needsLogin = doorAddr(plainDoors[0]);
+  stubRoles.noAnswer = doorAddr(plainDoors[1]);
+  const asWrittenDoor = doorAddr(plainDoors[2]);
+  const wouldWrite = realPlan.skipped.filter(s => /would write data/.test(s.reason));
+
+  check('Every verdict has a real door to appear on',
+    !!stubRoles.gaveData && !!stubRoles.needsLogin && !!stubRoles.noAnswer && !!asWrittenDoor && wouldWrite.length >= 1,
+    `as-written=${asWrittenDoor}, login=${stubRoles.needsLogin}, data=${stubRoles.gaveData}, silent=${stubRoles.noAnswer}, ${wouldWrite.length} would write`);
+
   const knocked = await doorsCall('POST', '/api/public-check');
   check('The check runs when the owner asks for it', knocked.status === 200, JSON.stringify(knocked.body));
 
   const said = Object.fromEntries((knocked.body.results || []).map(r => [r.address, r]));
   check('A door the code says is open, and is: as written',
-    said['GET /health'] && said['GET /health'].verdict === 'as-expected', JSON.stringify(said['GET /health']));
+    said[asWrittenDoor] && said[asWrittenDoor].verdict === 'as-expected', JSON.stringify(said[asWrittenDoor]));
   check('A door the code says is open but the live site guards: flagged',
-    said['GET /api/status'] && said['GET /api/status'].verdict === 'needs-login', JSON.stringify(said['GET /api/status']));
+    said[stubRoles.needsLogin] && said[stubRoles.needsLogin].verdict === 'needs-login', JSON.stringify(said[stubRoles.needsLogin]));
   check('A door the code says checks its own secret but hands over data: flagged',
-    said['GET /api/pulse'] && said['GET /api/pulse'].verdict === 'unexpected-data', JSON.stringify(said['GET /api/pulse']));
+    said[stubRoles.gaveData] && said[stubRoles.gaveData].verdict === 'unexpected-data', JSON.stringify(said[stubRoles.gaveData]));
   check('A door that does not answer at all: said so, not guessed at',
-    said['GET /api/advice/rates'] && said['GET /api/advice/rates'].verdict === 'unreachable',
-    JSON.stringify(said['GET /api/advice/rates']));
+    said[stubRoles.noAnswer] && said[stubRoles.noAnswer].verdict === 'unreachable',
+    JSON.stringify(said[stubRoles.noAnswer]));
   check('Every result says in plain English what happened',
     knocked.body.results.every(r => typeof r.says === 'string' && r.says.length > 20));
 
+  /* Against the planner's own count rather than the two the stand-in happens
+     to have — the real HaTi has eight. What must hold is that every mutating
+     route was skipped, not that there is any particular number of them. */
   check('The routes that would write data were skipped with the reason given',
-    knocked.body.skipped.filter(s => s.reason === 'not checked: checking would write data').length === 2,
-    JSON.stringify(knocked.body.skipped));
+    knocked.body.skipped.filter(s => s.reason === 'not checked: checking would write data').length === wouldWrite.length &&
+      wouldWrite.length >= 1,
+    `${knocked.body.skipped.filter(s => /would write data/.test(s.reason)).length} skipped, ${wouldWrite.length} planned`);
   check('No POST was ever sent to the live site',
     knocked.body.results.every(r => r.address.startsWith('GET ')), JSON.stringify(knocked.body.results.map(r => r.address)));
 
@@ -1104,7 +1159,8 @@ try {
      difference between a person knocking and a scanner sweeping, so it is
      asserted rather than assumed. */
   check('The knocking is throttled, not fired off all at once',
-    knocked.body.requests === 5 && knocked.body.tookMs >= 4 * THROTTLE_MS,
+    knocked.body.requests === realPlan.plan.length &&
+      knocked.body.tookMs >= (realPlan.plan.length - 1) * THROTTLE_MS,
     `${knocked.body.requests} requests in ${knocked.body.tookMs}ms`);
   check('And never more than the cap in one press',
     knocked.body.requests <= knocked.body.cap && knocked.body.cap === CHECK_CAP);

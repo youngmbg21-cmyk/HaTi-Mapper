@@ -23,6 +23,16 @@ export async function hatiSource() {
   const token = (process.env.GITHUB_TOKEN || '').trim();
   let reason = '';
 
+  /* A checkout of the real HaTi, named explicitly. This is how the suite gets
+     run against the actual product on a machine that cannot download it —
+     which is worth having, because several checks here only ever failed
+     against the real repository and passed happily against the stand-in. It
+     is never chosen by accident: nothing sets HATI_FIXTURE but a person. */
+  const named = (process.env.HATI_FIXTURE || '').trim();
+  if (named && named !== FIXTURE_DIR) {
+    return { mode: 'checkout', env: { HATI_FIXTURE: named }, note: `reading a local checkout at ${named}` };
+  }
+
   try {
     const r = await fetch(`https://api.github.com/repos/${repo}`, {
       headers: {
@@ -45,7 +55,9 @@ export async function hatiSource() {
 }
 
 export function announce(source) {
-  console.log(source.mode === 'live'
-    ? `\n[source] ${source.note}`
-    : `\n[source] ${source.note}\n[source] Every check below still runs; the numbers describe the stand-in, not the live product.`);
+  if (source.mode === 'live') return console.log(`\n[source] ${source.note}`);
+  if (source.mode === 'checkout') {
+    return console.log(`\n[source] ${source.note}\n[source] Every check below runs against that checkout — the real product, read off disk rather than downloaded.`);
+  }
+  console.log(`\n[source] ${source.note}\n[source] Every check below still runs; the numbers describe the stand-in, not the live product.`);
 }

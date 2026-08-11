@@ -17,6 +17,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { hatiSource, announce } from './source.mjs';
+import { planCheck } from '../lib/doors.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, '..');
@@ -283,9 +284,20 @@ try {
      click. The list also stays on its Settings card — the popup does not
      replace it — so both are checked. The fixture always raises at least the
      "stand-in" warning, so the circle is present in this run. */
+  /* Against the payload, not against an assumption. This asserted the circle
+     was there full stop, on the reasoning that the stand-in always raises at
+     least one warning — which stopped being the whole story the day the suite
+     could read the real HaTi, where a clean scan raises none and the honest
+     thing to draw is nothing at all. Both directions are checked: a circle
+     when there are warnings, and no circle when there are not, because a
+     circle reading "0 warnings" would be its own bug. */
   const warnCircle = await page.$('#towerGrip .gowarn');
-  check('The grip card shows a warnings circle when the scan raised any', !!warnCircle,
-    warnCircle ? 'present' : 'no .gowarn — did the fixture raise no warnings?');
+  const warnCount = (scan.warnings || []).length;
+  check(warnCount
+    ? 'The grip card shows a warnings circle when the scan raised any'
+    : 'The grip card shows no warnings circle when the scan raised none',
+    !!warnCircle === warnCount > 0,
+    `${warnCount} warning(s) in the payload, circle ${warnCircle ? 'present' : 'absent'}`);
   if (warnCircle) {
     const anim = await page.evaluate(() => {
       const el = document.querySelector('#towerGrip .gowarn');
@@ -712,8 +724,16 @@ try {
   check('And one whose Anthropic call is inside a helper is still priced',
     !!feat('playbook') && feat('playbook').tiers.length > 0 && feat('playbook').maxTokens > 0,
     `tiers=${(feat('playbook') || {}).tiers} max=${(feat('playbook') || {}).maxTokens}`);
+  /* The point is that the ceiling was RESOLVED through a helper whose
+     parameter is destructured — not that it is any particular number. This
+     asserted 3000, which was HaTi's figure on the day it was written; HaTi has
+     since moved it to 2500 and the check failed for a change that was none of
+     the Mapper's business. What must hold is that the value came from the
+     helper rather than being reported unknown. */
+  const play = feat('playbook') || {};
   check('Even when that helper takes a destructured parameter',
-    (feat('playbook') || {}).maxTokens === 3000, `${(feat('playbook') || {}).maxTokens}`);
+    play.callVia === 'aiPlaybookVerdicts' && Number.isFinite(play.maxTokens) && play.maxTokens > 0,
+    `resolved ${play.maxTokens} tokens via ${play.callVia || 'nothing'}`);
   check('A tier chosen inside the call itself is resolved, not reported unknown',
     !!feat('chat') && feat('chat').tiers.length === 2, (feat('chat') || {}).tiers?.join('+'));
   check('An admin route under /api/ai/ that calls nothing is not a paid feature',
@@ -954,12 +974,35 @@ try {
   check('Every file is listed as a thing, not only as a path',
     fileRows.length === scan.weight.files.length && fileRows.every(r => r.name.trim().length > 2),
     `${fileRows.length} rows, ${fileRows.filter(r => !r.name.trim()).length} unnamed`);
-  check('And each says in a sentence what it is for',
-    fileRows.every(r => r.says.trim().length > 12),
-    (fileRows.find(r => r.says.trim().length <= 12) || {}).path || 'all described');
-  check('The biggest file is named as the engine room, from its own route count',
-    fileRows[0].name === 'The engine room' && /all \d+ of them/.test(fileRows[0].says),
-    `${fileRows[0].name} — ${fileRows[0].says.slice(0, 70)}`);
+  /* A file with nothing said about it is allowed to exist — HaTi is free to
+     add a module the Mapper cannot explain — but it may not be SILENT. Either
+     the row carries a sentence, or the scan declared the file undescribed and
+     warned about it. What is forbidden is the third state this used to sit in:
+     a blank row, no warning, and a grip figure still reporting 96%. */
+  const undescribed = new Set(scan.weight.undescribed || []);
+  const blank = fileRows.filter(r => r.says.trim().length <= 12);
+  check('And each says in a sentence what it is for, or is declared undescribed',
+    blank.every(r => undescribed.has(r.path.trim())),
+    blank.length
+      ? `${blank.length} without a sentence, ${blank.filter(r => !undescribed.has(r.path.trim())).length} of them undeclared`
+      : 'all described');
+  check('Anything the Mapper cannot explain raises a warning of its own',
+    [...undescribed].every(p => scan.warnings.some(w => w.startsWith(p + ' has no plain-English note'))),
+    `${undescribed.size} undescribed`);
+
+  /* Found by what it IS, not by where it happens to sort. This assumed the
+     server was the biggest file in the product, which it no longer is — a
+     front-end view has overtaken it — so the check was reading a different
+     row's name. The claim worth making is that the file every request lands
+     in is named for that, and counts the routes itself. */
+  const engine = fileRows.find(r => r.path.trim() === 'server/server.js');
+  check('The file every request lands in is named as the engine room, from its own route count',
+    !!engine && engine.name === 'The engine room' && /all \d+ of them/.test(engine.says),
+    engine ? `${engine.name} — ${engine.says.slice(0, 70)}` : 'no server/server.js row');
+  /* And it may only claim to be the biggest when it is. */
+  check('And it only calls itself the biggest file when it is the biggest file',
+    !!engine && /biggest file/.test(engine.says) === (fileRows[0].path.trim() === 'server/server.js'),
+    `biggest is ${fileRows[0].path.trim()}; the sentence ${/biggest file/.test((engine || {}).says || '') ? 'claims' : 'does not claim'} it`);
   check('A file behind a screen borrows that screen’s own words',
     fileRows.some(r => /^The .+ screen$/.test(r.name)),
     fileRows.filter(r => /screen$/.test(r.name)).map(r => r.name).slice(0, 3).join(' | '));
@@ -1159,13 +1202,33 @@ try {
       text: el.querySelector('.t').textContent.trim(),
       sha: el.querySelector('.h').textContent.trim(),
     })));
+  /* Guarded, because everything below reads numbered[0]. When the card came
+     back empty this threw, the catch reported "the verification run itself
+     completed: false", and the sixty checks after it never ran — one missing
+     commit list turned into a blank second half of the suite. */
   check('Every change in the night is numbered', numbered.length >= 3, `${numbered.length} rows`);
+  if (!numbered.length) check('And there is a night to report on at all', false,
+    'the digest card listed no code updates, so the checks below could not run');
+  else {
   check('Numbered from one, with no gaps',
     numbered.every((r, i) => r.n === String(i + 1)), numbered.map(r => r.n).join(','));
+  /* Order, not contents. This named the two commits the stand-in ships, so it
+     could only ever pass against the stand-in; read against the real HaTi it
+     was comparing story order to somebody's actual commit messages. The
+     property that matters — and the one the comment above already states — is
+     that number 1 is the OLDEST.
+
+     Compared by reference number against the payload's own list, which arrives
+     newest-first from git: every step down the card must be a step BACK
+     through that list. Positions rather than a fixed pair of messages, so it
+     holds whichever commits are in there and whether or not the card is
+     showing all of them. */
+  const gitOrder = (scan.changes || []).map(c => c.sha);
+  const cardAt = numbered.map(r => gitOrder.indexOf(r.sha));
   check('Numbered in the order the work happened, oldest first',
-    numbered[0].text === 'Add the clause deviation summary to reports' &&
-    numbered[numbered.length - 1].text === 'Speed up the register table on large portfolios',
-    `${numbered[0].text} → ${numbered[numbered.length - 1].text}`);
+    numbered.length > 0 && cardAt.every(i => i >= 0) &&
+      cardAt.every((at, i) => i === 0 || at < cardAt[i - 1]),
+    `card: ${numbered[0].text} → ${numbered[numbered.length - 1].text} | positions in the git log: ${cardAt.join(',')}`);
   check('Each carries its reference number without it crowding the sentence',
     numbered.every(r => /^[0-9a-f]{7}$/.test(r.sha)), numbered.map(r => r.sha).join(','));
   check('And the day they happened is stated, not just "since midnight"',
@@ -1180,6 +1243,7 @@ try {
   check('The footer says which half came from where',
     /straight from GitHub’s record/.test(digestFoot) && /not taken a look yet/.test(digestFoot),
     digestFoot);
+  }
 
   console.log('\nBeing told about things');
   await page.click('[data-p="settings"]');
@@ -1480,15 +1544,27 @@ try {
      stand-in HaTi below answers each open door differently so all four
      verdicts appear on screen at once. */
   console.log('\nKnocking on the doors');
+  /* The stand-in HaTi used to answer four HARD-CODED addresses — /health,
+     /api/status, /api/pulse, /api/advice/rates — which are the stand-in
+     repository's addresses. Read against the real HaTi there is no /health at
+     all, so the "answers as the code says" verdict had no door to appear on
+     and the check failed on a fact about HaTi rather than about the Mapper.
+
+     So the behaviours are now assigned to whatever doors the scan actually
+     found, once the plan is known. `stubRoles` is filled in below, before the
+     knock; until then every door answers plainly, which is also the default
+     for any door not given a role. */
+  const stubRoles = { needsLogin: null, gaveData: null, noAnswer: null };
   stubHati = await new Promise((resolve, reject) => {
     const srv = http.createServer((req, res) => {
-      const url = req.url.split('?')[0];
-      if (url === '/') return res.writeHead(200, { 'Content-Type': 'text/html' }).end('<!doctype html><title>HaTi</title>');
-      if (url === '/health') return res.writeHead(200, { 'Content-Type': 'application/json' }).end('{"ok":true}');
-      if (url === '/api/status') return res.writeHead(401).end('{"error":"sign in"}');           // guarded, though the code says otherwise
-      if (url === '/api/pulse') return res.writeHead(200).end('{"leak":true}');                  // hands data over, though the code says it checks a secret
-      if (url === '/api/advice/rates') return req.socket.destroy();                              // answers nothing at all
-      res.writeHead(404).end('{}');
+      const address = `${req.method} ${req.url.split('?')[0]}`;
+      // Guarded, though the code says otherwise.
+      if (address === stubRoles.needsLogin) return res.writeHead(401).end('{"error":"sign in"}');
+      // Hands data over, though the code says it checks a secret.
+      if (address === stubRoles.gaveData) return res.writeHead(200).end('{"leak":true}');
+      // Answers nothing at all.
+      if (address === stubRoles.noAnswer) return req.socket.destroy();
+      res.writeHead(200, { 'Content-Type': 'application/json' }).end('{"ok":true}');
     });
     srv.listen(STUB_PORT, () => resolve(srv)).on('error', reject);
   });
@@ -1518,6 +1594,31 @@ try {
   await page3.waitForSelector('#app:not([hidden])', { timeout: 180000 });
   await page3.click('[data-p="public"]');
   await page3.waitForSelector('button[data-act="knock"]', { timeout: 30000 });
+
+  /* Work out which doors will actually be knocked on, using the Mapper's own
+     planner rather than a guess, and hand each behaviour to a real one. A
+     door that serves the app shell is kept out of the "guarded" and "silent"
+     roles: those read as findings, and the shell answering is neither. */
+  const doorCookies = await ctx.cookies();
+  const doorSess = doorCookies.filter(c => c.name === 'mapper_session')[0];
+  const doorScan = await (await fetch(`${doorsBase}/api/scan`, {
+    headers: { Cookie: `mapper_session=${doorSess.value}` },
+  })).json();
+  const { plan: doorPlan, skipped: doorSkipped } = planCheck(doorScan.public.routes);
+  const guarded = doorPlan.filter(r => r.tokenGuarded);
+  const plainDoors = doorPlan.filter(r => !r.tokenGuarded)
+    .sort((a, b) => (a.servesShell ? 1 : 0) - (b.servesShell ? 1 : 0));
+  const addr = r => r && `${r.method} ${r.path}`;
+
+  stubRoles.gaveData = addr(guarded[0]);
+  stubRoles.needsLogin = addr(plainDoors[0]);
+  stubRoles.noAnswer = addr(plainDoors[1]);
+  const asWrittenDoor = addr(plainDoors[2]);
+  const wouldWriteDoor = (doorSkipped.find(s => /would write data/.test(s.reason)) || {}).address;
+
+  check('Every verdict has a real door to appear on',
+    !!stubRoles.gaveData && !!stubRoles.needsLogin && !!stubRoles.noAnswer && !!asWrittenDoor && !!wouldWriteDoor,
+    `as-written=${asWrittenDoor}, login=${stubRoles.needsLogin}, data=${stubRoles.gaveData}, silent=${stubRoles.noAnswer}, write=${wouldWriteDoor}`);
 
   /* The two lists are merged now, so the code's claim about every door is on
      screen before anything is knocked on. What must be true before the press
@@ -1561,24 +1662,24 @@ try {
 
   const verdictOf = a => (knocked.rows.find(r => r.address === a) || {}).verdict;
   check('A door the code says is open, and is, shows as written',
-    verdictOf('GET /health') === 'as written', verdictOf('GET /health'));
+    verdictOf(asWrittenDoor) === 'as written', `${asWrittenDoor} → ${verdictOf(asWrittenDoor)}`);
   check('A door the live site guards shows as wanting a login',
-    verdictOf('GET /api/status') === 'wants login', verdictOf('GET /api/status'));
+    verdictOf(stubRoles.needsLogin) === 'wants login', `${stubRoles.needsLogin} → ${verdictOf(stubRoles.needsLogin)}`);
   check('A door that hands data over shows as having done so',
-    verdictOf('GET /api/pulse') === 'gave data', verdictOf('GET /api/pulse'));
+    verdictOf(stubRoles.gaveData) === 'gave data', `${stubRoles.gaveData} → ${verdictOf(stubRoles.gaveData)}`);
   check('A door that never answered shows as unanswered, not as fine',
-    verdictOf('GET /api/advice/rates') === 'no answer', verdictOf('GET /api/advice/rates'));
+    verdictOf(stubRoles.noAnswer) === 'no answer', `${stubRoles.noAnswer} → ${verdictOf(stubRoles.noAnswer)}`);
   check('The two surprises are drawn as surprises, not as ordinary rows',
-    ['GET /api/status', 'GET /api/pulse'].every(a =>
+    [stubRoles.needsLogin, stubRoles.gaveData].every(a =>
       /\bbad\b/.test((knocked.rows.find(r => r.address === a) || {}).cls || '')),
     knocked.rows.map(r => `${r.address}=${r.cls}`).join(' | '));
   check('And they are sorted to the top, above the doors that behaved',
     knocked.rows.slice(0, 2).every(r => /\bbad\b/.test(r.cls)),
     knocked.rows.slice(0, 3).map(r => r.address).join(' | '));
   check('Anything that would have written data is shown as left alone, with the reason',
-    knocked.rows.some(r => r.address === 'POST /api/advice/request' &&
+    knocked.rows.some(r => r.address === wouldWriteDoor &&
       r.verdict === 'left alone' && /would write data/.test(r.says)),
-    JSON.stringify(knocked.rows.find(r => /advice\/request/.test(r.address))));
+    JSON.stringify(knocked.rows.find(r => r.address === wouldWriteDoor)) || `no row for ${wouldWriteDoor}`);
   check('And the panel says what it did, in plain English',
     /plain request/.test(knocked.text) && /nothing of HaTi’s is on this screen/.test(knocked.text),
     knocked.text.slice(-220));
