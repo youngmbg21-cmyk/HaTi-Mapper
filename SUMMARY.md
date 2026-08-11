@@ -9,10 +9,17 @@ because they need a hosting dashboard or a change to HaTi itself:
   it at `/var/data` and set `MAPPER_DATA=/var/data`. Without a disk, your
   account, the change log and its archive, your settings and the day's question
   count are all lost on every redeploy.
-- **Review and merge HaTi's `/api/pulse` branch** (`claude/new-session-5b3551`
-  in `mkataba-clm`) and set a matching `MAPPER_TOKEN` on both services. Until
-  then the spend panel shows code defaults, the "is this what's live?" badge
-  reads "can't tell", and the AI-request tripwire cannot be checked.
+- **Set `HATI_URL` and a matching `MAPPER_TOKEN` on both services.** HaTi's
+  `/api/pulse` branch has since been merged — the endpoint is on `main` in
+  `mkataba-clm` today, guarded by `safeEq` against a bearer token and returning
+  404 when `MAPPER_TOKEN` is unset — so the only thing left is the pair of
+  environment variables, and they are dashboard values by design (`sync: false`
+  in both `render.yaml` files, never committed). The token must be **the same
+  string on both services**; HaTi compares it to the bearer the Mapper sends.
+  `HATI_URL` is the Mapper's side only, and is the base URL with no trailing
+  slash. Until both are set the spend panel shows code defaults, the "is this
+  what's live?" badge reads "can't tell", the AI-request tripwire cannot be
+  checked, and four items on the "Ready?" tab sit at "can't tell".
 - **Adopt the severity convention in HaTi's documents** if you want the "Not
   finished" list ranked: start a bullet in HaTi's README or `SECURITY.md` with
   `[high]`, `[medium]` or `[low]`. The Mapper side is built and will pick them
