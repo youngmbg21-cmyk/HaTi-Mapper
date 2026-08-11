@@ -869,8 +869,8 @@
 
   /* One card. `tone` is 'ok' | 'warn' | 'bad' — the same three the tower uses,
      so a colour means one thing everywhere on this page. */
-  function sumCard(n, tone, caption, extra) {
-    return '<div class="sum"><div class="top">' +
+  function sumCard(n, tone, caption, extra, attrs) {
+    return '<div class="sum"' + (attrs ? ' ' + attrs : '') + '><div class="top">' +
       '<span class="tl' + (tone === 'bad' ? ' bad' : tone === 'warn' ? ' warn' : '') + '"></span>' +
       '<span class="n">' + n + '</span>' + (extra || '') + '</div>' +
       '<div class="cap">' + caption + '</div></div>';
@@ -2410,8 +2410,30 @@
   /* ==================================================================== */
 
   var launch = null;
-  var launchFilter = 'open';        // 'open' | 'all'
+  /* 'open' and 'all' are the two the segmented control offers. The other three
+     are reached by clicking a counter, because a number with no way through to
+     the things it counts is a wall — "4 still to do before you show this to
+     anyone" told the owner there were four and not which four, and the four
+     are scattered across six groups by design, since the groups are about
+     subject matter and the gates cut across them. */
+  var launchFilter = 'open';        // 'open' | 'all' | 'demo' | 'live' | 'soft'
   var launchBusy = {};              // ids currently being written, so a double click cannot race
+
+  var LAUNCH_FOCUS = {
+    demo: { of: function (c) { return c.demoOpen; }, what: 'blocking a demo' },
+    live: { of: function (c) { return c.liveOpen; }, what: 'blocking a launch' },
+    soft: { of: function (c) { return c.cantTell + c.stale; }, what: 'this page will not stand behind' },
+  };
+
+  function launchMatches(i) {
+    switch (launchFilter) {
+      case 'all': return true;
+      case 'demo': return !i.done && i.gate === 'demo';
+      case 'live': return !i.done && (i.gate === 'demo' || i.gate === 'live');
+      case 'soft': return i.state === 'unknown' || i.state === 'stale';
+      default: return !i.done;
+    }
+  }
 
   function loadLaunch() {
     return apiGet('/api/launch').then(function (l) {
@@ -2439,6 +2461,16 @@
     live: { cls: 'live', label: 'blocks going live' },
     after: { cls: '', label: 'worth having' },
   };
+
+  /* A counter with something behind it becomes the way in. A counter reading
+     nought is left as plain text — a button that filters to an empty list is
+     a button that punishes curiosity. */
+  function launchCounterAttrs(filter, count, what) {
+    if (!count) return '';
+    return 'data-lf="' + filter + '" role="button" tabindex="0"' +
+      ' aria-label="Show the ' + count + ' ' + esc(what) + '"' +
+      ' title="Show the ' + count + ' ' + esc(what) + '"';
+  }
 
   function launchHead(L) {
     return L.verdict === 'live' ? 'Ready to go live'
@@ -2475,12 +2507,25 @@
   }
 
   function renderLaunchList(L) {
-    var showAll = launchFilter === 'all';
-    var shown = L.items.filter(function (i) { return showAll || !i.done; });
+    var shown = L.items.filter(launchMatches);
+    var focus = LAUNCH_FOCUS[launchFilter];
+
+    /* When a counter sent you here, say so above the list and offer the way
+       back. Otherwise the list silently holds a subset and the counters above
+       it look wrong. */
+    $('launchFocus').innerHTML = focus
+      ? '<span class="lfocus"><b>Showing the ' + shown.length + '</b> ' + esc(focus.what) +
+        '<button type="button" data-clear="1" aria-label="Show everything still to do">✕</button></span>'
+      : '';
+
+    Array.prototype.forEach.call($('launchFilter').querySelectorAll('button'), function (x) {
+      x.setAttribute('aria-pressed', String(x.getAttribute('data-f') === launchFilter));
+    });
 
     if (!shown.length) {
-      $('launchList').innerHTML = '<div class="note"><b>Nothing outstanding.</b> ' +
-        'Every item on the list is done. Switch to Everything to read them back.</div>';
+      $('launchList').innerHTML = '<div class="note"><b>Nothing here.</b> ' +
+        (focus ? 'Nothing is ' + esc(focus.what) + ' any more.' : 'Every item on the list is done.') +
+        ' Switch to Everything to read them back.</div>';
       return;
     }
 
@@ -2514,6 +2559,12 @@
                   i.steps.map(function (s) { return '<li>' + stepHtml(s) + '</li>'; }).join('') +
                   '</ol></details>'
                 : '') +
+              /* Something the Mapper measures AND owns, so it can be put right
+                 from the row that explains why it matters. */
+              (i.action
+                ? '<button class="btn btn-primary lact" type="button" data-act-id="' + esc(i.id) + '"' +
+                  (launchBusy[i.id] ? ' disabled' : '') + '>' + esc(i.action.label) + '</button>'
+                : '') +
             '</div></div>';
         }).join('') + '</div>';
     }).join('');
@@ -2538,17 +2589,20 @@
       sumCard(L.counts.demoOpen, L.counts.demoOpen ? 'bad' : 'ok',
         L.counts.demoOpen
           ? '<b>still to do before you show this to anyone.</b> These block the launch too — you cannot be safe for customers and not ready for a friendly audience.'
-          : 'Nothing stands between you and walking someone through this.') +
+          : 'Nothing stands between you and walking someone through this.',
+        '', launchCounterAttrs('demo', L.counts.demoOpen, 'blocking a demo')) +
       sumCard(L.counts.liveOpen, L.counts.liveOpen ? 'warn' : 'ok',
         L.counts.liveOpen
           ? '<b>still to do before real people put real contracts in it.</b> The gap between a good demo and a safe launch is where most first launches come unstuck.'
-          : 'Nothing on this list stands between you and real customers.') +
+          : 'Nothing on this list stands between you and real customers.',
+        '', launchCounterAttrs('live', L.counts.liveOpen, 'blocking a launch')) +
       sumCard(soft, soft ? 'warn' : 'ok',
         soft
           ? '<b>answers this page will not stand behind.</b> ' + L.counts.cantTell +
             ' the Mapper cannot measure; ' + L.counts.stale +
             ' ticked too long ago to still count. Neither opens a gate — an alarm that flatters is worse than none.'
-          : 'Nothing is unmeasurable and no tick has gone stale. Every answer on this page is a current one.');
+          : 'Nothing is unmeasurable and no tick has gone stale. Every answer on this page is a current one.',
+        '', launchCounterAttrs('soft', soft, 'this page will not stand behind'));
 
     renderLaunchNeedle(L);
     renderLaunchList(L);
@@ -2575,6 +2629,34 @@
   /* One tick at a time. The row is redrawn from the server's answer rather
      than flipped locally, because ticking one item can move the verdict, the
      needle and the next-three list all at once. */
+  /* Putting something right from the row. The rule is written through the same
+     route the Settings tab uses, then the whole checklist is re-read, so the
+     item settles from a fresh measurement rather than from this button
+     assuming it worked. */
+  $('launchList').addEventListener('click', function (e) {
+    var a = e.target.closest('button[data-act-id]');
+    if (!a) return;
+    var id = a.getAttribute('data-act-id');
+    var item = (launch && launch.items || []).filter(function (x) { return x.id === id; })[0];
+    if (!item || !item.action || launchBusy[id]) return;
+    launchBusy[id] = true;
+    a.disabled = true;
+    a.textContent = 'Arming…';
+    send('PUT', '/api/watch', { name: item.action.rule, on: true, threshold: item.action.threshold })
+      .then(function () {
+        delete launchBusy[id];
+        loadWatchRules();          // the Settings tab shows the same switch
+        return loadLaunch();
+      })
+      .then(function () { toast('Armed. You will be told before the bill runs away'); })
+      .catch(function (err) {
+        delete launchBusy[id];
+        a.disabled = false;
+        a.textContent = item.action.label;
+        toast(err.message || 'That could not be switched on');
+      });
+  });
+
   $('launchList').addEventListener('click', function (e) {
     var b = e.target.closest('button[data-tick]');
     if (!b) return;
@@ -2598,10 +2680,32 @@
     var b = e.target.closest('button[data-f]');
     if (!b || b.getAttribute('data-f') === launchFilter) return;
     launchFilter = b.getAttribute('data-f');
-    Array.prototype.forEach.call(this.querySelectorAll('button'), function (x) {
-      x.setAttribute('aria-pressed', String(x.getAttribute('data-f') === launchFilter));
-    });
     if (launch) renderLaunchList(launch);
+  });
+
+  /* The counters are the way into what they count. */
+  function setLaunchFilter(next) {
+    if (!launch || launchFilter === next) return;
+    launchFilter = next;
+    renderLaunchList(launch);
+    $('launchList').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }
+
+  $('launchSums').addEventListener('click', function (e) {
+    var card = e.target.closest('[data-lf]');
+    if (card) setLaunchFilter(card.getAttribute('data-lf'));
+  });
+  /* role="button" is a promise about the keyboard as well as the mouse. */
+  $('launchSums').addEventListener('keydown', function (e) {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    var card = e.target.closest('[data-lf]');
+    if (!card) return;
+    e.preventDefault();
+    setLaunchFilter(card.getAttribute('data-lf'));
+  });
+
+  $('launchFocus').addEventListener('click', function (e) {
+    if (e.target.closest('button[data-clear]')) setLaunchFilter('open');
   });
 
   /* ---- what the scan could not work out ----

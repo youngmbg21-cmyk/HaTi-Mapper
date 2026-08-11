@@ -137,6 +137,24 @@ dashboard can see — whether the code is on your laptop, whether a stranger got
 through the product, whether you have ever put a backup back — and those carry
 a tick box and the steps to actually do them.
 
+**A number is a wall unless you can get through it.** "4 still to do before you
+show this to anyone" says there are four and not *which* four, and the four are
+scattered across six groups by design — the groups are about subject matter and
+the gates cut across them. So each counter with something behind it is a way
+in: click it and the list narrows to exactly what that number counted, with a
+chip saying what it is holding back and how to get out again. A counter reading
+nought is left as plain text, because a button that filters to an empty list is
+a button that punishes curiosity.
+
+**Some of what the Mapper measures, the Mapper can also fix.** Where an item is
+about one of the Mapper's own settings — the AI-requests tripwire is the one
+today — the row carries a button that puts it right there and then, rather than
+sending the owner to hunt for a toggle under a gear three screens from the
+sentence explaining why it matters. That is not a tick: the rule is written
+through the same route the Settings tab uses and the whole checklist is then
+re-read, so the item settles from a fresh measurement rather than from the
+button assuming it worked. Nothing here can reach into HaTi.
+
 **"Can't tell" is not "fine".** The same rule that governs the scanner-grip
 figure governs this one. An item the Mapper cannot measure counts as not done
 and does not open a gate. It is drawn amber with the reason rather than red,

@@ -19,6 +19,7 @@
 
 import { chromium } from 'playwright';
 import { spawn } from 'node:child_process';
+import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -32,6 +33,8 @@ const BASE = `http://127.0.0.1:${PORT}`;
 const DATA = path.join(ROOT, '.tmp-launch-data');
 const OWNER = 'owner@example.com';
 const PW = 'launchpass1';
+const STUB_PORT = PORT + 1;
+const HATI_SECRET = 'launch-test-secret';
 
 let pass = 0, fail = 0;
 const check = (name, ok, detail) => {
@@ -273,12 +276,29 @@ function chromiumPath() {
   return undefined;
 }
 
+/* A stand-in HaTi that answers the read-only pulse. Without one the Mapper
+   cannot see live usage at all, so the AI-requests tripwire correctly reports
+   "can't tell" and offers nothing to press — which is right, and would leave
+   the arm-it-from-the-row behaviour untested. */
+const stubHati = await new Promise((resolve, reject) => {
+  const srv = http.createServer((req, res) => {
+    if (req.url.split('?')[0] !== '/api/pulse') return res.writeHead(404).end('{}');
+    if (req.headers.authorization !== `Bearer ${HATI_SECRET}`) return res.writeHead(401).end('{}');
+    res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({
+      caps: { aiRateLight: 40, aiRateDeep: 15, aiDailyLimit: 500, aiMaxChars: 60000, aiMaxContracts: 400, windowMinutes: 15 },
+      usage: { date: '2026-08-11', count: 3, dailyLimit: 500 },
+      aiKeyConfigured: true, mode: 'api', version: 'stub123',
+    }));
+  });
+  srv.listen(STUB_PORT, () => resolve(srv)).on('error', reject);
+});
+
 function startMapper() {
   const child = spawn(process.execPath, ['server.mjs'], {
     cwd: ROOT,
     env: {
       ...process.env, PORT: String(PORT), MAPPER_DATA: DATA, MAPPER_OWNER_EMAIL: OWNER,
-      HATI_URL: '', MAPPER_TOKEN: '', RESEND_API_KEY: '', ...source.env,
+      HATI_URL: `http://127.0.0.1:${STUB_PORT}`, MAPPER_TOKEN: HATI_SECRET, RESEND_API_KEY: '', ...source.env,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -417,6 +437,81 @@ try {
   check('Switching to Everything shows the done items again',
     shownAll === saved.counts.total, `${shownAll} rows of ${saved.counts.total}`);
 
+  /* ---- the counters are the way into what they count ----
+     "4 still to do before you show this to anyone" told the owner there were
+     four and not WHICH four, and the four are scattered across six groups by
+     design — the groups are about subject matter and the gates cut across
+     them. A number with no way through to the things it counts is a wall. */
+  console.log('\n4b. Getting from a number to the things it counts');
+  const counters = await page.evaluate(() => [...document.querySelectorAll('#launchSums .sum')]
+    .map(el => ({ n: el.querySelector('.n').textContent.trim(), lf: el.getAttribute('data-lf'), label: el.getAttribute('aria-label') })));
+  check('A counter with something behind it offers a way in',
+    counters.filter(c => c.lf).length >= 2 && counters.every(c => !c.lf || Number(c.n) > 0),
+    counters.map(c => `${c.n}${c.lf ? '→' + c.lf : ''}`).join(' | '));
+  check('And a counter reading nought does not, because there is nothing to show',
+    counters.every(c => Number(c.n) !== 0 || !c.lf),
+    counters.filter(c => Number(c.n) === 0).map(c => `${c.n}:${c.lf}`).join(', ') || 'no zero counters');
+  check('The way in says what it will show, for a screen reader too',
+    counters.filter(c => c.lf).every(c => /^Show the \d+ /.test(c.label || '')),
+    (counters.find(c => c.lf) || {}).label);
+
+  const demoCard = await page.$('#launchSums .sum[data-lf="demo"]');
+  if (demoCard) {
+    await demoCard.click();
+    await page.waitForFunction(() => !!document.querySelector('#launchFocus .lfocus'), null, { timeout: 10000 });
+    const focused = await page.evaluate(() => ({
+      chip: document.querySelector('#launchFocus .lfocus').textContent.trim(),
+      rows: [...document.querySelectorAll('#launchList .lrow')].length,
+      gates: [...document.querySelectorAll('#launchList .lgate')].map(g => g.textContent.trim()),
+    }));
+    check('Clicking the demo counter narrows the list to exactly what it counted',
+      focused.rows === saved.counts.demoOpen,
+      `${focused.rows} rows for a counter reading ${saved.counts.demoOpen}`);
+    check('And every one of them is one that blocks a demo',
+      focused.gates.length > 0 && focused.gates.every(g => /blocks the demo/.test(g)),
+      focused.gates.join(' | '));
+    check('The list says what it is holding back rather than quietly showing a subset',
+      /Showing the \d+ blocking a demo/.test(focused.chip), focused.chip);
+
+    await page.click('#launchFocus button[data-clear]');
+    await page.waitForFunction(() => !document.querySelector('#launchFocus .lfocus'), null, { timeout: 10000 });
+    const cleared = await page.evaluate(() => document.querySelectorAll('#launchList .lrow').length);
+    check('And there is a way back out of it',
+      cleared === saved.counts.total - saved.counts.done,
+      `${cleared} rows back`);
+  } else {
+    check('Clicking the demo counter narrows the list to exactly what it counted', false,
+      'no demo counter was drawn — nothing was blocking a demo');
+  }
+
+  /* ---- putting something right from the row that explains it ---- */
+  console.log('\n4c. Fixing something from the row itself');
+  await page.click('#launchFilter button[data-f="all"]');
+  const actionable = await page.evaluate(() => {
+    const b = document.querySelector('#launchList button[data-act-id]');
+    return b ? { id: b.getAttribute('data-act-id'), label: b.textContent.trim() } : null;
+  });
+  check('Something the Mapper measures AND owns can be put right from its own row',
+    !!actionable && actionable.id === 'spend-tripwire' && /Arm it at \d+ a day/.test(actionable.label),
+    actionable ? `${actionable.id}: ${actionable.label}` : 'no action button drawn');
+
+  if (actionable) {
+    await page.click('#launchList button[data-act-id]');
+    await page.waitForFunction(() => !document.querySelector('#launchList button[data-act-id]'), null, { timeout: 20000 });
+    const armed = await (await authed('/api/watch')).json();
+    const rule = (armed.rules || []).filter(r => r.name === 'aiRequests')[0];
+    check('Pressing it arms the real rule, through the same route Settings uses',
+      !!rule && rule.on === true, JSON.stringify(rule));
+    const afterArm = await (await authed('/api/launch')).json();
+    const trip = afterArm.items.find(i => i.id === 'spend-tripwire');
+    check('And the item settles from a fresh measurement, not from the button assuming it worked',
+      trip.done === true && /Armed at \d+ AI requests a day/.test(trip.detail || ''),
+      `${trip.state}: ${trip.detail}`);
+    check('It is still not a tick box — the Mapper measured this, it was not claimed',
+      !(await page.$('#launchList .lrow .lbox[data-tick="spend-tripwire"]')),
+      'no tick box for a measured item');
+  }
+
   console.log('\n5. What it refuses');
   const bogus = await fetch(BASE + '/api/launch', {
     method: 'PUT',
@@ -473,6 +568,7 @@ try {
 } finally {
   if (browser) await browser.close().catch(() => {});
   server.kill();
+  if (stubHati) stubHati.close();
   fs.rmSync(DATA, { recursive: true, force: true });
 }
 
