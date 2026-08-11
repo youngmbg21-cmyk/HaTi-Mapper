@@ -432,10 +432,40 @@ try {
     saved.items.some(i => i.how === 'you' && i.done),
     saved.items.filter(i => i.done).map(i => i.id).join(', '));
 
+  /* Ticking on the default filter makes the row VANISH, which is correct and
+     also exactly how a first, exploratory tick reads to somebody who has not
+     met this list before: as though they deleted something and cannot get it
+     back. It happened. So the tick has to say where the row went and offer the
+     way back, and the way back has to actually work. */
+  const undo = await page.evaluate(() => {
+    const el = document.getElementById('toast');
+    return el ? { text: el.textContent.trim(), hasButton: !!el.querySelector('button'), pressable: getComputedStyle(el).pointerEvents } : null;
+  });
+  check('Ticking says where the row went rather than letting it just disappear',
+    !!undo && /has moved out of what’s left/.test(undo.text), undo ? undo.text : 'no toast');
+  check('And offers the way back, which a click-through toast could not',
+    !!undo && undo.hasButton && undo.pressable !== 'none', JSON.stringify(undo));
+
+  await page.click('#toast button');
+  await page.waitForFunction(t => document.querySelectorAll('#launchList .lrow').length > t,
+    saved.counts.total - saved.counts.done, { timeout: 15000 });
+  const undone = await (await authed('/api/launch')).json();
+  check('Pressing Undo puts the item back, on the server and not only on screen',
+    undone.counts.done === saved.counts.done - 1,
+    `${undone.counts.done} done, was ${saved.counts.done}`);
+
+  // Put it back so the checks below still describe a ticked item.
+  await page.click('#launchList .lbox');
+  await page.waitForFunction(() => !!document.querySelector('#toast button'), null, { timeout: 15000 });
+
   await page.click('#launchFilter button[data-f="all"]');
   const shownAll = await page.evaluate(() => document.querySelectorAll('#launchList .lrow').length);
   check('Switching to Everything shows the done items again',
     shownAll === saved.counts.total, `${shownAll} rows of ${saved.counts.total}`);
+  const backVisible = await page.evaluate(() =>
+    [...document.querySelectorAll('#launchList .lbox')].filter(b => b.getAttribute('aria-pressed') === 'true').length);
+  check('And a ticked item is there with its box filled, not gone',
+    backVisible >= 1, `${backVisible} ticked boxes on screen`);
 
   /* ---- the counters are the way into what they count ----
      "4 still to do before you show this to anyone" told the owner there were

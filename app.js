@@ -2657,22 +2657,43 @@
       });
   });
 
+  /* One tick at a time. The row is redrawn from the server's answer rather
+     than flipped locally, because ticking one item can move the verdict, the
+     needle and the next-three list all at once. */
+  function setLaunchTick(id, done, onFail) {
+    if (launchBusy[id]) return Promise.resolve(null);
+    launchBusy[id] = true;
+    return send('PUT', '/api/launch', { id: id, done: done }).then(function (l) {
+      delete launchBusy[id];
+      launch = l;
+      renderLaunch();
+      return l;
+    }, function (err) {
+      delete launchBusy[id];
+      if (onFail) onFail();
+      toast(err.message || 'That could not be saved');
+      return null;
+    });
+  }
+
   $('launchList').addEventListener('click', function (e) {
     var b = e.target.closest('button[data-tick]');
     if (!b) return;
     var id = b.getAttribute('data-tick');
     if (launchBusy[id]) return;
     var done = b.getAttribute('aria-pressed') !== 'true';
-    launchBusy[id] = true;
+    var row = b.closest('.lrow');
+    var title = ((row && row.querySelector('.tt b')) || {}).textContent || 'That item';
     b.disabled = true;
-    send('PUT', '/api/launch', { id: id, done: done }).then(function (l) {
-      delete launchBusy[id];
-      launch = l;
-      renderLaunch();
-    }, function (err) {
-      delete launchBusy[id];
-      b.disabled = false;
-      toast(err.message || 'That could not be saved');
+    setLaunchTick(id, done, function () { b.disabled = false; }).then(function (l) {
+      if (!l || !done || launchFilter === 'all') return;
+      /* The list opens on "what's left", so ticking something makes it VANISH.
+         That is correct, and it is also exactly how a first, exploratory tick
+         reads to someone who has not met this list before: as though they have
+         deleted something and cannot get it back. Say where it went, and offer
+         the way back, for long enough to read the sentence and press it. */
+      toast('Ticked. “' + title + '” has moved out of what’s left.',
+        { label: 'Undo', fn: function () { setLaunchTick(id, false); } });
     });
   });
 
@@ -3667,7 +3688,11 @@
 
   /* ---- a brief confirmation for actions that are easy to miss ---- */
   var toastTimer = null;
-  function toast(text) {
+  /* `action` is optional: { label, fn }. A toast carrying one stays up long
+     enough to be read and pressed, and takes the pointer back — the plain kind
+     is deliberately click-through so it can never swallow a press meant for
+     the page underneath. */
+  function toast(text, action) {
     var el = document.getElementById('toast');
     if (!el) {
       el = document.createElement('div');
@@ -3677,9 +3702,21 @@
       document.body.appendChild(el);
     }
     el.textContent = text;
+    el.classList.toggle('act', !!action);
+    if (action) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = action.label;
+      b.addEventListener('click', function () {
+        el.classList.remove('on');
+        clearTimeout(toastTimer);
+        action.fn();
+      });
+      el.appendChild(b);
+    }
     requestAnimationFrame(function () { el.classList.add('on'); });
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(function () { el.classList.remove('on'); }, 2200);
+    toastTimer = setTimeout(function () { el.classList.remove('on'); }, action ? 9000 : 2200);
   }
 
   /* Cleared straight away, no confirm — the conversation is local and cheap to
