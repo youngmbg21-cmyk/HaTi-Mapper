@@ -2399,6 +2399,211 @@
     }, function () {});
   }
 
+  /* ==================================================================== */
+  /*  READY? — the launch checklist                                        */
+  /*                                                                       */
+  /*  The verdict, the counts and the needle's position are all worked out */
+  /*  on the server, in lib/launch.mjs. Nothing here recomputes any of     */
+  /*  them: a page that decided for itself whether the owner was ready to  */
+  /*  launch could disagree with the assistant, which reads the same       */
+  /*  figures through a tool. This file draws what it is handed.           */
+  /* ==================================================================== */
+
+  var launch = null;
+  var launchFilter = 'open';        // 'open' | 'all'
+  var launchBusy = {};              // ids currently being written, so a double click cannot race
+
+  function loadLaunch() {
+    return apiGet('/api/launch').then(function (l) {
+      launch = l;
+      renderLaunch();
+    }, function (e) {
+      if (e.needsAuth) return;
+      $('launchList').innerHTML = '<div class="note bad"><b>The checklist could not be read.</b> ' +
+        esc(e.message || 'Unknown error') + '</div>';
+    });
+  }
+
+  var ICON_TICK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" ' +
+    'stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>';
+
+  /* Backticks in a step become code. The steps are written in lib/launch.mjs
+     and are the only place on this page where an owner is asked to type
+     something exactly, so "exactly" has to be visible. */
+  function stepHtml(s) {
+    return esc(s).replace(/`([^`]+)`/g, '<code>$1</code>');
+  }
+
+  var LAUNCH_GATE = {
+    demo: { cls: 'demo', label: 'blocks the demo' },
+    live: { cls: 'live', label: 'blocks going live' },
+    after: { cls: '', label: 'worth having' },
+  };
+
+  function launchHead(L) {
+    return L.verdict === 'live' ? 'Ready to go live'
+      : L.verdict === 'demo' ? 'Ready to demo'
+        : 'Not ready to demo yet';
+  }
+
+  function renderLaunchNeedle(L) {
+    var head = launchHead(L);
+    var fill = L.verdict === 'live' ? ' ok' : L.verdict === 'not-demo' ? ' bad' : '';
+    var demoHit = L.verdict !== 'not-demo';
+    var liveHit = L.verdict === 'live';
+
+    /* The whole gauge is one label to a screen reader. Read out post by post
+       it is three numbers and no sentence. */
+    var aria = head + '. The needle is at ' + L.needle + ' out of 100. ' + L.headline;
+
+    $('launchNeedle').innerHTML =
+      '<div class="vd"><b>' + esc(head) + '</b><span class="sub">' + esc(L.headline) + '</span></div>' +
+      '<div class="track" role="img" aria-label="' + esc(aria) + '">' +
+        '<div class="fill' + fill + '" style="width:' + L.needle + '%"></div>' +
+        '<div class="post' + (demoHit ? ' hit' : '') + '" style="left:' + L.marks.demo + '%">' +
+          '<span class="lb">ready to demo</span></div>' +
+        '<div class="post' + (liveHit ? ' hit' : '') + '" style="left:' + L.marks.live + '%">' +
+          '<span class="lb">ready to go live</span></div>' +
+        '<div class="pin" style="left:' + L.needle + '%"><span class="lb">' + L.needle + '</span></div>' +
+      '</div>' +
+      '<div class="reads">' +
+        '<span><b>' + L.counts.done + ' of ' + L.counts.total + '</b> done</span>' +
+        '<span><b>' + L.counts.demoOpen + '</b> left before a demo</span>' +
+        '<span><b>' + L.counts.liveOpen + '</b> left before real customers</span>' +
+        '<span>The needle cannot pass a post while anything behind it is outstanding, however much else is ticked.</span>' +
+      '</div>';
+  }
+
+  function renderLaunchList(L) {
+    var showAll = launchFilter === 'all';
+    var shown = L.items.filter(function (i) { return showAll || !i.done; });
+
+    if (!shown.length) {
+      $('launchList').innerHTML = '<div class="note"><b>Nothing outstanding.</b> ' +
+        'Every item on the list is done. Switch to Everything to read them back.</div>';
+      return;
+    }
+
+    $('launchList').innerHTML = L.groups.map(function (g) {
+      var items = shown.filter(function (i) { return i.group === g.id; });
+      if (!items.length) return '';
+      return '<div class="lgrp"><div class="gh"><b>' + esc(g.title) + '</b><span>' + esc(g.blurb) + '</span></div>' +
+        items.map(function (i) {
+          var gate = LAUNCH_GATE[i.gate] || LAUNCH_GATE.after;
+          var control = i.how === 'you'
+            ? '<button class="lbox" type="button" data-tick="' + esc(i.id) + '" ' +
+              'aria-pressed="' + (i.state === 'done') + '" ' +
+              'aria-label="' + esc((i.state === 'done' ? 'Untick: ' : 'Tick as done: ') + i.title) + '"' +
+              (launchBusy[i.id] ? ' disabled' : '') + '>' + ICON_TICK + '</button>'
+            : '<span class="ldot ' + (i.done ? 'done' : i.state === 'unknown' ? 'unknown' : 'open') +
+              '" title="The Mapper checked this one" aria-hidden="true"><i></i></span>';
+
+          var flag = i.state === 'unknown' ? '<span class="badge gold">can’t tell</span>'
+            : i.state === 'stale' ? '<span class="badge gold">gone stale</span>' : '';
+          var detCls = i.state === 'unknown' || i.state === 'stale' ? ' warn' : i.state === 'open' && i.how === 'mapper' ? ' bad' : '';
+
+          return '<div class="lrow' + (i.done ? ' done' : '') + '">' + control +
+            '<div class="bd">' +
+              '<div class="tt"><b>' + esc(i.title) + '</b>' +
+                (i.done ? '' : '<span class="lgate ' + gate.cls + '">' + gate.label + '</span>') + flag +
+              '</div>' +
+              '<div class="why">' + esc(i.why) + '</div>' +
+              (i.detail ? '<div class="det' + detCls + '">' + esc(i.detail) + '</div>' : '') +
+              (i.steps && i.steps.length
+                ? '<details class="lsteps"><summary>How to do this</summary><ol>' +
+                  i.steps.map(function (s) { return '<li>' + stepHtml(s) + '</li>'; }).join('') +
+                  '</ol></details>'
+                : '') +
+            '</div></div>';
+        }).join('') + '</div>';
+    }).join('');
+  }
+
+  function renderLaunch() {
+    var L = launch;
+    if (!L) return;
+
+    $('launchLede').textContent = L.counts.done + ' of ' + L.counts.total +
+      ' done. A tick box is a question only you can answer; the rest the Mapper checked for itself.';
+
+    var tone = L.verdict === 'live' ? 'ok' : L.verdict === 'demo' ? 'warn' : 'bad';
+    var soft = L.counts.cantTell + L.counts.stale;
+
+    /* The first counter is the needle's own position, so its caption has to
+       say so. It read "5 — 5 things still stand between you and…", which
+       invites the number to be read as the count of what is left rather than
+       as a position on a track that happens to be nearby. */
+    $('launchSums').innerHTML =
+      sumCard(L.needle, tone, '<b>out of 100 on the needle below.</b> ' + esc(launchHead(L)) + '.') +
+      sumCard(L.counts.demoOpen, L.counts.demoOpen ? 'bad' : 'ok',
+        L.counts.demoOpen
+          ? '<b>still to do before you show this to anyone.</b> These block the launch too — you cannot be safe for customers and not ready for a friendly audience.'
+          : 'Nothing stands between you and walking someone through this.') +
+      sumCard(L.counts.liveOpen, L.counts.liveOpen ? 'warn' : 'ok',
+        L.counts.liveOpen
+          ? '<b>still to do before real people put real contracts in it.</b> The gap between a good demo and a safe launch is where most first launches come unstuck.'
+          : 'Nothing on this list stands between you and real customers.') +
+      sumCard(soft, soft ? 'warn' : 'ok',
+        soft
+          ? '<b>answers this page will not stand behind.</b> ' + L.counts.cantTell +
+            ' the Mapper cannot measure; ' + L.counts.stale +
+            ' ticked too long ago to still count. Neither opens a gate — an alarm that flatters is worse than none.'
+          : 'Nothing is unmeasurable and no tick has gone stale. Every answer on this page is a current one.');
+
+    renderLaunchNeedle(L);
+    renderLaunchList(L);
+
+    /* Do these next. Three, because a list of fourteen things is not a next
+       step, it is the same wall the page is there to take down. */
+    var next = L.nextUp || [];
+    $('launchNext').innerHTML =
+      '<div class="chead"><h3>Do these next</h3></div>' +
+      (next.length
+        ? next.map(function (n, i) {
+            var by = n.how === 'you' ? 'yours to do'
+              : n.state === 'unknown' ? 'a check the Mapper cannot make yet'
+                : 'a check the Mapper is failing';
+            return '<div class="lnext"><span class="no">' + (i + 1) + '</span><span><b>' + esc(n.title) + '</b>' +
+              ' — ' + by + '.</span></div>';
+          }).join('')
+        : '<div class="note" style="margin-top:0">Nothing is outstanding.</div>') +
+      (L.durable === false
+        ? '<div class="note bad"><b>Your ticks are being held in memory only.</b> They will be lost the next time this service restarts — attach a persistent disk and set <code>MAPPER_DATA</code> to it.</div>'
+        : '');
+  }
+
+  /* One tick at a time. The row is redrawn from the server's answer rather
+     than flipped locally, because ticking one item can move the verdict, the
+     needle and the next-three list all at once. */
+  $('launchList').addEventListener('click', function (e) {
+    var b = e.target.closest('button[data-tick]');
+    if (!b) return;
+    var id = b.getAttribute('data-tick');
+    if (launchBusy[id]) return;
+    var done = b.getAttribute('aria-pressed') !== 'true';
+    launchBusy[id] = true;
+    b.disabled = true;
+    send('PUT', '/api/launch', { id: id, done: done }).then(function (l) {
+      delete launchBusy[id];
+      launch = l;
+      renderLaunch();
+    }, function (err) {
+      delete launchBusy[id];
+      b.disabled = false;
+      toast(err.message || 'That could not be saved');
+    });
+  });
+
+  $('launchFilter').addEventListener('click', function (e) {
+    var b = e.target.closest('button[data-f]');
+    if (!b || b.getAttribute('data-f') === launchFilter) return;
+    launchFilter = b.getAttribute('data-f');
+    Array.prototype.forEach.call(this.querySelectorAll('button'), function (x) {
+      x.setAttribute('aria-pressed', String(x.getAttribute('data-f') === launchFilter));
+    });
+    if (launch) renderLaunchList(launch);
+  });
+
   /* ---- what the scan could not work out ----
 
      Every panel that cannot read something it looked for writes a sentence
@@ -2632,6 +2837,10 @@
         loadDigest();
         loadWatchRules();
         loadTrends();
+        /* After the scan, never alongside it: half the checklist is read off
+           the scan the server has just cached, and asking first would answer
+           "no scan has finished yet" to questions that now have real answers. */
+        loadLaunch();
         $('rescan').disabled = false;
         $('rescan').classList.remove('spin');
       })
@@ -2649,6 +2858,11 @@
           : 'Nothing on this page is current. Press Rescan to try again.';
         // Repeated failures raise a banner of their own; go and look.
         loadWatchRules();
+        /* The checklist is asked even when the scan failed, and deliberately
+           not filled with the error below. "The Mapper cannot see HaTi" is one
+           of the answers it exists to give, and it is a more useful thing to
+           read on this tab than the same red box seven more times. */
+        loadLaunch();
         var msg = '<div class="note bad"><b>' + headline + '</b> ' + esc(e.message || 'Unknown error') +
           '<br>' + footer + '</div>';
         TOWER_IDS.concat(['screensBody', 'costBody', 'dataBody', 'blastBody', 'gapsBody',

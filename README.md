@@ -1,13 +1,14 @@
 # HaTi-Mapper
 
 An internal diagnostic dashboard for [HaTi](https://github.com/youngmbg21-cmyk/mkataba-clm),
-the contract lifecycle platform. A control tower and seven panels answering the
-questions worth asking about the product, written for someone who does not read
-code:
+the contract lifecycle platform. A control tower, a launch checklist, and seven
+panels answering the questions worth asking about the product, written for
+someone who does not read code:
 
 | Screen | Answers |
 |---|---|
 | **Control tower** | The morning question — is anything wrong? Spend, the scan calendar, open doors, what needs attention, how much of HaTi the scanner could read, and where the weight sits |
+| **Ready?** | The only screen here about you rather than about HaTi. Twenty-two things that stand between you and a first demo, and between a first demo and real customers — what the Mapper can check for itself, what only you can answer, and a needle that cannot claim you are further along than you are |
 | **Screens** | Every screen in the product, what a person does there, and the file it lives in |
 | **Money** | Every feature that calls Anthropic, which model, which cap, which screens use it — and roughly what it costs |
 | **Doors** | Everything that works without logging in — the code's promise about each one beside what the live site actually did |
@@ -98,6 +99,76 @@ against the score as well as the fact it is about, which makes the number
 deliberately pessimistic: this is an alarm, and an alarm that flatters is worse
 than none. The score goes into every snapshot, so a drop shows up in the change
 log and can be watched.
+
+---
+
+## "Ready?" — the launch checklist
+
+Every other screen here answers a question about HaTi. This one answers a
+question about the owner, and it is the only place in the Mapper that knows
+anything a scan cannot see.
+
+**Two gates, not one score.** "Ready to demo" and "ready to let real people put
+real contracts in it" are different questions with different answers, and the
+gap between them is where most first launches come apart: the demo went fine,
+so the thing went live, and nothing that only matters with customers in it had
+ever been thought about. So each of the twenty-two items is tagged with the
+gate it blocks. A demo item blocks both — you cannot be safe for customers and
+unready for a friendly audience.
+
+**The needle cannot lie.** A percentage flatters. Twenty-one of twenty-two done
+reads as 95%, and 95% reads as "basically there" even when the one thing
+outstanding is an address serving contracts to anyone who asks. So the needle
+is not free to sit where the arithmetic puts it: it is penned in by the gates.
+While a demo item is outstanding it physically cannot reach the demo post,
+however much else is ticked, and the same for the live post. The number and the
+sentence beside it can therefore never disagree, because the number is derived
+from the verdict rather than the other way round. `test/launch.mjs` walks four
+thousand combinations of ticks and failures asserting exactly that.
+
+**Who answers what.** Eleven items the Mapper settles by itself — whether it is
+reading the real HaTi or the test stand-in, whether it can see the running site,
+whether the deployed version is the one being described, whether the state
+survives a restart, whether anything answers without a login, whether the spend
+tripwire is armed. Those carry a coloured dot and no tick box, because a box you
+can tick for something measurable is an invitation to lie to yourself; the
+server refuses a tick on one of them with a 400. The other eleven are things no
+dashboard can see — whether the code is on your laptop, whether a stranger got
+through the product, whether you have ever put a backup back — and those carry
+a tick box and the steps to actually do them.
+
+**"Can't tell" is not "fine".** The same rule that governs the scanner-grip
+figure governs this one. An item the Mapper cannot measure counts as not done
+and does not open a gate. It is drawn amber with the reason rather than red,
+because "can't tell" and "no" want different actions from the reader, but
+neither one moves the needle past a post.
+
+**Ticks go stale.** A backup taken in March is not a backup; a demo walked
+through six weeks ago is not a rehearsal. Six items carry a life — seven days
+for the data copy and the demo walk-through, thirty for the code copy and the
+phone check, ninety for the restore test and the stranger test. A tick older
+than its life stops counting and says how long ago it was made. The date is
+stamped by the server, never accepted from the browser, because a date the
+browser could choose is a date it could use to keep a two-year-old backup
+counting forever.
+
+**The one it exists for.** The item most first-time owners find out about too
+late is that GitHub is not a backup. It holds one copy of your code, in one
+company's account, and a locked account or a mis-clicked delete takes it with no
+warning. More to the point it has never seen your data: cloning the repository
+saves what HaTi *is* and nothing about what is *in* it — every contract, account
+and signature your customers created lives in the database on the host. A perfect
+copy of the code rebuilds an empty product. The checklist makes the code copy a
+demo blocker, the data copy a launch blocker, and a card beside the list explains
+why in full.
+
+The checklist is served by `GET /api/launch`, behind the login like everything
+else. Ticks are written to `prefs.json` in `MAPPER_DATA`; without a mounted disk
+the panel says on its face that they will be lost on the next restart, rather
+than letting you tick twenty-two boxes into a file that is about to be replaced.
+The assistant reads the same evaluation through a `get_launch_readiness` tool,
+computed once per request and shared, so the tab and the chat cannot disagree
+about whether you are ready to launch.
 
 ---
 

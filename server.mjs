@@ -7,6 +7,10 @@
  *   GET  /api/pulse       — calls HaTi's own read-only /api/pulse and returns
  *                           the caps in force and today's usage.
  *   GET  /api/changes     — the Mapper's own change log.
+ *   GET  /api/launch      — the launch checklist: what the Mapper can settle
+ *                           for itself, what the owner has ticked, and the
+ *                           verdict on whether either gate is open.
+ *   PUT  /api/launch      — tick or untick one owner-answered item.
  *   GET  /api/ai/config   — what the page may know about the assistant's key.
  *   PUT  /api/ai/config   — set or clear that key from the Settings tab.
  *   POST /api/chat        — the assistant's tool loop.
@@ -51,6 +55,7 @@ import { readFixture, FIXTURE_WARNING } from './lib/fixture.mjs';
 import { driftVerdict } from './lib/drift.mjs';
 import { describeFinding, draftInstruction } from './lib/draft.mjs';
 import { planCheck, verdictFor, summarise, CHECK_CAP, THROTTLE_MS, TIMEOUT_MS } from './lib/doors.mjs';
+import { evaluateLaunch, TICKABLE } from './lib/launch.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -800,6 +805,60 @@ app.get('/api/trends', requireAuth, rateLimit('trends', 120, 15 * 60 * 1000), (r
   });
 });
 
+/* ------------------------------------------------------------- /api/launch */
+
+/* "Am I ready?" — the only panel here that is about the owner rather than
+   about HaTi. Everything the checklist can settle by itself is settled here,
+   where the scan, the pulse, the door check and the Mapper's own settings are
+   all in reach; everything it cannot is answered by the owner's own ticks,
+   which live in prefs.
+
+   Assembled rather than cached, because half of what it reads changes without
+   a scan: a disk can be attached, a tripwire armed, a token set. */
+function launchContext() {
+  return {
+    scan: cache?.payload || null,
+    pulse: null,                       // filled in by the route; readPulse is async
+    doorCheck: lastDoorCheck,
+    prefs: prefs.all(),
+    ticks: prefs.get('launch') || {},
+    storage: {
+      writable: history.status().durable,
+      mounted: DATA_DIR_IS_MOUNTED,
+      path: DATA_DIR,
+    },
+    email: { configured: emailConfigured(), ownerEmail: accounts.ownerEmail || null },
+    canWatchLiveUsage: !!(HATI_URL && MAPPER_TOKEN),
+  };
+}
+
+app.get('/api/launch', requireAuth, rateLimit('launch', 120, 15 * 60 * 1000), async (req, res) => {
+  const ctx = launchContext();
+  /* A pulse failure must never fail this route: "the Mapper cannot reach the
+     running HaTi" is itself one of the answers the checklist is there to give,
+     and an error page would hide it. */
+  const pulse = await readPulse().catch(() => null);
+  ctx.pulse = pulse ? { ...pulse, drift: driftVerdict(cache?.payload, pulse) } : null;
+  res.json({ ...evaluateLaunch(ctx), durable: prefs.durable });
+});
+
+/* One tick at a time, validated against the checklist's own list of
+   owner-answered items. The date is stamped on the server — see prefs.setLaunch
+   for why it is not accepted from the browser. */
+app.put('/api/launch', requireAuth, rateLimit('launchw', 120, 15 * 60 * 1000), async (req, res) => {
+  const { id, done } = req.body || {};
+  if (typeof id !== 'string' || typeof done !== 'boolean') {
+    return res.status(400).json({ error: 'Send an item id and whether it is done.' });
+  }
+  if (!prefs.setLaunch(id, done, TICKABLE)) {
+    return res.status(400).json({ error: 'There is no item on the checklist by that name, or it is not one you tick yourself.' });
+  }
+  const ctx = launchContext();
+  const pulse = await readPulse().catch(() => null);
+  ctx.pulse = pulse ? { ...pulse, drift: driftVerdict(cache?.payload, pulse) } : null;
+  res.json({ ...evaluateLaunch(ctx), durable: prefs.durable });
+});
+
 /* -------------------------------------------------------- /api/preferences */
 
 /* The handful of choices the owner makes on the Settings tab. Nothing secret
@@ -1042,7 +1101,14 @@ app.post('/api/chat', requireAuth, rateLimit('chat', 40, 15 * 60 * 1000), async 
   });
   const tools = chatTools(register);
   const working = convo.slice();
-  const ctx = { scan, history, pulse };
+  /* The readiness checklist is worked out up front rather than inside the tool
+     so the assistant reads exactly what the Launch tab draws — including the
+     pulse this request already paid for. The tabs and the assistant disagreeing
+     about whether the owner is ready to launch would be the worst possible
+     thing for the two of them to disagree about. */
+  const launchCtx = launchContext();
+  launchCtx.pulse = pulse ? { ...pulse, drift: driftVerdict(cache?.payload, pulse) } : null;
+  const ctx = { scan, history, pulse, launch: evaluateLaunch(launchCtx) };
   let final = null, usedModel = AI_MODEL, toolsUsed = [];
 
   try {

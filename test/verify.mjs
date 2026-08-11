@@ -631,6 +631,11 @@ try {
         light: document.body.classList.contains('light'),
         tx: rgb(v('--tx')), tx2: rgb(v('--tx2')), tx3: rgb(v('--tx3')),
         card: rgb(v('--card')), tile: rgb(v('--tile')), tile2: rgb(v('--tile2')),
+        /* Two accents that carry TEXT rather than sitting behind it, added
+           when the launch checklist needed an amber sentence and a teal
+           disclosure control. --gold is not among them on purpose: it is a
+           badge background and reads 3.56:1 as text on white. */
+        warntx: rgb(v('--warntx')), askband: rgb(v('--askband')),
       };
     });
     const name = t.light ? 'light' : 'dark';
@@ -640,6 +645,9 @@ try {
       ['the muted text on a card', t.tx3, t.card],
       ['the muted text on a tile', t.tx3, t.tile],
       ['the muted text on the darker tile', t.tx3, t.tile2],
+      ['the amber that carries a sentence, on a card', t.warntx, t.card],
+      ['the amber that carries a sentence, on a tile', t.warntx, t.tile],
+      ['the accent where it is text rather than a background, on a card', t.askband, t.card],
     ]) {
       const r = contrast(fg, bg);
       check(`In ${name}, ${what} clears 4.5:1`, r >= 4.5, `${r.toFixed(2)}:1 — ${fg} on ${bg}`);
@@ -810,7 +818,7 @@ try {
   });
   check('The tab row never scrolls sideways', !navRow.scrollsSideways);
   check('Every tab is visible at once, so none of them moves when you click',
-    navRow.offRow.length === 0 && navRow.count === 8,
+    navRow.offRow.length === 0 && navRow.count === 9,
     navRow.offRow.length ? `off the row: ${navRow.offRow.join(', ')}` : `all ${navRow.count} in view`);
   const gear = await page.$('.tops [data-p="settings"]');
   check('Settings is reachable from the top bar', !!gear);

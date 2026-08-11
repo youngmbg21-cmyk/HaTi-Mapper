@@ -31,6 +31,13 @@ body{
      theme, where it has to be darker than --lav to hold white legibly. */
   --askband:var(--lav);
   --good:#123f31; --goodtx:#6ee7b7; --bad:#46201f; --badtx:#fca5a5;
+  /* Amber that can carry body text. --gold is a BACKGROUND colour — it holds
+     --ongold on a badge and is never read as text — and the launch checklist
+     wanted a "can't tell" sentence in the same family. Reusing --gold for that
+     would have shipped 3.56:1 on white, which is the exact mistake the two
+     greys above were fixed for. Measured on --card and --tile in both themes
+     by the suite; never used on --tile2, where the light value is 3.99:1. */
+  --warntx:#fbbf24;
   --shadow:0 8px 40px -8px rgba(0,0,0,.55);
   --font:"IBM Plex Sans",system-ui,-apple-system,sans-serif;
   --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,monospace;
@@ -49,6 +56,8 @@ body.light{
      something that has opened over the page rather than another card on it. */
   --askband:#0f766e;
   --good:#d1fae5; --goodtx:#065f46; --bad:#fee2e2; --badtx:#991b1b;
+  /* Three steps darker than --gold, which reads 3.56:1 on white. */
+  --warntx:#b45309;
   --shadow:0 8px 40px -14px rgba(15,23,42,.28);
 }
 
@@ -84,12 +93,17 @@ a{color:inherit;}
 .pills{margin:0 auto;min-width:0;display:flex;flex-wrap:wrap;justify-content:center;gap:4px;background:var(--card);
   border:1px solid var(--line);border-radius:22px;padding:4px;}
 .pills button{font-family:var(--font);font-size:13px;font-weight:600;color:var(--tx2);background:none;border:0;border-radius:999px;
-  padding:7px 13px;cursor:pointer;white-space:nowrap;transition:background .15s,color .15s;}
+  padding:7px 9px;cursor:pointer;white-space:nowrap;transition:background .15s,color .15s;}
 /* The tab row must stay on one line: it sits above a screen that is measured
    to the pixel, so a second row of tabs is a row taken off every tile below
-   it. The tabs give up their padding first, then their size. */
-@media(max-width:1600px){.pills button{padding:7px 10px;font-size:12.5px;}}
-@media(max-width:1180px){.pills button{padding:6px 8px;font-size:11.5px;}}
+   it. The tabs give up their padding first, then their size.
+   Every figure here was re-measured when the ninth tab arrived — the row had
+   about two characters of slack left at eight, and the verification suite
+   catches this as a tile cut off at the bottom of the control tower rather
+   than as anything to do with the tabs, which is worth knowing before hunting
+   in the wrong file. */
+@media(max-width:1600px){.pills button{padding:6px 8px;font-size:12px;}}
+@media(max-width:1180px){.pills button{padding:6px 6px;font-size:11px;}}
 .pills button:hover{color:var(--tx);}
 .pills button[aria-selected="true"]{background:var(--lav);color:var(--onlav);}
 .tops{display:flex;align-items:center;gap:8px;flex:none;}
@@ -338,6 +352,95 @@ a{color:inherit;}
   background:var(--tile2);color:var(--tx3);}
 .trend.up{background:var(--bad);color:var(--badtx);}
 .trend.down{background:var(--good);color:var(--goodtx);}
+
+/* ------------------------------------------------------- the launch needle
+   A track with two posts on it. The posts are positions, not thresholds:
+   nothing is ever compared against 45 or 85. The pin is placed from the
+   verdict the outstanding items produce and then penned inside it, so it
+   physically cannot cross a post that has an item still open behind it — the
+   number and the sentence beside it can never say different things.
+
+   The side padding is what stops the pin's own label running off the card
+   when the pin is at either end. */
+.ndl{padding:2px 30px 0;}
+.ndl .vd{display:flex;align-items:baseline;gap:10px 16px;flex-wrap:wrap;margin:0 -22px 4px;}
+.ndl .vd b{font-size:23px;font-weight:700;letter-spacing:-0.025em;line-height:1.2;}
+.ndl .vd .sub{font-size:13px;color:var(--tx2);}
+/* The room under the track is what the pin's own number label hangs in — it
+   drops 15px with the pin and another 7 below that — so this is measured
+   against the label, not chosen to look right. */
+.ndl .track{position:relative;height:13px;border-radius:999px;background:var(--tile);margin:46px 0 48px;}
+.ndl .fill{position:absolute;left:0;top:0;bottom:0;border-radius:999px;background:var(--gold);transition:width .5s ease;}
+.ndl .fill.ok{background:var(--lav);}
+.ndl .fill.bad{background:var(--badtx);}
+/* A post reached goes the colour of the thing it lets you do; a post not yet
+   reached stays grey rather than going red, because "not there yet" is not a
+   fault. */
+.ndl .post{position:absolute;top:-8px;bottom:-8px;width:2px;background:var(--tx3);opacity:.65;}
+.ndl .post.hit{background:var(--lav);opacity:1;}
+.ndl .post .lb{position:absolute;bottom:calc(100% + 7px);left:50%;transform:translateX(-50%);white-space:nowrap;
+  font-family:var(--mono);font-size:9.5px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--tx3);}
+.ndl .post.hit .lb{color:var(--askband);}
+.ndl .pin{position:absolute;top:-15px;bottom:-15px;width:3px;border-radius:2px;background:var(--tx);transition:left .5s ease;}
+.ndl .pin .lb{position:absolute;top:calc(100% + 7px);left:50%;transform:translateX(-50%);white-space:nowrap;
+  font-size:12px;font-weight:700;color:var(--tx);background:var(--tile2);border-radius:999px;padding:2px 9px;}
+/* Not `.legend` — that name is already taken further down by the chart key,
+   which is a column, and a later rule setting a property this one does not
+   declare wins however specific this selector is. The three readings under the
+   track came out stacked one per line for exactly that reason. */
+.ndl .reads{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:12px;color:var(--tx2);margin:0 -22px;}
+.ndl .reads b{color:var(--tx);font-weight:600;}
+
+/* ------------------------------------------------------- the launch list */
+.lgrp{margin-bottom:20px;}
+.lgrp:last-child{margin-bottom:0;}
+.lgrp .gh b{display:block;font-size:13.5px;font-weight:600;letter-spacing:-0.01em;}
+.lgrp .gh span{display:block;font-size:12px;color:var(--tx3);margin-top:2px;}
+.lgrp .gh{margin-bottom:6px;}
+.lrow{display:flex;gap:11px;align-items:flex-start;padding:11px 0;border-top:1px solid var(--line);}
+/* The tick box only exists for the items no dashboard can see. Drawing one
+   next to something the Mapper measured would be inviting the owner to
+   overrule a fact, which is a checklist that lies on request. */
+.lbox{flex:none;width:19px;height:19px;margin-top:2px;border-radius:6px;border:1.5px solid var(--tx3);background:none;
+  color:var(--onlav);cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;transition:background .15s,border-color .15s;}
+.lbox:hover{border-color:var(--tx);}
+.lbox[aria-pressed="true"]{background:var(--lav);border-color:var(--lav);}
+.lbox svg{width:12px;height:12px;opacity:0;}
+.lbox[aria-pressed="true"] svg{opacity:1;}
+.lbox:disabled{cursor:default;opacity:.5;}
+/* What the Mapper answered for itself: a dot in the same three colours the
+   rest of the app uses, in the place a box would have been. */
+.ldot{flex:none;width:19px;height:19px;margin-top:2px;display:flex;align-items:center;justify-content:center;}
+.ldot i{width:9px;height:9px;border-radius:50%;background:var(--lav);}
+.ldot.open i{background:var(--badtx);}
+.ldot.unknown i{background:var(--gold);}
+.lrow .bd{min-width:0;flex:1;}
+.lrow .tt{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;}
+.lrow .tt b{font-size:13.5px;font-weight:600;letter-spacing:-0.005em;}
+.lrow.done .tt b{color:var(--tx2);}
+.lrow .why{font-size:12.5px;color:var(--tx2);line-height:1.5;margin-top:3px;}
+.lrow .det{font-size:12px;color:var(--tx3);line-height:1.5;margin-top:5px;}
+.lrow .det.warn{color:var(--warntx);}
+.lrow .det.bad{color:var(--badtx);}
+.lsteps{margin-top:7px;}
+.lsteps summary{font-size:12px;font-weight:600;color:var(--askband);cursor:pointer;list-style:none;display:inline-flex;align-items:center;gap:5px;}
+.lsteps summary::-webkit-details-marker{display:none;}
+.lsteps summary::after{content:"▾";font-size:9px;}
+.lsteps[open] summary::after{content:"▴";}
+.lsteps ol{margin:8px 0 0;padding:0 0 0 20px;font-size:12.5px;color:var(--tx2);line-height:1.6;}
+.lsteps li{margin-bottom:4px;}
+.lsteps code{font-family:var(--mono);font-size:11.5px;background:var(--tile2);border-radius:5px;padding:1px 5px;
+  overflow-wrap:anywhere;}
+/* The gate a row blocks. Read constantly while working through the list, so
+   it is a chip rather than a sentence. */
+.lgate{font-family:var(--mono);font-size:9px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;
+  border-radius:5px;padding:2px 6px;background:var(--tile2);color:var(--tx3);white-space:nowrap;}
+.lgate.demo{background:var(--bad);color:var(--badtx);}
+.lgate.live{background:var(--tile2);color:var(--tx2);}
+.lnext{display:flex;gap:9px;align-items:flex-start;padding:9px 0;border-top:1px solid var(--line);font-size:12.5px;color:var(--tx2);}
+.lnext:first-of-type{border-top:0;}
+.lnext .no{flex:none;font-family:var(--mono);font-size:11px;font-weight:700;color:var(--tx3);width:14px;}
+.lnext b{color:var(--tx);font-weight:600;}
 .trend.flat{background:var(--tile2);color:var(--tx3);}
 
 /* A heading's second line: what the panel is, in ordinary words, beside what
@@ -897,6 +1000,10 @@ a{color:inherit;}
 
     <nav class="pills" role="tablist">
       <button role="tab" aria-selected="true"  data-p="tower">Control tower</button>
+      <!-- Second, and not by accident. Every other tab answers a question
+           about HaTi; this one answers a question about the owner, and before
+           a first launch it is the one they came for. -->
+      <button role="tab" aria-selected="false" data-p="launch">Ready?</button>
       <button role="tab" aria-selected="false" data-p="screens">Screens</button>
       <button role="tab" aria-selected="false" data-p="cost">Money</button>
       <button role="tab" aria-selected="false" data-p="public">Doors</button>
@@ -941,6 +1048,58 @@ a{color:inherit;}
       <div class="card" id="towerGrip"></div>
       <div class="card" id="towerMap"></div>
       <div class="card" id="towerWeight"></div>
+    </div>
+  </section>
+
+  <!-- ================================================================= READY? -->
+  <!-- The launch checklist. Two gates rather than one score, and a needle that
+       is penned in by the gates so the number and the verdict can never
+       disagree — see lib/launch.mjs for why that matters. -->
+  <section class="panel" data-panel="launch" hidden>
+    <div class="ph"><h2>Are you ready?</h2><span id="launchLede">Working out what is left…</span></div>
+    <div class="sums" id="launchSums"></div>
+    <div class="card"><div class="ndl" id="launchNeedle"></div></div>
+    <div class="grid3">
+      <div>
+        <div class="card">
+          <div class="chead"><h3>The list</h3>
+            <span class="sublab">a tick box means only you can answer it — no box means the Mapper checked</span>
+            <div class="seg" id="launchFilter" role="group" aria-label="Which items to show">
+              <button type="button" data-f="open" aria-pressed="true">What's left</button>
+              <button type="button" data-f="all" aria-pressed="false">Everything</button>
+            </div>
+          </div>
+          <div id="launchList"></div>
+        </div>
+      </div>
+      <div>
+        <div class="card" id="launchNext"></div>
+
+        <!-- Written out rather than derived, because it is the one thing on
+             this page a scan can never tell you and the one most first-time
+             owners find out too late. -->
+        <div class="card">
+          <div class="chead"><h3>Why GitHub is not a backup</h3></div>
+          <div class="note" style="margin-top:0">
+            <b>GitHub holds one copy of your code, in one company's account.</b> If that
+            account is locked, closed, or you delete the wrong thing, it goes with no
+            warning and no undo. It is a very good place to work. It is not somewhere
+            your only copy should live.
+          </div>
+          <div class="note">
+            <b>And it has never seen your data.</b> Your code is what HaTi <i>is</i>.
+            Your database is what is <i>in</i> it — every contract, account and
+            signature your customers made. Cloning the repository copies the first and
+            none of the second. A perfect copy of the code rebuilds an empty product.
+          </div>
+          <div class="note">
+            <b>So you want three copies of two different things.</b> The code, on
+            GitHub and on your own machine. The data, on the host and on your own
+            machine — and ideally one more somewhere that is not either. The two
+            items in <b>"Is your work actually yours?"</b> above carry the steps.
+          </div>
+        </div>
+      </div>
     </div>
   </section>
 

@@ -78,7 +78,7 @@ let log = '';
 server.stdout.on('data', d => { log += d; });
 server.stderr.on('data', d => { log += d; });
 
-const PROTECTED = ['/api/scan', '/api/pulse', '/api/changes', '/api/ai/config'];
+const PROTECTED = ['/api/scan', '/api/pulse', '/api/changes', '/api/ai/config', '/api/launch'];
 
 /* A second Mapper, behind a stand-in proxy, for the checks that need a fresh
    set of rate-limit buckets or a caller that appears to come from elsewhere. */
