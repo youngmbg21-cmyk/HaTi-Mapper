@@ -272,6 +272,49 @@ try {
   const r5 = await ask('do something odd');
   check('An unknown tool is handled, not fatal', r5.status === 200 && r5.body.answer === 'Recovered.', JSON.stringify(r5.body).slice(0, 100));
 
+  /* ---- 6b. a request the far end will not accept on its shape ----
+
+     effort, prompt caching and eager streaming are all documented, generally
+     available fields, and every one of them is a field some model, account or
+     gateway in the middle can decline. When that happened the whole request
+     came back 400 and the owner got no answer at all — a wretched trade for
+     three settings whose entire job was to be an improvement. So a 400 means
+     "ask the same question more plainly" rather than "give up". */
+  seen = [];
+  script = [
+    { status: 400, body: { error: { type: 'invalid_request_error', message: 'extra fields not permitted' } } },
+    { content: [toolUse('deliver_answer', { answer: 'Answered anyway.' })] },
+  ];
+  const r6b = await ask('does it cope?');
+  check('A request refused on its shape is asked again, more plainly',
+    r6b.body.answer === 'Answered anyway.', JSON.stringify(r6b.body).slice(0, 160));
+  check('It was the same question, twice', seen.length === 2, `${seen.length} attempts`);
+  check('The first attempt carried the extras',
+    !!seen[0].output_config && !!seen[0].system[0].cache_control &&
+    seen[0].tools.some(t => t.eager_input_streaming));
+  check('And the second carried none of them',
+    !seen[1].output_config && !seen[1].system[0].cache_control &&
+    !seen[1].tools.some(t => t.eager_input_streaming),
+    JSON.stringify({ effort: seen[1].output_config, cached: !!seen[1].system[0].cache_control }));
+  check('But still asked the same thing, with the same tools and the same briefing',
+    JSON.stringify(seen[1].messages) === JSON.stringify(seen[0].messages) &&
+    seen[1].tools.length === seen[0].tools.length &&
+    seen[1].system.map(b => b.text).join('') === seen[0].system.map(b => b.text).join(''));
+
+  /* When it fails both ways, the provider's own words reach the owner: a 400
+     describes the shape of the request, which is a fact about this dashboard's
+     code and the only thing that makes the fault findable. */
+  seen = [];
+  script = [
+    { status: 400, body: { error: { message: 'tools.0.custom.wibble: Extra inputs are not permitted' } } },
+    { status: 400, body: { error: { message: 'tools.0.custom.wibble: Extra inputs are not permitted' } } },
+  ];
+  const r6c = await ask('and when it cannot?');
+  check('A 400 that survives the retry says what Anthropic actually objected to',
+    /Extra inputs are not permitted/.test(r6c.body.error || ''), r6c.body.error);
+  check('And says it is the Mapper’s fault rather than the owner’s',
+    /fault in the Mapper/.test(r6c.body.error || ''), r6c.body.error);
+
   /* The count of questions asked today, taken before anything is allowed to
      fail, so the two can be compared afterwards. */
   const usedBeforeFailures = (await call('GET', '/api/ai/config')).body.budget.used;
@@ -302,7 +345,10 @@ try {
      allowance without producing a single answer. */
   console.log('\nThe daily question count');
   const budgetAfterFailures = (await call('GET', '/api/ai/config')).body.budget;
-  check('Five questions were answered and counted', usedBeforeFailures === 5, `${usedBeforeFailures}`);
+  /* Six now rather than five: the request refused on its shape is asked again
+     more plainly, and the second attempt does answer — so it counts, exactly as
+     any other answered question does. */
+  check('Every question that was actually answered is counted', usedBeforeFailures === 6, `${usedBeforeFailures}`);
   check('A rejected key and a rate limit cost nothing against the day',
     budgetAfterFailures.used === usedBeforeFailures, `${usedBeforeFailures} → ${budgetAfterFailures.used}`);
   check('The count reports itself as durable', budgetAfterFailures.durable === true);
