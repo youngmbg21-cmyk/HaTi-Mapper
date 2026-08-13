@@ -302,6 +302,35 @@ English rather than developer language. It is built the same way as HaTi's own
 Copilot: the model is given tools, fetches real data before answering, and
 finishes by delivering a grounded answer with links to the tab that shows it.
 
+**It knows which tab you have open.** You can be looking at Doors, ask "is this
+actually a problem?", and be answered about the thing in front of you. That is
+context and never a filter — a question asked on Money may still need the
+launch checklist, and the assistant is told to answer the question rather than
+the tab.
+
+**It cannot disagree with the screen beside it.** The control tower has always
+had that promise made about it: it is a summary, never a second source. The
+assistant is the reader most likely to be believed, because it answers in
+sentences rather than in cards, and it is now held to the same rule by
+`test/chatdrift.mjs` — 46 numbers, each compared against the route the tab is
+drawn from. Adding a number to the assistant's reach without adding a row there
+is meant to fail review.
+
+**It says what it is doing while it does it.** "Reading Money", "Searching for
+'signing'" — one line per thing it actually looked up, in the order it looked
+them up, using the names on the tabs rather than the names in the code. Then the
+answer appears as it is written. Both of those used to be a guess on a timer,
+because the browser was told nothing at all until the whole answer landed.
+
+**It remembers.** Conversations survive a refresh, there can be more than one,
+and an answer that arrives while the panel is shut lights a count on the
+launcher rather than vanishing. Asking something and closing the panel no longer
+loses both the question and the answer.
+
+**An empty conversation offers questions rather than a blank box** — four for
+whichever tab you are on, and under them the ones you asked before on that tab.
+Every one of them is answerable from something the assistant can actually reach.
+
 **It does not look like the page under it.** The panel floats over the
 dashboard and is built from the same card and tile tokens as everything
 beneath it, which left it reading as one more card rather than as something
@@ -481,6 +510,21 @@ but a key set in the page takes precedence, the same way HaTi treats its own.
 and has a daily ceiling (`CHAT_DAILY_LIMIT`, default 200 questions, resetting
 at midnight UTC), so a runaway loop cannot run up a bill. Answering a question
 never triggers a repository download.
+
+One question is up to five calls to the model, because it fetches before it
+speaks, and each of those used to re-send the entire rulebook at full price.
+The briefing is now split in two: a half that never changes, which Anthropic
+caches and re-reads at about a tenth of the cost, and a half carrying
+everything that moves. Those calls happen seconds apart, so the saving lands
+inside a single question rather than only across a session. The Settings card
+shows the share of reading served from cache beside the day's question count —
+it is there to be checked rather than assumed, because if that share sits at
+zero then something in the cached half is moving and the saving is imaginary.
+
+`CHAT_EFFORT` (default `medium`) sets how hard the model works before it
+answers. That is the honest lever for what this costs; the token ceiling never
+was one, and sizing it to the expected answer length is how a wide question
+ends up truncated mid-sentence.
 
 Two details make that ceiling real rather than nominal. The day's count is kept
 on disk in `MAPPER_DATA`, so restarting the service — which on Render's free
@@ -967,6 +1011,21 @@ and `test/copilot.mjs` drives the Copilot panel — the register read at call ti
 the answer on screen in place, both versions cached, every prompt path carrying
 the register, the model unable to inject markup through a reply, and an unknown
 chart kind showing a card rather than breaking the panel.
+
+`test/chatdrift.mjs` is the one that stops the assistant contradicting the tabs.
+It boots the real server, signs in like a browser, and drives the real chat
+route with a stand-in that calls every tool — then compares each number the
+assistant was handed against the route the tab is drawn from. It found a real
+bug on its first run: when the scanner could not read HaTi's server file, the
+control tower printed "of undefined server routes carry no login check", and on
+the assistant's side the figure disappeared from the data entirely, leaving it
+holding a count of open doors with nothing to say what it was a count of.
+
+`test/chateval.mjs` is the only one that is not part of `npm run verify`. It
+asks the real model real questions and checks the answers are true — that every
+figure came from the data, that a table which does not exist is refused rather
+than invented, that an overloaded word is disambiguated. It costs money, so it
+needs `CHAT_EVAL_KEY` handed to it deliberately and does nothing without one.
 
 The token it hands the scan is the one GitHub issues for the run, read-only. It
 can read this repository but not HaTi's, so CI falls back to the stand-in in
