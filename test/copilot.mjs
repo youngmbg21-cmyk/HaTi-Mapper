@@ -52,6 +52,36 @@ let script = [];      // queued replies
    and the answer to arrive while nobody is watching. */
 let stubDelay = 0;
 
+/* A reply the stand-in sends the way the real API does: one event at a time,
+   with the answer arriving as fragments of the JSON that deliver_answer's input
+   is made of. `chunks` is how the answer text is split, so a test can watch it
+   grow. */
+const streamed = (chunks, gapMs) => ({ __stream: { chunks, gapMs: gapMs || 60 } });
+
+async function sendStreamed(res, spec) {
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream; charset=utf-8',
+    'Cache-Control': 'no-cache',
+  });
+  const ev = (type, data) => res.write(`event: ${type}\ndata: ${JSON.stringify({ type, ...data })}\n\n`);
+
+  ev('message_start', { message: { id: 'msg_s', type: 'message', role: 'assistant', content: [], usage: {} } });
+  ev('content_block_start', { index: 0, content_block: { type: 'tool_use', id: 'tu_s', name: 'deliver_answer', input: {} } });
+
+  /* The answer is a JSON string being built a fragment at a time — which is
+     exactly the shape the client has to cope with. */
+  ev('content_block_delta', { index: 0, delta: { type: 'input_json_delta', partial_json: '{"answer":"' } });
+  for (const c of spec.chunks) {
+    await new Promise(r => setTimeout(r, spec.gapMs));
+    ev('content_block_delta', { index: 0, delta: { type: 'input_json_delta', partial_json: JSON.stringify(c).slice(1, -1) } });
+  }
+  ev('content_block_delta', { index: 0, delta: { type: 'input_json_delta', partial_json: '"}' } });
+  ev('content_block_stop', { index: 0 });
+  ev('message_delta', { delta: { stop_reason: 'tool_use' }, usage: {} });
+  ev('message_stop', {});
+  res.end();
+}
+
 const stub = http.createServer((req, res) => {
   let raw = '';
   req.on('data', d => { raw += d; });
@@ -59,6 +89,7 @@ const stub = http.createServer((req, res) => {
     seen.push(JSON.parse(raw));
     const next = script.shift();
     if (!next) { res.writeHead(500).end('{}'); return; }
+    if (next && next.__stream) { sendStreamed(res, next.__stream); return; }
     /* A scripted reply is normally just its content blocks. An entry shaped
        { content, stop_reason } sets the stop reason as well, which is the only
        way to exercise the turns that come back a perfectly ordinary HTTP 200
@@ -865,6 +896,74 @@ try {
     return out;
   });
   check('And it cannot bring a handler with it', stepHandlers.length === 0, stepHandlers.join(', '));
+
+  /* ---- 9bc. the answer appears as it is written ----
+
+     The answer is not ordinary text on the wire: it is the `answer` field
+     inside deliver_answer's input, so it arrives as fragments of a JSON string.
+     What is shown while that happens is a PREVIEW — escaped plain text in its
+     own area — and the real render happens once, at the end, from the
+     committed message. A half-arrived chart fence must never hydrate. */
+  console.log('\nThe answer as it is written');
+
+  await page.click('#askClear');
+  seen = [];
+  script = [streamed([
+    'The **Pro** tier is the dearest. ',
+    'Here is a chart of it.\n\n```monitor-chart\n{ "kind": ',
+    '"biggest-files" }\n```\n',
+  ], 220)];
+  await page.fill('#askInput', 'which is dearest?');
+  await page.click('#askSend');
+
+  /* Caught mid-flight: the first fragment is on screen and the fence is not. */
+  await page.waitForFunction(
+    () => /Pro.. tier is the dearest/.test(document.querySelector('#askFeed').textContent),
+    null, { timeout: 20000 });
+  const midFlight = await page.evaluate(() => ({
+    streaming: !!document.querySelector('#askFeed .streaming'),
+    text: (document.querySelector('#askFeed .streaming') || {}).textContent || '',
+    charts: document.querySelectorAll('#askFeed .chartcard').length,
+    bold: document.querySelectorAll('#askFeed .streaming strong').length,
+    committed: document.querySelectorAll('#askFeed .msg.bot .body:not(.streamwrap)').length,
+  }));
+  check('Words appear before the answer is finished', midFlight.streaming && midFlight.text.length > 0,
+    JSON.stringify(midFlight.text.slice(0, 60)));
+  check('The preview is plain text, not markdown half-rendered',
+    midFlight.bold === 0 && midFlight.text.indexOf('**Pro**') >= 0, `${midFlight.bold} bold spans`);
+  check('And a half-arrived chart fence does not draw', midFlight.charts === 0, `${midFlight.charts} charts`);
+
+  await page.waitForFunction(
+    () => document.querySelectorAll('#askFeed .chartcard').length > 0,
+    null, { timeout: 30000 });
+  const landed = await page.evaluate(() => ({
+    streaming: !!document.querySelector('#askFeed .streaming'),
+    bold: document.querySelectorAll('#askFeed .msg.bot strong').length,
+    charts: document.querySelectorAll('#askFeed .chartcard').length,
+    raw: /monitor-chart/.test(document.querySelector('#askFeed').textContent),
+  }));
+  check('When it lands the preview is replaced, not left beside the answer', !landed.streaming);
+  check('The finished answer is properly rendered', landed.bold > 0, `${landed.bold} bold spans`);
+  check('And the chart draws exactly once, from live data',
+    landed.charts === 1 && !landed.raw, `${landed.charts} charts, raw block visible: ${landed.raw}`);
+
+  /* The preview is model output like any other. */
+  seen = [];
+  script = [streamed(['Careful: <img src=x onerror=alert(1)> is in a filename.'], 120)];
+  await page.fill('#askInput', 'anything nasty in the names?');
+  await page.click('#askSend');
+  await page.waitForFunction(
+    () => /is in a filename/.test(document.querySelector('#askFeed').textContent),
+    null, { timeout: 30000 });
+  const streamInject = await page.evaluate(() => ({
+    imgs: document.querySelectorAll('#askFeed img').length,
+    shown: /<img src=x onerror/.test(document.querySelector('#askFeed').textContent),
+    pwned: !!window.__pwned,
+  }));
+  check('Markup in a streamed answer is shown as the text it is',
+    streamInject.shown && streamInject.imgs === 0 && !streamInject.pwned, JSON.stringify(streamInject));
+
+  await page.click('#askClear');
 
   /* ---- 9c. the conversation survives, and there can be more than one ----
 

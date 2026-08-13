@@ -1005,7 +1005,11 @@ Each task ends with something you can check.
 | 7 | ~~**§9 stage one — real progress steps**~~ **— done** | Both tool labels appear, in order; an injected search query renders as text |
 | 8 | ~~**§13 — the three small ones**~~ **— done** | A `json`-fenced chart draws; no raw JSON is ever visible; the input box is reachable on a phone |
 | 9 | ~~**§12 — the eval set and effort sweep**~~ **— built, not yet run** | `test/chateval.mjs`, 37 cases. Needs a real key; see §12.4 |
-| 10 | §9 stage two — stream the words | Text appears as it is written; a dropped stream leaves no message in history |
+| 10 | ~~**§9 stage two — stream the words**~~ **— done** | Text appears as it is written; a dropped stream leaves no message in history |
+
+**Every task above is done.** The one thing that remains is running §12's eval set
+against the real model with a key, and sweeping `CHAT_EFFORT` — see §12.4 for what is
+and is not known about it.
 
 **Worth shipping on its own: the end of task 5.** At that point the assistant knows where
 you are, cannot drift from the tabs, costs meaningfully less to run, and stops forgetting

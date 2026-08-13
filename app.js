@@ -4087,6 +4087,7 @@
   /* Escaped where it is drawn, like every other string the model has touched:
      two of these labels carry a panel name or a search phrase the MODEL chose. */
   function noteStep(step) {
+    if (step && typeof step.delta === 'string') return noteDelta(step.delta);
     if (!step || typeof step.label !== 'string') return;
     thinkingStep = step.label.slice(0, 80);
     thinkingStepAt = Date.now();
@@ -4101,6 +4102,7 @@
     thinkingAt = Date.now();
     thinkingStep = null;
     thinkingStepAt = 0;
+    resetStream();
     clearInterval(thinkingTimer);
     thinkingTimer = setInterval(function () {
       var el = document.querySelector('#askFeed .typing .say');
@@ -4114,6 +4116,7 @@
     thinkingAt = 0;
     thinkingStep = null;
     thinkingStepAt = 0;
+    resetStream();
   }
 
   /* Two sentences. The chips below carry what this used to explain in prose,
@@ -4276,7 +4279,14 @@
 
     /* Announced to a screen reader as well as drawn, since "it is working" is
        exactly the kind of thing an animation alone never tells anyone. */
-    if (typing) {
+    if (typing && streamBuf) {
+      /* Once words are arriving there is no point in dots. Escaped, and drawn
+         as text rather than markdown: this is a preview of something that has
+         not finished arriving, and running it through the chart pipeline half
+         written is how a fence hydrates on nonsense. */
+      html += '<div class="msg bot"><div class="body streamwrap"><span class="streaming">' +
+        esc(streamBuf) + '</span><span class="caret"></span></div></div>';
+    } else if (typing) {
       html += '<div class="typing" role="status" aria-live="polite">' +
         '<span class="dots"><i></i><i></i><i></i></span>' +
         '<span class="say">' + esc(thinkingLabel()) + '</span></div>';
@@ -4302,6 +4312,32 @@
   /* Every request to the assistant goes through here, so there is exactly one
      place that decides which register is being asked for — and it decides it
      now, from currentRegister(), rather than from anything captured earlier. */
+  /* ---- the answer, as it is being written ----
+
+     A preview and nothing more. It is drawn as ESCAPED PLAIN TEXT into its own
+     area: a half-arrived ```monitor-chart fence must never hydrate, and a
+     partial answer must never be committed. When `done` lands, the whole
+     message is rendered properly from the committed text and this is thrown
+     away. If the connection drops first, so is the partial — half an answer
+     stored as a whole one is worse than none, and it would be re-sent as
+     context forever. */
+  var streamBuf = '';
+
+  function resetStream() { streamBuf = ''; }
+
+  function noteDelta(text) {
+    if (!text) return;
+    streamBuf += text;
+    var el = document.querySelector('#askFeed .streaming');
+    if (!el) { renderFeed(true); return; }
+    el.textContent = streamBuf;
+    var feed = $('askFeed');
+    /* Follow the text down only if the reader is already at the bottom —
+       otherwise they are reading back over an earlier answer and being yanked
+       away from it is worse than not following. */
+    if (feed.scrollHeight - feed.scrollTop - feed.clientHeight < 60) feed.scrollTop = feed.scrollHeight;
+  }
+
   function askServer(body, onStep) {
     return askStream(Object.assign(
       { register: currentRegister(), screen: currentTab() }, body || {}), onStep);
@@ -4358,6 +4394,7 @@
           var parsed = null;
           try { parsed = JSON.parse(data); } catch (e) { return; }
           if (name === 'step' && onStep) onStep(parsed);
+          else if (name === 'delta' && onStep) onStep({ delta: parsed.text || '' });
           else if (name === 'done') settled = { ok: true, body: parsed };
           else if (name === 'error') settled = { ok: false, body: parsed };
         });

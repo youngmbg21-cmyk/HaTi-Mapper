@@ -746,6 +746,16 @@ a{color:inherit;}
 .askerr{align-self:stretch;font-size:12.5px;line-height:1.5;color:var(--badtx);background:var(--bad);
   border-radius:10px;padding:8px 11px;}
 
+/* The answer arriving. Drawn as plain text on purpose — it is a preview of
+   something half written, and the real render happens once, when it is whole.
+   `pre-wrap` so the line breaks the model has already written are visible
+   rather than collapsing into one paragraph that reflows when it finishes. */
+.streamwrap{white-space:pre-wrap;}
+.caret{display:inline-block;width:2px;height:1em;margin-left:2px;vertical-align:-2px;
+  background:var(--lav);animation:blink 1s step-end infinite;}
+@keyframes blink{50%{opacity:0;}}
+@media(prefers-reduced-motion:reduce){.caret{animation:none;opacity:.7;}}
+
 .msg{max-width:92%;font-size:14px;line-height:1.6;}
 /* `me`, not `you`: the class is written from the sender's side, which is what
    app.js emits. Styling the other spelling leaves your own messages as bare

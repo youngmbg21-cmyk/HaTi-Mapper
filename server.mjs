@@ -45,7 +45,7 @@ import { makeClient, fetchRepoFiles, fetchCommits } from './lib/github.mjs';
 import { buildScan } from './lib/scan.mjs';
 import { History, MAX_HISTORY_HOURS, snapshot } from './lib/history.mjs';
 import { chatTools, buildSystem, runTool, normalizeAnswer, normalizeRegister, normalizeScreen, toolLabel } from './lib/chat.mjs';
-import { messages as anthropicMessages, friendlyError, stopReasonError, DEFAULT_MODEL } from './lib/anthropic.mjs';
+import { streamMessages as anthropicMessages, friendlyError, stopReasonError, DEFAULT_MODEL } from './lib/anthropic.mjs';
 import { Accounts, validEmail, normaliseEmail, SESSION_DAYS } from './lib/accounts.mjs';
 import { sendResetEmail, sendDigestEmail, sendAlertEmail, emailConfigured } from './lib/mail.mjs';
 import { Prefs } from './lib/prefs.mjs';
@@ -1213,11 +1213,16 @@ app.post('/api/chat', requireAuth, rateLimit('chat', 40, 15 * 60 * 1000), async 
 
          `effort` is the honest lever for cost and latency; max_tokens is not.
          Medium is the starting point, to be swept against the eval set. */
+      /* The answer arrives a fragment at a time and is forwarded the same way.
+         `delta` is a PREVIEW: the page renders it as escaped plain text and
+         runs the real render once, on `done`, from the committed message. A
+         half-arrived chart fence must never hydrate, and a partial answer must
+         never be stored. */
       const resp = await anthropicMessages(key, {
         max_tokens: 8000,
         output_config: { effort: AI_EFFORT },
         system, tools, messages: working,
-      }, AI_MODEL);
+      }, AI_MODEL, (text) => sse('delta', { text }));
       if (!resp.ok) {
         console.warn('[chat] Anthropic error', resp.status);
         sse('error', { message: friendlyError(resp) });
