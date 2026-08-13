@@ -172,6 +172,13 @@
     $('app').hidden = false;
     $('askLaunch').hidden = false;
 
+    /* Bring back whatever was being talked about last time. Done here rather
+       than at file load because the panel belongs to a signed-in owner, and
+       because an unread badge on the launcher is meaningless before there is
+       an app to launch it from. */
+    loadChat();
+    paintUnread();
+
     /* The chip in the corner says who is signed in. There is only ever one
        account, so the initials come from the address itself. */
     var email = (authInfo && authInfo.email) || '';
@@ -3024,7 +3031,187 @@
   /*  already shows, so it has no route to HaTi's contract data.           */
   /* ==================================================================== */
 
-  var chat = { history: [], busy: false, brain: null, seq: 0 };
+  /* ==================================================================== */
+  /*  The conversations                                                    */
+  /*                                                                       */
+  /*  This used to be one array in memory, thrown away on every refresh.   */
+  /*  The panel was the only part of this dashboard that forgot everything */
+  /*  the moment you blinked, and the answers in it are often the most     */
+  /*  considered thing on the screen.                                      */
+  /*                                                                       */
+  /*  Worse, closing the panel mid-question meant losing the question too: */
+  /*  the answer landed into nothing and nothing said it had arrived.      */
+  /*                                                                       */
+  /*  What IS persisted: the conversations, which one is active, and the   */
+  /*  questions asked per tab. What is NOT: anything in flight, and any    */
+  /*  error. An error stored as an assistant turn gets re-sent as context   */
+  /*  on every later question and quietly poisons the conversation — the   */
+  /*  outgoing payload already filters them out, and persistence must not  */
+  /*  undo that.                                                           */
+  /* ==================================================================== */
+
+  var CHAT_KEY = 'hati-mapper.chat';
+  var MAX_CONVOS = 10;          // localStorage is small and shared
+  var MAX_MESSAGES = 40;        // per conversation
+  var MAX_STORED_CHARS = 20000; // per message; a technical answer is not small
+  var MAX_RECENT = 8;           // remembered questions, per tab
+
+  var chat = {
+    conversations: {},   // id -> { id, title, messages, unread, lastAt }
+    order: [],           // ids, newest first
+    activeId: null,
+    recentByScreen: {},  // tab -> [question, …]
+    seq: 0,
+    brain: null,
+    /* In memory only. Both are facts about a request rather than about a
+       conversation, and neither should survive a refresh. */
+    pending: {},         // id -> true while a request is in the air
+    errors: {},          // id -> the transient red line under the thread
+  };
+
+  function newConversation() {
+    chat.seq += 1;
+    var id = 'c' + Date.now().toString(36) + chat.seq;
+    chat.conversations[id] = { id: id, title: 'New question', messages: [], unread: 0, lastAt: Date.now() };
+    chat.order.unshift(id);
+    trimConversations();
+    chat.activeId = id;
+    return chat.conversations[id];
+  }
+
+  /* The active conversation, made if there is not one. Everything in the panel
+     goes through here rather than reaching into the map, so there is exactly
+     one place that decides what "the conversation" means. */
+  function active() {
+    if (chat.activeId && chat.conversations[chat.activeId]) return chat.conversations[chat.activeId];
+    if (chat.order.length && chat.conversations[chat.order[0]]) {
+      chat.activeId = chat.order[0];
+      return chat.conversations[chat.activeId];
+    }
+    return newConversation();
+  }
+
+  function isBusy(id) { return !!chat.pending[id || chat.activeId]; }
+
+  function trimConversations() {
+    while (chat.order.length > MAX_CONVOS) {
+      var drop = chat.order.pop();
+      delete chat.conversations[drop];
+      delete chat.pending[drop];
+      delete chat.errors[drop];
+    }
+  }
+
+  /* A title is the first thing asked, trimmed. Not worth a model call. */
+  function titleFor(text) {
+    var t = String(text || '').replace(/\s+/g, ' ').trim();
+    return t.length > 48 ? t.slice(0, 47) + '…' : (t || 'New question');
+  }
+
+  function saveChat() {
+    try {
+      localStorage.setItem(CHAT_KEY, JSON.stringify({
+        v: 1,
+        activeId: chat.activeId,
+        order: chat.order.slice(0, MAX_CONVOS),
+        recentByScreen: chat.recentByScreen,
+        conversations: chat.order.slice(0, MAX_CONVOS).reduce(function (out, id) {
+          var c = chat.conversations[id];
+          if (!c) return out;
+          out[id] = {
+            id: c.id, title: c.title, unread: c.unread, lastAt: c.lastAt,
+            messages: c.messages
+              /* Errors never go to disk. They are not things the assistant
+                 said, and storing them would send them back to it. */
+              .filter(function (m) { return !m.error && !m.restating; })
+              .slice(-MAX_MESSAGES)
+              .map(function (m) {
+                return {
+                  id: m.id, role: m.role, question: m.question, copyable: m.copyable,
+                  content: String(m.content || '').slice(0, MAX_STORED_CHARS),
+                  sources: m.sources, watchOut: m.watchOut,
+                  versions: m.versions,
+                };
+              }),
+          };
+          return out;
+        }, {}),
+      }));
+    } catch (e) {
+      /* Private mode, or a full quota. The panel keeps working for this
+         session on the in-memory copy; nothing here is worth interrupting a
+         conversation over. */
+    }
+  }
+
+  function loadChat() {
+    var raw = null;
+    try { raw = localStorage.getItem(CHAT_KEY); } catch (e) { return; }
+    if (!raw) return;
+    var saved = null;
+    try { saved = JSON.parse(raw); } catch (e) { return; }
+    if (!saved || saved.v !== 1 || !saved.conversations) return;
+
+    var order = Array.isArray(saved.order) ? saved.order : [];
+    order.forEach(function (id) {
+      var c = saved.conversations[id];
+      if (!c || !Array.isArray(c.messages)) return;
+      chat.conversations[id] = {
+        id: id,
+        title: typeof c.title === 'string' ? c.title : 'New question',
+        unread: Number(c.unread) || 0,
+        lastAt: Number(c.lastAt) || 0,
+        messages: c.messages.filter(function (m) {
+          return m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string';
+        }),
+      };
+      chat.order.push(id);
+    });
+    trimConversations();
+    if (saved.activeId && chat.conversations[saved.activeId]) chat.activeId = saved.activeId;
+    else if (chat.order.length) chat.activeId = chat.order[0];
+
+    if (saved.recentByScreen && typeof saved.recentByScreen === 'object') {
+      Object.keys(saved.recentByScreen).forEach(function (k) {
+        var list = saved.recentByScreen[k];
+        if (Array.isArray(list)) {
+          chat.recentByScreen[k] = list.filter(function (q) { return typeof q === 'string'; }).slice(0, MAX_RECENT);
+        }
+      });
+    }
+
+    /* Ids must not collide with a restored one after a refresh. */
+    chat.seq = chat.order.length + 1;
+  }
+
+  /* What was asked, per tab, so the panel can offer it again. Deduplicated and
+     capped; the text is untrusted on the way back out and is only ever carried
+     in a data- attribute. */
+  function rememberQuestion(text) {
+    var tab = currentTab() || 'tower';
+    var q = String(text || '').trim();
+    if (!q) return;
+    var list = (chat.recentByScreen[tab] || []).filter(function (x) { return x !== q; });
+    list.unshift(q);
+    chat.recentByScreen[tab] = list.slice(0, MAX_RECENT);
+  }
+
+  function totalUnread() {
+    return chat.order.reduce(function (n, id) {
+      var c = chat.conversations[id];
+      return n + (c ? (c.unread || 0) : 0);
+    }, 0);
+  }
+
+  function paintUnread() {
+    var n = totalUnread();
+    var b = $('askUnread');
+    if (!b) return;
+    b.textContent = n > 9 ? '9+' : String(n);
+    b.hidden = n === 0;
+    $('askLaunch').setAttribute('aria-label',
+      n ? 'Ask about this platform — ' + n + ' unread' : 'Ask about this platform');
+  }
 
   /* ==================================================================== */
   /*  PLAIN or TECHNICAL — the register                                    */
@@ -3683,9 +3870,15 @@
       refreshBrain();
       paintRegisterToggle();
       setExpanded(rememberedExpanded());   // restore the remembered width
-      if (!chat.history.length) renderFeed();
-      setTimeout(function () { var i = $('askInput'); if (i && !$('askKey').hidden === false) i.focus(); }, 60);
+      /* Opening a conversation is reading it. */
+      var c = active();
+      if (c.unread) { c.unread = 0; saveChat(); }
+      renderRail();
+      renderFeed();
+      $('askSend').disabled = isBusy();
     }
+    paintUnread();
+    if (open) setTimeout(function () { var i = $('askInput'); if (i) i.focus(); }, 60);
   }
 
   /* ---- expand / shrink, remembered between visits ---- */
@@ -3748,10 +3941,19 @@
      The charts go with it: they are the one part of a conversation that keeps
      holding listeners and a canvas after its markup is gone. */
   function clearChat() {
-    if (!chat.history.length) return toast('Nothing to delete yet');
+    var c = active();
+    if (!c.messages.length && chat.order.length === 1) return toast('Nothing to delete yet');
     destroyAllCharts();
-    chat.history = [];
+    delete chat.conversations[c.id];
+    delete chat.pending[c.id];
+    delete chat.errors[c.id];
+    chat.order = chat.order.filter(function (id) { return id !== c.id; });
+    chat.activeId = chat.order[0] || null;
+    if (!chat.order.length) newConversation();
+    saveChat();
+    renderRail();
     renderFeed();
+    paintUnread();
     toast('Conversation deleted');
   }
 
@@ -3838,12 +4040,108 @@
     thinkingAt = 0;
   }
 
-  var WELCOME = 'Hello. I watch how your platform is doing and I can answer questions about it — ' +
-    '**is anything broken right now**, what changed since yesterday, what it is costing you to run, ' +
-    'whether anything is open that should not be.\n\n' +
-    'Use the **Plain / Technical** buttons below to choose how much machine detail you want back. ' +
-    'You can flip them over an answer that is already on screen and I will say the same thing the other way.\n\n' +
-    'I read the same information the tabs above show. {~I never see the contracts inside HaTi.}';
+  /* Two sentences. The chips below carry what this used to explain in prose,
+     and nobody reads prose in a chat panel before typing. The boundary
+     sentence stays word for word: it is the most important thing the panel
+     says, and it is the last thing before the questions. */
+  var WELCOME = 'Ask me anything about your platform — I read the same information the tabs above show.\n\n' +
+    'The **Plain / Technical** buttons below choose how much machine detail you get back, and you can ' +
+    'flip them over an answer already on screen. {~I never see the contracts inside HaTi.}';
+
+  /* ---- the questions offered when there is nothing to read yet ----
+
+     An empty box is a hard thing to talk to, and the first answer is what
+     teaches the panel's shape. Every one of these is answerable from a tool
+     that already exists — a starter question that produces "I can't see that
+     from here" teaches the opposite of what it was for. */
+  var TAB_LABEL = {
+    tower: 'Control tower', launch: 'Ready?', screens: 'Screens', cost: 'Money',
+    public: 'Doors', changes: 'Changes', blast: 'What breaks what',
+    data: 'What’s stored', weight: 'Getting bulky', settings: 'Settings',
+  };
+
+  var CHIPS = {
+    tower: ['📊 Is anything wrong right now?', '💰 What is this costing me?',
+      '⚠️ What should I look at first?', '🔍 What could the scanner not read?'],
+    launch: ['🎯 What is left before I can demo?', '⚠️ What is blocking real customers?',
+      '💾 Am I safe if something breaks?', '📋 Which ticks have gone stale?'],
+    screens: ['📊 Which file is doing too many jobs?', '🔍 What does each screen do?',
+      '⚠️ Which screens share a file?', '💡 Where would a change land hardest?'],
+    cost: ['💰 What is driving today’s burn?', '📊 Which feature costs most per use?',
+      '⚠️ Is any paid feature unused?', '🔍 Is this an estimate or a bill?'],
+    public: ['⚠️ Which open door is the risky one?', '🔍 What is genuinely unguarded?',
+      '📊 Has anything opened up lately?', '💡 What would I do about it?'],
+    changes: ['📊 What changed since yesterday?', '🔍 What has been moving all week?',
+      '⚠️ Did anything change that worries you?', '💡 Changes or commits — what is the difference?'],
+    blast: ['⚠️ What could break something already signed?', '🔍 What depends on this?',
+      '📊 Which piece of data is riskiest to change?', '💡 Is this map still accurate?'],
+    data: ['📊 What is actually stored?', '🔍 What is hidden inside a blob?',
+      '⚠️ Is anything stored that should not be?', '💡 What do these tables do?'],
+    weight: ['📊 Which files are getting hard to work on?', '🔍 What is published but never used?',
+      '⚠️ Is anything growing fast?', '💡 What should I split up?'],
+    settings: ['⚙️ Are my alert settings sensible?', '🔍 Where is my data actually kept?',
+      '💰 How much has the assistant cost today?', '💡 What should I turn on?'],
+  };
+
+  function chipsFor(tab) { return CHIPS[tab] || CHIPS.tower; }
+
+  /* Chip text and remembered questions are BOTH untrusted on the way out: the
+     recent list comes back from storage, and the starter list is ours today
+     and may not be tomorrow. Carried in a data- attribute and read through
+     dataset, never spliced into a handler. */
+  function renderChips() {
+    var tab = currentTab() || 'tower';
+    var out = '<div class="askchips">' + chipsFor(tab).map(function (c) {
+      return '<button type="button" class="askchip" data-ask="' + esc(c) + '">' + esc(c) + '</button>';
+    }).join('') + '</div>';
+
+    var recent = (chat.recentByScreen[tab] || []).slice(0, 4);
+    if (recent.length) {
+      out += '<div class="askrecent"><div class="askrecentlab">Recent on ' +
+        esc(TAB_LABEL[tab] || tab) + '</div>' +
+        recent.map(function (q) {
+          var short = q.length > 42 ? q.slice(0, 41) + '…' : q;
+          return '<button type="button" class="askchip past" data-ask="' + esc(q) + '" title="' + esc(q) + '">↺ ' +
+            esc(short) + '</button>';
+        }).join('') + '</div>';
+    }
+    return out;
+  }
+
+  /* ---- the row of conversations ---- */
+
+  function renderRail() {
+    var rail = $('askRail');
+    if (!rail) return;
+    /* One conversation and nothing in it is the resting state, and a rail
+       showing a single pill labelled "New question" is furniture. */
+    if (chat.order.length <= 1 && !(chat.conversations[chat.order[0]] || { messages: [] }).messages.length) {
+      rail.hidden = true;
+      rail.innerHTML = '';
+      return;
+    }
+    rail.hidden = false;
+    rail.innerHTML = chat.order.map(function (id) {
+      var c = chat.conversations[id];
+      if (!c) return '';
+      return '<button type="button" class="askpill' + (id === chat.activeId ? ' on' : '') + '"' +
+        ' data-convo="' + esc(id) + '" title="' + esc(c.title) + '">' + esc(c.title) +
+        (c.unread ? '<i class="pilldot">' + (c.unread > 9 ? '9+' : c.unread) + '</i>' : '') +
+        '</button>';
+    }).join('') + '<button type="button" class="askpill new" data-convo="+" title="Start another conversation">+</button>';
+  }
+
+  function switchConversation(id) {
+    if (id === chat.activeId) return;
+    if (!chat.conversations[id]) return;
+    destroyAllCharts();
+    chat.activeId = id;
+    chat.conversations[id].unread = 0;
+    saveChat();
+    renderRail();
+    renderFeed(isBusy(id));
+    paintUnread();
+  }
 
   /* The text of one assistant message in the register currently chosen, if
      there is a version of it in that register. Read at call time. */
@@ -3855,6 +4153,8 @@
 
   function renderFeed(typing) {
     var feed = $('askFeed');
+    var convo = active();
+    if (typing === undefined) typing = isBusy(convo.id);
     var html = '';
 
     /* Every repaint replaces this markup wholesale, so anything a previous
@@ -3862,11 +4162,11 @@
        until the sweep happens to run. */
     var seenCharts = {};
 
-    if (!chat.history.length) {
-      html += '<div class="msg bot"><div class="body">' + md(WELCOME) + '</div></div>';
+    if (!convo.messages.length) {
+      html += '<div class="msg bot"><div class="body">' + md(WELCOME) + '</div></div>' + renderChips();
     }
 
-    chat.history.forEach(function (m) {
+    convo.messages.forEach(function (m) {
       if (m.role === 'user') {
         html += '<div class="msg me">' + esc(m.content) + '</div>';
         return;
@@ -3905,6 +4205,13 @@
         '<span class="dots"><i></i><i></i><i></i></span>' +
         '<span class="say">' + esc(thinkingLabel()) + '</span></div>';
     }
+
+    /* A failure is system text under the thread, not a bubble in it — it is
+       not something the assistant said. Cleared on the next send, and never
+       written to storage. */
+    if (chat.errors[convo.id]) {
+      html += '<div class="askerr" role="status">' + esc(chat.errors[convo.id]) + '</div>';
+    }
     feed.innerHTML = html;
     feed.scrollTop = feed.scrollHeight;
 
@@ -3925,17 +4232,24 @@
   }
 
   function sendQuestion(q) {
-    if (chat.busy || !q.trim()) return;
+    var convo = active();
+    if (isBusy(convo.id) || !q.trim()) return;
     var question = q.trim();
-    chat.busy = true;
-    chat.history.push({ role: 'user', content: question });
+    chat.pending[convo.id] = true;
+    delete chat.errors[convo.id];
+    if (!convo.messages.length) convo.title = titleFor(question);
+    convo.messages.push({ role: 'user', content: question });
+    convo.lastAt = Date.now();
+    rememberQuestion(question);
+    saveChat();
+    renderRail();
     startThinking();
     renderFeed(true);
     $('askSend').disabled = true;
     $('askInput').value = '';
     $('askInput').style.height = '';
 
-    var payload = chat.history
+    var payload = convo.messages
       .filter(function (m) { return !m.error; })
       .map(function (m) { return { role: m.role, content: m.role === 'assistant' ? bodyFor(m) : m.content }; });
 
@@ -3943,24 +4257,42 @@
       .then(function (b) {
         var versions = {};
         versions[normalizeRegister(b.register)] = b.answer;
-        chat.history.push({
+        convo.messages.push({
           id: nextMsgId(), role: 'assistant', content: b.answer,
           sources: b.sources, watchOut: b.watchOut,
           question: question, versions: versions,
         });
+        convo.lastAt = Date.now();
+        /* The answer may have landed while the owner was somewhere else — the
+           panel closed, or reading another conversation. The request was never
+           abandoned, so the answer is here; something has to say so. */
+        if (!isLookingAt(convo.id)) { convo.unread = (convo.unread || 0) + 1; }
         if (b.budget) refreshBrain();
       })
       .catch(function (e) {
-        chat.history.push({ id: nextMsgId(), role: 'assistant', content: e.message, error: true });
+        /* Held beside the conversation rather than in it. An error is not
+           something the assistant said, and one stored as an assistant turn is
+           re-sent as context on every later question. */
+        chat.errors[convo.id] = e.message;
         if (e.body && e.body.needsKey) refreshBrain();
       })
       .then(function () {
-        chat.busy = false;
-        $('askSend').disabled = false;
-        stopThinking();
-        renderFeed(false);
-        reconcileRegister();
+        delete chat.pending[convo.id];
+        saveChat();
+        renderRail();
+        paintUnread();
+        $('askSend').disabled = isBusy();
+        if (isLookingAt(convo.id)) {
+          stopThinking();
+          renderFeed(false);
+          reconcileRegister();
+        }
       });
+  }
+
+  /* Whether the owner is actually watching this conversation right now. */
+  function isLookingAt(id) {
+    return !$('ask').hidden && chat.activeId === id;
   }
 
   /* ---- flipping the toggle over an answer already on screen ----
@@ -3986,8 +4318,9 @@
   }
 
   function lastAnswer() {
-    for (var i = chat.history.length - 1; i >= 0; i--) {
-      var m = chat.history[i];
+    var msgs = active().messages;
+    for (var i = msgs.length - 1; i >= 0; i--) {
+      var m = msgs[i];
       if (m.role === 'assistant' && !m.error) return m;
     }
     return null;
@@ -4002,9 +4335,10 @@
     if (m.copyable) return;
     var reg = currentRegister();
     if (m.versions && m.versions[reg]) { renderFeed(false); return; }   // cached: instant
-    if (chat.busy) { renderFeed(false); return; }
+    if (isBusy()) { renderFeed(false); return; }
 
-    chat.busy = true;
+    var convo = active();
+    chat.pending[convo.id] = true;
     m.restating = true;
     $('askSend').disabled = true;
     renderFeed(false);
@@ -4025,8 +4359,9 @@
       })
       .then(function () {
         m.restating = false;
-        chat.busy = false;
-        $('askSend').disabled = false;
+        delete chat.pending[convo.id];
+        $('askSend').disabled = isBusy();
+        saveChat();
         renderFeed(false);
       });
   }
@@ -4050,10 +4385,13 @@
   }
 
   function draftFix(kind, id) {
-    if (chat.busy) return;
+    var convo = active();
+    if (isBusy(convo.id)) return;
     askOpen(true);
-    chat.busy = true;
-    chat.history.push({ role: 'user', content: 'Draft a fix prompt for this.' });
+    chat.pending[convo.id] = true;
+    delete chat.errors[convo.id];
+    if (!convo.messages.length) convo.title = 'Fix prompt';
+    convo.messages.push({ role: 'user', content: 'Draft a fix prompt for this.' });
     startThinking();
     renderFeed(true);
     $('askSend').disabled = true;
@@ -4064,22 +4402,26 @@
       .then(function (b) {
         var versions = {};
         versions[normalizeRegister(b.register)] = b.answer;
-        chat.history.push({
+        convo.messages.push({
           id: nextMsgId(), role: 'assistant', content: b.answer,
           sources: b.sources, watchOut: b.watchOut, copyable: true,
           question: 'Draft a fix prompt for this.', versions: versions,
         });
+        convo.lastAt = Date.now();
+        if (!isLookingAt(convo.id)) { convo.unread = (convo.unread || 0) + 1; }
         if (b.budget) refreshBrain();
       })
       .catch(function (e) {
-        chat.history.push({ id: nextMsgId(), role: 'assistant', content: e.message, error: true });
+        chat.errors[convo.id] = e.message;
         if (e.body && e.body.needsKey) refreshBrain();
       })
       .then(function () {
-        chat.busy = false;
-        $('askSend').disabled = false;
-        stopThinking();
-        renderFeed(false);
+        delete chat.pending[convo.id];
+        saveChat();
+        renderRail();
+        paintUnread();
+        $('askSend').disabled = isBusy();
+        if (isLookingAt(convo.id)) { stopThinking(); renderFeed(false); }
       });
   }
 
@@ -4135,7 +4477,30 @@
 
   /* "See <panel>" jumps to that tab, so an answer always has somewhere to
      land rather than being the end of the conversation. */
+  /* One delegated listener for the rail. The + starts another conversation. */
+  $('askRail').addEventListener('click', function (e) {
+    var b = e.target.closest('button[data-convo]');
+    if (!b) return;
+    var id = b.getAttribute('data-convo');
+    if (id === '+') {
+      destroyAllCharts();
+      newConversation();
+      saveChat();
+      renderRail();
+      renderFeed(false);
+      $('askInput').focus();
+      return;
+    }
+    switchConversation(id);
+  });
+
   $('askFeed').addEventListener('click', function (e) {
+    /* A starter question, or one asked before on this tab. The text is read
+       out of the attribute rather than the label, so an elided recent chip
+       still asks the whole question. */
+    var chip = e.target.closest('button[data-ask]');
+    if (chip) { sendQuestion(chip.dataset.ask || ''); return; }
+
     var c = e.target.closest('button[data-copy]');
     if (c) {
       var text = c.getAttribute('data-copy');

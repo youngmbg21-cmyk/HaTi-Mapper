@@ -706,6 +706,46 @@ a{color:inherit;}
 .ask-x:hover{background:rgba(0,0,0,.16);color:var(--onlav);}
 .ask-x.close{font-size:19px;padding:2px 8px;}
 .ask-feed{flex:1;overflow-y:auto;padding:14px 16px;display:flex;flex-direction:column;gap:12px;}
+/* The unread badge on the launcher. Same shape as the warnings circle's count
+   on the control tower, so a number in a ring means one thing on this page.
+   No position on .ask-launch here: it is already fixed further up, which
+   positions this child perfectly well — and re-declaring it later in the
+   sheet dropped the whole launcher into normal flow and made the page scroll. */
+.ask-unread{position:absolute;top:-5px;right:-5px;min-width:19px;height:19px;border-radius:999px;
+  background:var(--bad);color:var(--badtx);font-family:var(--font);font-style:normal;font-weight:700;
+  font-size:11px;line-height:19px;text-align:center;padding:0 5px;box-shadow:0 0 0 2px var(--bg);}
+
+/* One pill per conversation. Scrolls sideways like the tab row above it, and
+   is hidden entirely while there is only one and nothing in it. */
+.ask-rail{flex:none;display:flex;gap:6px;overflow-x:auto;padding:9px 14px 0;scrollbar-width:thin;}
+.ask-rail::-webkit-scrollbar{height:3px;}
+.ask-rail::-webkit-scrollbar-thumb{background:var(--line);border-radius:3px;}
+.askpill{position:relative;flex:none;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  font-family:var(--font);font-size:11.5px;font-weight:600;color:var(--tx2);background:var(--tile);
+  border:1px solid var(--line);border-radius:999px;padding:4px 11px;cursor:pointer;}
+.askpill:hover{color:var(--tx);border-color:var(--lav);}
+.askpill.on{background:var(--lav);color:var(--onlav);border-color:var(--lav);}
+.askpill.new{padding:4px 10px;font-size:14px;line-height:1;}
+.pilldot{position:absolute;top:-3px;right:-3px;min-width:15px;height:15px;border-radius:999px;background:var(--bad);
+  color:var(--badtx);font-style:normal;font-weight:700;font-size:9.5px;line-height:15px;text-align:center;padding:0 3px;}
+
+/* The questions offered while a conversation is empty, and the ones asked
+   before on this tab. */
+.askchips{display:flex;flex-wrap:wrap;gap:6px;}
+.askchip{font-family:var(--mono);font-size:11px;color:var(--tx2);background:var(--tile2);border:1px solid transparent;
+  border-radius:7px;padding:6px 10px;cursor:pointer;text-align:left;line-height:1.35;}
+.askchip:hover{color:var(--tx);border-color:var(--lav);background:var(--tile);}
+.askrecent{margin-top:10px;border-top:1px solid var(--line);padding-top:9px;display:flex;flex-wrap:wrap;gap:6px;}
+.askrecentlab{flex-basis:100%;font-family:var(--mono);font-size:9.5px;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--tx3,var(--tx2));opacity:.75;margin-bottom:2px;}
+.askchip.past{border:1px dashed var(--line);background:transparent;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+
+/* A failure is system text under the thread, not a bubble in it. It is not
+   something the assistant said, it is not stored, and it is gone on the next
+   send. */
+.askerr{align-self:stretch;font-size:12.5px;line-height:1.5;color:var(--badtx);background:var(--bad);
+  border-radius:10px;padding:8px 11px;}
+
 .msg{max-width:92%;font-size:14px;line-height:1.6;}
 /* `me`, not `you`: the class is written from the sender's side, which is what
    app.js emits. Styling the other spelling leaves your own messages as bare
@@ -1395,6 +1435,9 @@ a{color:inherit;}
 <button class="ask-launch" id="askLaunch" hidden>
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9.94 14.06 8 20l-1.94-5.94L0 12l6.06-2.06L8 4l1.94 5.94L16 12z"/><path d="M18 4v4M22 6h-4M18 16v4M22 18h-4"/></svg>
   Ask about this
+  <!-- Lit when an answer landed while the panel was closed, or into a
+       conversation other than the one on screen. -->
+  <i class="ask-unread" id="askUnread" hidden></i>
 </button>
 
 <div class="ask" id="ask" hidden role="dialog" aria-label="Ask about this platform">
@@ -1428,6 +1471,11 @@ a{color:inherit;}
     </div>
     <p class="err" id="askKeyErr" hidden></p>
   </div>
+
+  <!-- One pill per conversation, plus a + to start another. Hidden entirely
+       while there is only one and nothing has been asked in it — a rail
+       showing a single pill labelled "New question" is furniture. -->
+  <div class="ask-rail" id="askRail" hidden></div>
 
   <div class="ask-feed" id="askFeed"></div>
 

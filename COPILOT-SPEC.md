@@ -85,19 +85,27 @@ are created.
 
 ```
 lib/
-  chat.mjs          §4 §5 §8 §11   registers, tools, the system prompt
+  chat.mjs          §4 §5 §8 §11   registers, tools, the system prompt, the split
   anthropic.mjs     §4 §9          the one call to Anthropic
-  chatcache.mjs     §8             NEW — splits the briefing into cached and live halves
   drift.mjs         —              (unrelated: version drift, do not confuse with §10)
 server.mjs          §4 §5 §8 §9    /api/chat
 app.js              §5 §6 §7 §9 §13 the panel
-index.html          §6 §7 §13      the panel's markup
-data/copy.js        §6             NEW HOME for the starter questions
+index.html          §6 §7 §13      the panel's markup and styles
 test/
   copilot.mjs       all            the existing panel test — extend, do not replace
   chatdrift.mjs     §10            NEW — the drift test
   chateval.mjs      §12            NEW — the answer eval set
 ```
+
+Two files this spec named turned out to be wrong, and are not created:
+
+- **`lib/chatcache.mjs`** — the split in §8 lives in `lib/chat.mjs` beside the prompt
+  it splits. A second file would have separated the two halves of one briefing from
+  each other, which is the opposite of the point.
+- **`data/copy.js` for the starter questions in §6** — that file is HaTi's
+  hand-maintained phrasebook, describing HaTi's own screens, and it is a server module
+  that the browser never receives (`server.mjs` serves exactly three files). The
+  questions are the Mapper's own interface copy and live in `app.js`.
 
 ---
 
@@ -967,8 +975,8 @@ Each task ends with something you can check.
 | 2 | ~~**§5 — the tab the owner is on**~~ **— done** | The stand-in receives the right `screen` on every path; a hostile screen name renders nothing |
 | 3 | ~~**§11 — the glossary**~~ **— done** | Prefix contains it; the changes-versus-commits section is untouched |
 | 4 | ~~**§8 — split the briefing**~~ **— done** | Two consecutive first system blocks are byte-identical and carry `cache_control`; `cache_read_input_tokens > 0` on step 2 against the real API |
-| 5 | §7 — the store, persistence, conversations | Refresh keeps the conversation; close mid-flight still lands with a badge; caps drop oldest |
-| 6 | §6 — starter and recent questions | Chips change with the tab; a persisted question containing `"` and `<` breaks nothing |
+| 5 | ~~**§7 — the store, persistence, conversations**~~ **— done** | Refresh keeps the conversation; close mid-flight still lands with a badge; caps drop oldest |
+| 6 | ~~**§6 — starter and recent questions**~~ **— done** | Chips change with the tab; a persisted question containing `"` and `<` breaks nothing |
 | 7 | §9 stage one — real progress steps | Both tool labels appear, in order; an injected search query renders as text |
 | 8 | §13 — the three small ones | A `json`-fenced chart draws; no raw JSON is ever visible; the input box is reachable on a phone |
 | 9 | §12 — the eval set and effort sweep | ≥95%; the chosen effort tier is recorded with its reason |

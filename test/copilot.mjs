@@ -47,11 +47,15 @@ const check = (name, ok, detail) => {
 
 let seen = [];        // every request body the stub received
 let script = [];      // queued replies
+/* How long the stand-in takes to answer. Zero for almost everything; raised
+   for the one check that needs the owner to be able to walk away mid-question
+   and the answer to arrive while nobody is watching. */
+let stubDelay = 0;
 
 const stub = http.createServer((req, res) => {
   let raw = '';
   req.on('data', d => { raw += d; });
-  req.on('end', () => {
+  req.on('end', () => setTimeout(() => {
     seen.push(JSON.parse(raw));
     const next = script.shift();
     if (!next) { res.writeHead(500).end('{}'); return; }
@@ -65,7 +69,7 @@ const stub = http.createServer((req, res) => {
       id: 'msg_t', type: 'message', role: 'assistant',
       content: body.content || [], stop_reason: body.stop_reason, usage: {},
     }));
-  });
+  }, stubDelay));
 });
 
 /* The briefing goes out as two system blocks now — a cached prefix that never
@@ -363,8 +367,11 @@ try {
     chatFetches === 1, `${chatFetches} call sites`);
   check('And that place always attaches the register, read at call time',
     /send\('POST', '\/api\/chat', Object\.assign\(\s*\{ register: currentRegister\(\), screen: currentTab\(\) \}/.test(appSrc));
-  check('And the tab too, read at call time for exactly the same reason',
-    !/^\s*var\s+\w*[Tt]ab\w*\s*=\s*currentTab\(\)/m.test(appSrc));
+  /* Two spaces is module scope in this file — everything lives in one IIFE, so
+     a capture at that indentation is the frozen-at-load bug. Inside a function
+     the call happens per invocation, which is the whole point. */
+  check('And the tab too, never captured at module level',
+    !/^ {2}var\s+\w*[Tt]ab\w*\s*=\s*currentTab\(\)/m.test(appSrc));
   check('Nothing captures the register into a module-level constant',
     !/^\s*var\s+\w*[Rr]egister\w*\s*=\s*currentRegister\(\)/m.test(appSrc));
 
@@ -773,6 +780,149 @@ try {
 
   await page.click('#askClear');
   await page.waitForTimeout(200);
+
+  /* ---- 9c. the conversation survives, and there can be more than one ----
+
+     This used to be one array in memory. A refresh threw the whole thing away,
+     and closing the panel mid-question lost the question as well as the answer
+     — which landed into nothing, with nothing to say it had arrived. */
+  console.log('\nThe conversation survives');
+
+  await page.click('#askClear');
+  seen = [];
+  script = [deliver('The scan reads twelve tables.')];
+  await page.fill('#askInput', 'how many tables are there?');
+  await page.click('#askSend');
+  await page.waitForFunction(
+    () => /twelve tables/.test(document.querySelector('#askFeed').textContent),
+    null, { timeout: 30000 });
+
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForSelector('#towerBurn .bignum', { timeout: 180000 });
+  await page.click('#askLaunch');
+  await page.waitForSelector('#ask:not([hidden])');
+  check('A refresh no longer throws the conversation away',
+    /twelve tables/.test(await page.textContent('#askFeed')));
+  check('And the question that produced it is still above the answer',
+    /how many tables are there/.test(await page.textContent('#askFeed')));
+
+  /* Both halves of an answer survive too, so flipping back is still instant. */
+  seen = [];
+  await page.click('#askRegister button[data-reg="technical"]');
+  await page.waitForTimeout(400);
+  const askedAfterReload = seen.length;
+  await page.click('#askRegister button[data-reg="plain"]');
+  await page.waitForFunction(
+    () => /twelve tables/.test(document.querySelector('#askFeed').textContent),
+    null, { timeout: 15000 });
+  check('Flipping back after a refresh is still instant for a cached register',
+    askedAfterReload <= 1, `${askedAfterReload} call(s) to restate`);
+
+  /* More than one conversation, and the rail to move between them. */
+  check('The rail appears once there is something to move between',
+    await page.isVisible('#askRail'));
+  await page.click('#askRail button[data-convo="+"]');
+  await page.waitForTimeout(200);
+  check('A new conversation starts empty', !/twelve tables/.test(await page.textContent('#askFeed')));
+  seen = [];
+  script = [deliver('Four doors need no login.')];
+  await page.fill('#askInput', 'how many doors?');
+  await page.click('#askSend');
+  await page.waitForFunction(
+    () => /Four doors/.test(document.querySelector('#askFeed').textContent),
+    null, { timeout: 30000 });
+  const pills = await page.locator('#askRail button[data-convo]:not(.new)').count();
+  check('Both conversations are on the rail', pills === 2, `${pills} pills`);
+  check('And each is titled by the question that started it',
+    /how many doors/.test(await page.textContent('#askRail')) &&
+    /how many tables/.test(await page.textContent('#askRail')));
+
+  const firstId = await page.evaluate(() =>
+    document.querySelectorAll('#askRail button[data-convo]:not(.new)')[1].dataset.convo);
+  await page.click(`#askRail button[data-convo="${firstId}"]`);
+  await page.waitForTimeout(300);
+  check('Switching back shows the other conversation, whole',
+    /twelve tables/.test(await page.textContent('#askFeed')) &&
+    !/Four doors/.test(await page.textContent('#askFeed')));
+
+  /* An answer that lands while the owner is not looking. */
+  console.log('\nAn answer that lands while you are elsewhere');
+  seen = [];
+  script = [deliver('It finished while you were away.')];
+  /* The stand-in takes its time, so the panel can be closed while the question
+     is still in the air. The request is never abandoned on close — that is the
+     behaviour being checked. */
+  stubDelay = 2500;
+  await page.fill('#askInput', 'something slow');
+  await page.click('#askSend');
+  await page.waitForTimeout(300);
+  await page.click('#askClose');
+  await page.waitForFunction(
+    () => !document.querySelector('#askUnread').hidden,
+    null, { timeout: 30000 }).catch(() => {});
+  stubDelay = 0;
+  const badge = await page.evaluate(() => ({
+    hidden: document.querySelector('#askUnread').hidden,
+    text: document.querySelector('#askUnread').textContent,
+  }));
+  check('The launcher says an answer arrived while the panel was shut',
+    badge.hidden === false, JSON.stringify(badge));
+  await page.click('#askLaunch');
+  await page.waitForSelector('#ask:not([hidden])');
+  check('And the answer is there when it is opened',
+    /finished while you were away/.test(await page.textContent('#askFeed')));
+  check('Opening it clears the badge',
+    await page.evaluate(() => document.querySelector('#askUnread').hidden) === true);
+
+  /* ---- 9d. the questions offered when there is nothing to read ---- */
+  console.log('\nThe questions offered on an empty conversation');
+  await page.click('#askRail button[data-convo="+"]');
+  await page.waitForTimeout(200);
+  const towerChips = await page.locator('#askFeed .askchip:not(.past)').allTextContents();
+  check('An empty conversation offers questions rather than a blank box',
+    towerChips.length === 4, `${towerChips.length} chips`);
+  check('They are the control tower’s, because that is the tab behind the panel',
+    towerChips.some(t => /anything wrong right now/.test(t)), towerChips.join(' | '));
+
+  await page.click('#askClose');
+  await page.click('.pills button[data-p="cost"]');
+  await page.click('#askLaunch');
+  await page.waitForSelector('#ask:not([hidden])');
+  const moneyChips = await page.locator('#askFeed .askchip:not(.past)').allTextContents();
+  check('Switching tab changes the questions offered',
+    moneyChips.some(t => /today’s burn/.test(t)), moneyChips.join(' | '));
+
+  seen = [];
+  script = [deliver('The dearest feature is the summariser.')];
+  await page.click('#askFeed .askchip:not(.past)');
+  await page.waitForFunction(
+    () => /dearest feature/.test(document.querySelector('#askFeed').textContent),
+    null, { timeout: 30000 });
+  check('Clicking a question asks exactly it',
+    seen[0].messages[seen[0].messages.length - 1].content === moneyChips[0],
+    JSON.stringify(seen[0].messages[seen[0].messages.length - 1].content));
+
+  await page.click('#askRail button[data-convo="+"]');
+  await page.waitForTimeout(200);
+  const recent = await page.locator('#askFeed .askchip.past').allTextContents();
+  check('And it comes back as a recent question on that tab',
+    recent.some(t => t.indexOf(moneyChips[0].slice(0, 20)) >= 0), recent.join(' | '));
+
+  /* Chip text is untrusted on the way back out — the recent list comes from
+     storage. Nothing may be spliced into a handler. */
+  const chipHandlers = await page.evaluate(() => {
+    const out = [];
+    document.querySelectorAll('#askFeed .askchip, #askRail button').forEach((el) => {
+      for (const a of el.attributes) if (/^on/i.test(a.name)) out.push(el.className + '[' + a.name + ']');
+    });
+    return out;
+  });
+  check('No question is spliced into an inline handler', chipHandlers.length === 0, chipHandlers.join(', '));
+
+  await page.click('#askClose');
+  await page.click('.pills button[data-p="tower"]');
+  await page.click('#askLaunch');
+  await page.waitForSelector('#ask:not([hidden])');
 
   /* ---- 10. it is all in the one panel, so it reaches a phone too ---- */
   console.log('\nOn a narrow screen');
