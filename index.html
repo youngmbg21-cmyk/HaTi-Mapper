@@ -717,15 +717,30 @@ a{color:inherit;}
 
 /* One pill per conversation. Scrolls sideways like the tab row above it, and
    is hidden entirely while there is only one and nothing in it. */
-.ask-rail{flex:none;display:flex;gap:6px;overflow-x:auto;padding:9px 14px 0;scrollbar-width:thin;}
+.ask-rail{flex:none;display:flex;align-items:center;gap:6px;overflow-x:auto;padding:9px 14px 0;scrollbar-width:thin;}
 .ask-rail::-webkit-scrollbar{height:3px;}
 .ask-rail::-webkit-scrollbar-thumb{background:var(--line);border-radius:3px;}
-.askpill{position:relative;flex:none;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
-  font-family:var(--font);font-size:11.5px;font-weight:600;color:var(--tx2);background:var(--tile);
-  border:1px solid var(--line);border-radius:999px;padding:4px 11px;cursor:pointer;}
-.askpill:hover{color:var(--tx);border-color:var(--lav);}
-.askpill.on{background:var(--lav);color:var(--onlav);border-color:var(--lav);}
-.askpill.new{padding:4px 10px;font-size:14px;line-height:1;}
+/* Wider than it was. At 150px every question that began the same way rendered
+   as the same handful of characters and an ellipsis, which looks like a label
+   and carries nothing. The width helps; app.js doing the real work of dropping
+   the shared opening helps more. */
+.askpill{position:relative;flex:none;display:inline-flex;align-items:center;max-width:230px;
+  background:var(--tile);border:1px solid var(--line);border-radius:999px;}
+.askpill:hover{border-color:var(--lav);}
+.askpill.on{background:var(--lav);border-color:var(--lav);}
+.askpill > button{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  font-family:var(--font);font-size:11.5px;font-weight:600;color:var(--tx2);
+  background:none;border:0;padding:4px 3px 4px 11px;cursor:pointer;}
+.askpill:hover > button{color:var(--tx);}
+.askpill.on > button{color:var(--onlav);}
+/* Deleting one you are not reading should not mean opening it first. */
+.pillx{flex:none;background:none;border:0;color:var(--tx3,var(--tx2));opacity:.6;
+  font-size:14px;line-height:1;padding:4px 9px 5px 3px;cursor:pointer;}
+.pillx:hover{opacity:1;color:var(--badtx);}
+.askpill.on .pillx{color:var(--onlav);}
+.railnew{flex:none;font-family:var(--font);font-size:14px;line-height:1.2;color:var(--tx2);
+  background:var(--tile);border:1px solid var(--line);border-radius:999px;padding:4px 11px;cursor:pointer;}
+.railnew:hover{color:var(--tx);border-color:var(--lav);}
 .pilldot{position:absolute;top:-3px;right:-3px;min-width:15px;height:15px;border-radius:999px;background:var(--bad);
   color:var(--badtx);font-style:normal;font-weight:700;font-size:9.5px;line-height:15px;text-align:center;padding:0 3px;}
 

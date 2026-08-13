@@ -3994,20 +3994,29 @@
      start again, and a prompt for something this reversible is just friction.
      The charts go with it: they are the one part of a conversation that keeps
      holding listeners and a canvas after its markup is gone. */
-  function clearChat() {
-    var c = active();
-    if (!c.messages.length && chat.order.length === 1) return toast('Nothing to delete yet');
+  /* One place that deletes a conversation, whether the × on its own pill or the
+     bin in the header asked for it. The charts go first: they are the one part
+     of a conversation that keeps holding a canvas and its listeners after the
+     markup around them is gone. */
+  function removeConversation(id) {
+    if (!chat.conversations[id]) return;
     destroyAllCharts();
-    delete chat.conversations[c.id];
-    delete chat.pending[c.id];
-    delete chat.errors[c.id];
-    chat.order = chat.order.filter(function (id) { return id !== c.id; });
-    chat.activeId = chat.order[0] || null;
+    delete chat.conversations[id];
+    delete chat.pending[id];
+    delete chat.errors[id];
+    chat.order = chat.order.filter(function (x) { return x !== id; });
+    if (chat.activeId === id) chat.activeId = chat.order[0] || null;
     if (!chat.order.length) newConversation();
     saveChat();
     renderRail();
     renderFeed();
     paintUnread();
+  }
+
+  function clearChat() {
+    var c = active();
+    if (!c.messages.length && chat.order.length === 1) return toast('Nothing to delete yet');
+    removeConversation(c.id);
     toast('Conversation deleted');
   }
 
@@ -4189,25 +4198,108 @@
 
   /* ---- the row of conversations ---- */
 
+  /* ---- what to write on a pill ----
+
+     The title is the question that started the conversation, which is the
+     right thing to show right up until two of them start the same way. Ask the
+     same starter chip four times and you get four pills reading "What could
+     the sc…", which tells you there are four of something and nothing at all
+     about which is which — worse than no labels, because it looks like
+     information.
+
+     So: drop whatever opening they all share, and where that still leaves two
+     the same, say when each one last moved. */
+  function commonPrefix(list) {
+    var a = list[0] || '';
+    for (var i = 1; i < list.length; i++) {
+      var b = list[i], j = 0;
+      while (j < a.length && j < b.length && a.charAt(j) === b.charAt(j)) j++;
+      a = a.slice(0, j);
+      if (!a) break;
+    }
+    return a;
+  }
+
+  function hhmm(ts) {
+    if (!ts) return '';
+    var d = new Date(ts);
+    return isNaN(d.getTime()) ? '' : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+
+  function pillLabels(convos) {
+    var titles = convos.map(function (c) { return String(c.title || '').trim(); });
+    var labels = titles.slice();
+
+    if (titles.length > 1) {
+      /* Cut back to a word boundary, so a label never begins mid-word. */
+      var shared = commonPrefix(titles);
+      shared = shared.slice(0, shared.lastIndexOf(' ') + 1);
+      /* Only worth removing if it takes more than it leaves behind. */
+      if (shared.length >= 12) {
+        labels = titles.map(function (t) {
+          var rest = t.slice(shared.length).trim();
+          return rest ? '…' + rest : t;
+        });
+      }
+    }
+
+    return uniquify(labels, convos);
+  }
+
+  /* Anything still sharing a label gets what actually separates it: when it
+     last moved, and — because the same question asked twice inside one minute
+     is still two conversations — a count where even that matches. A label that
+     is already unique is left alone; a timestamp on every pill would be noise
+     on the common case to serve the rare one. */
+  function uniquify(labels, convos) {
+    var total = {};
+    labels.forEach(function (l) { total[l] = (total[l] || 0) + 1; });
+
+    var stamped = labels.map(function (l, i) {
+      if (total[l] < 2) return l;
+      var when = hhmm(convos[i].lastAt);
+      return when ? l + ' · ' + when : l;
+    });
+
+    var still = {};
+    stamped.forEach(function (l) { still[l] = (still[l] || 0) + 1; });
+    var nth = {};
+    return stamped.map(function (l) {
+      if (still[l] < 2) return l;
+      nth[l] = (nth[l] || 0) + 1;
+      return l + ' (' + nth[l] + ')';
+    });
+  }
+
   function renderRail() {
     var rail = $('askRail');
     if (!rail) return;
-    /* One conversation and nothing in it is the resting state, and a rail
-       showing a single pill labelled "New question" is furniture. */
-    if (chat.order.length <= 1 && !(chat.conversations[chat.order[0]] || { messages: [] }).messages.length) {
-      rail.hidden = true;
-      rail.innerHTML = '';
-      return;
-    }
+
+    /* Only a conversation with something in it earns a pill. The one you are
+       typing into does not: an empty conversation labelled "New question" is
+       furniture, and it was taking a slot next to the real ones. */
+    var real = chat.order.map(function (id) { return chat.conversations[id]; })
+      .filter(function (c) { return c && c.messages.length; });
+
+    if (!real.length) { rail.hidden = true; rail.innerHTML = ''; return; }
+
+    var labels = pillLabels(real);
     rail.hidden = false;
-    rail.innerHTML = chat.order.map(function (id) {
-      var c = chat.conversations[id];
-      if (!c) return '';
-      return '<button type="button" class="askpill' + (id === chat.activeId ? ' on' : '') + '"' +
-        ' data-convo="' + esc(id) + '" title="' + esc(c.title) + '">' + esc(c.title) +
+    rail.innerHTML = real.map(function (c, i) {
+      var on = c.id === chat.activeId;
+      return '<span class="askpill' + (on ? ' on' : '') + '">' +
+        '<button type="button" data-convo="' + esc(c.id) + '" title="' + esc(c.title) + '">' +
+        esc(labels[i]) +
         (c.unread ? '<i class="pilldot">' + (c.unread > 9 ? '9+' : c.unread) + '</i>' : '') +
-        '</button>';
-    }).join('') + '<button type="button" class="askpill new" data-convo="+" title="Start another conversation">+</button>';
+        '</button>' +
+        '<button type="button" class="pillx" data-close="' + esc(c.id) + '"' +
+        ' title="Delete this conversation" aria-label="Delete the conversation ' + esc(c.title) + '">&times;</button>' +
+        '</span>';
+    }).join('') +
+      /* Nothing to start when you are already sitting in a blank one. */
+      (active().messages.length
+        ? '<button type="button" class="railnew" data-convo="+" title="Start another conversation" aria-label="Start another conversation">+</button>'
+        : '');
   }
 
   function switchConversation(id) {
@@ -4670,6 +4762,16 @@
      land rather than being the end of the conversation. */
   /* One delegated listener for the rail. The + starts another conversation. */
   $('askRail').addEventListener('click', function (e) {
+    /* The × sits inside the pill, so it has to be looked for first — otherwise
+       deleting a conversation would switch to it on the way out. */
+    var x = e.target.closest('button[data-close]');
+    if (x) {
+      var gone = x.getAttribute('data-close');
+      var title = (chat.conversations[gone] || {}).title || 'Conversation';
+      removeConversation(gone);
+      toast('Deleted “' + title + '”');
+      return;
+    }
     var b = e.target.closest('button[data-convo]');
     if (!b) return;
     var id = b.getAttribute('data-convo');

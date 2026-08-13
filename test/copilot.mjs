@@ -1015,19 +1015,77 @@ try {
   await page.waitForFunction(
     () => /Four doors/.test(document.querySelector('#askFeed').textContent),
     null, { timeout: 30000 });
-  const pills = await page.locator('#askRail button[data-convo]:not(.new)').count();
+  const pills = await page.locator('#askRail .askpill > button[data-convo]').count();
   check('Both conversations are on the rail', pills === 2, `${pills} pills`);
   check('And each is titled by the question that started it',
     /how many doors/.test(await page.textContent('#askRail')) &&
     /how many tables/.test(await page.textContent('#askRail')));
 
   const firstId = await page.evaluate(() =>
-    document.querySelectorAll('#askRail button[data-convo]:not(.new)')[1].dataset.convo);
+    document.querySelectorAll('#askRail .askpill > button[data-convo]')[1].dataset.convo);
   await page.click(`#askRail button[data-convo="${firstId}"]`);
   await page.waitForTimeout(300);
   check('Switching back shows the other conversation, whole',
     /twelve tables/.test(await page.textContent('#askFeed')) &&
     !/Four doors/.test(await page.textContent('#askFeed')));
+
+  /* An empty conversation is not a conversation. It used to take a slot on the
+     rail labelled "New question", next to the real ones. */
+  await page.click('#askRail button[data-convo="+"]');
+  await page.waitForTimeout(200);
+  const whileBlank = await page.evaluate(() => ({
+    pills: document.querySelectorAll('#askRail .askpill > button[data-convo]').length,
+    highlighted: document.querySelectorAll('#askRail .askpill.on').length,
+    plus: document.querySelectorAll('#askRail button[data-convo="+"]').length,
+    labels: [...document.querySelectorAll('#askRail .askpill > button')].map(b => b.textContent),
+  }));
+  check('A blank conversation gets no pill of its own',
+    whileBlank.pills === 2 && !whileBlank.labels.some(l => /New question/.test(l)),
+    JSON.stringify(whileBlank.labels));
+  check('And nothing is highlighted, because you are not in any of them',
+    whileBlank.highlighted === 0, `${whileBlank.highlighted} highlighted`);
+  check('There is no + either, since you are already sitting in a blank one',
+    whileBlank.plus === 0);
+
+  /* The case the owner actually hit: the same starter question asked over and
+     over, every pill reading "What could the sc…" and none of them saying
+     which is which. */
+  const SAME = 'What could the scanner not read?';
+  for (const answer of ['Two files were unreadable.', 'Still two files.']) {
+    seen = [];
+    script = [deliver(answer)];
+    /* There is no + while you are already sitting in a blank conversation,
+       which is the state the previous check left behind. */
+    if (await page.locator('#askRail button[data-convo="+"]').count()) {
+      await page.click('#askRail button[data-convo="+"]');
+      await page.waitForTimeout(150);
+    }
+    await page.fill('#askInput', SAME);
+    await page.click('#askSend');
+    await page.waitForFunction(
+      (a) => document.querySelector('#askFeed').textContent.includes(a),
+      answer, { timeout: 30000 });
+  }
+
+  const twins = await page.evaluate(() =>
+    [...document.querySelectorAll('#askRail .askpill > button[data-convo]')].map(b => b.textContent.trim()));
+  check('No two pills read the same, however alike the questions were',
+    new Set(twins).size === twins.length, twins.join(' | '));
+  check('The two identical questions are told apart by when they happened',
+    twins.filter(t => /\d\d[:.]\d\d/.test(t)).length >= 2, twins.join(' | '));
+  check('The full question is still there to read on hover',
+    (await page.getAttribute('#askRail .askpill > button[data-convo]', 'title') || '')
+      .indexOf('What could the scanner not read') >= 0);
+
+  /* Deleting one you are not reading should not mean opening it first. */
+  const before = twins.length;
+  await page.click('#askRail .askpill:last-of-type .pillx');
+  await page.waitForTimeout(250);
+  const after = await page.locator('#askRail .askpill > button[data-convo]').count();
+  check('A conversation can be deleted from its own pill', after === before - 1,
+    `${before} → ${after}`);
+  check('And the one being read is untouched, because it was not the one deleted',
+    /Still two files/.test(await page.textContent('#askFeed')));
 
   /* An answer that lands while the owner is not looking. */
   console.log('\nAn answer that lands while you are elsewhere');
