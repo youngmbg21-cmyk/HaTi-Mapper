@@ -134,8 +134,19 @@ async function askEverything(question) {
   if (seen.length < 2) throw new Error(`the model was called ${seen.length} time(s); expected 2`);
 
   /* The tool results ride back as the last user turn of the second request. */
+  /* The briefing is sent as two blocks now — a cached prefix and a live half —
+     so the test keeps them apart as well as together. Which half a number is in
+     is itself a thing worth asserting: a count that drifts into the prefix
+     silently stops the cache ever hitting. */
+  const blocks = Array.isArray(seen[0].system) ? seen[0].system : [{ text: seen[0].system }];
   const results = seen[1].messages[seen[1].messages.length - 1].content;
-  const out = { _system: seen[0].system, _raw: {} };
+  const out = {
+    _blocks: blocks,
+    _prefix: blocks[0]?.text || '',
+    _live: blocks.slice(1).map(b => b.text).join('\n'),
+    _system: blocks.map(b => b.text).join('\n'),
+    _raw: {},
+  };
   CALLS.forEach(([key], i) => {
     const block = results.find(b => b.tool_use_id === `tu_${i}`);
     if (!block) throw new Error(`no tool result came back for ${key}`);
@@ -348,7 +359,7 @@ try {
 
   /* ---- 2. the briefing states some of these in prose, by hand ---- */
   console.log('\nAnd the numbers written into the briefing by hand');
-  const sys = asked._system || '';
+  const sys = asked._live || '';
   const briefed = [
     ['screens', tabs.scan.screens.length, /(\d+) screens/],
     ['AI features', tabs.scan.ai.features.length, /(\d+) features that call Anthropic/],
@@ -372,6 +383,25 @@ try {
     burn ? `briefing $${burn[1]}, scan ${tabs.scan.cost?.dailyMixedUsd}` : 'no figure in the briefing');
   check('the briefing states the version the scan actually read',
     sys.includes(`Code version: ${tabs.scan.commit}`));
+
+  /* ---- 2b. and none of them leaked into the half that is meant to cache ---- */
+  console.log('\nAnd none of it leaked into the half that has to stay still');
+  const pre = asked._prefix || '';
+  check('the briefing is sent as a cached prefix and a live block',
+    asked._blocks.length === 2 && !!asked._blocks[0].cache_control,
+    `${asked._blocks.length} block(s), breakpoint ${JSON.stringify(asked._blocks[0]?.cache_control)}`);
+  check('the cached half states no count from the scan',
+    !/\d+ screens|\d+ features that call Anthropic|\d+ database tables|\d+ known gaps/.test(pre));
+  check('nor the version, the scan time or the money headline',
+    !pre.includes(tabs.scan.commit || ' ') && !/Last scanned:/.test(pre) &&
+    !/Today's burn" figure is/.test(pre));
+  check('nor which tab the owner happens to be on',
+    !/WHERE THE OWNER IS LOOKING/.test(pre));
+  check('but it does carry the rules, which is the whole point of caching it',
+    /GROUND RULES — BOTH REGISTERS/.test(pre) && /YOU NAME ONE, YOU NEVER SUPPLY ITS NUMBERS/.test(pre) &&
+    /WORDS IN THIS PRODUCT THAT MEAN MORE THAN ONE THING/.test(pre));
+  check('and it is long enough to be worth caching at all',
+    pre.length > 4000, `${pre.length} characters`);
 
   /* ---- 3. nothing the model needs went missing on the way ---- */
   console.log('\nNothing the model needs went missing on the way through');

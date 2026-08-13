@@ -30,6 +30,18 @@ const check = (name, ok, detail) => {
   console.log(`${ok ? '  PASS' : '  FAIL'}  ${name}${detail ? `\n        ${detail}` : ''}`);
 };
 
+/* The briefing goes out as two system blocks now — a cached prefix that never
+   moves and a live block that does — so a test that wants to look at "the
+   system prompt" has to look at both. Joined here rather than at every call
+   site, and tolerant of a plain string so this keeps working if the split ever
+   changes back. */
+const sysText = (body) => {
+  const s = body && body.system;
+  if (!s) return '';
+  return Array.isArray(s) ? s.map(b => (b && b.text) || '').join('\n') : String(s);
+};
+
+
 /* ------------------------------------------------- the stand-in model ---- */
 
 let seen = [];        // every request body the stub received
@@ -124,21 +136,21 @@ try {
   check('It took two turns with the model', seen.length === 2, `${seen.length} turns`);
   check('The tools were offered to the model', Array.isArray(seen[0].tools) && seen[0].tools.length >= 5, `${seen[0].tools?.length} tools`);
   check('deliver_answer is one of them', (seen[0].tools || []).some(t => t.name === 'deliver_answer'));
-  check('The system prompt tells it who it is talking to', /NOT a developer/.test(seen[0].system || ''));
+  check('The system prompt tells it who it is talking to', /NOT a developer/.test(sysText(seen[0])));
   /* Read from the scan rather than written as a literal. Pinning "14 screens"
      asserted the fixture's shape at the time the test was written, so the
      check failed the moment the stand-in was reshaped — while the thing it
      exists to prove, that the real count reaches the model, was still true. */
   check('The system prompt carries the real headline numbers',
-    new RegExp(`${scanRes.body.screens.length} screens`).test(seen[0].system || ''),
+    new RegExp(`${scanRes.body.screens.length} screens`).test(sysText(seen[0])),
     `expected ${scanRes.body.screens.length} screens`);
-  check('The system prompt forbids reaching contract data', /never see|cannot see anything IN it|no customer data/i.test(seen[0].system || ''));
+  check('The system prompt forbids reaching contract data', /never see|cannot see anything IN it|no customer data/i.test(sysText(seen[0])));
 
   /* Two different things are called "changes", and the assistant once told the
      owner the dashboard was wrong by counting the other one — reporting a
      commit count as a change count and contradicting a figure that was right.
      The rule has to reach the model, so it is asserted where it is sent. */
-  const sys = seen[0].system || '';
+  const sys = sysText(seen[0]);
   const tools = seen[0].tools || [];
   const named = n => tools.find(t => t.name === n) || {};
   check('The system prompt separates observed changes from commits',
@@ -290,7 +302,7 @@ try {
     seen = [];
     script = [{ content: [toolUse('deliver_answer', { answer: 'A prompt.' })] }];
     const r = await call('POST', '/api/chat', { draft: { kind, id } });
-    return { res: r, sent: seen[0] ? String(seen[0].messages[0].content) : '', system: seen[0] ? seen[0].system : '' };
+    return { res: r, sent: seen[0] ? String(seen[0].messages[0].content) : '', system: seen[0] ? sysText(seen[0]) : '' };
   };
 
   /* (1) a paid AI endpoint nothing calls */

@@ -3047,6 +3047,21 @@
     return REGISTERS.indexOf(s) >= 0 ? s : 'plain';
   }
 
+  /* Which tab is open at the moment of asking.
+   *
+   * Read at call time for exactly the reason the register is, written out at
+   * length below: a value captured when this file loads freezes whichever tab
+   * happened to be open then, and every switch afterwards moves the highlight
+   * and nothing else. The assistant would confidently answer about the control
+   * tower while the owner stared at Doors.
+   *
+   * The pill row is the authority — showPanel() keeps aria-selected true on
+   * exactly one of them, and the gear counts as one too. */
+  function currentTab() {
+    var on = document.querySelector('[data-p][role="tab"][aria-selected="true"]');
+    return on ? on.getAttribute('data-p') : null;
+  }
+
   /* The browser's copy is authoritative for what the page draws; the server's
      copy exists so the choice follows the owner onto their next device. */
   function currentRegister() {
@@ -3905,7 +3920,8 @@
      place that decides which register is being asked for — and it decides it
      now, from currentRegister(), rather than from anything captured earlier. */
   function askServer(body) {
-    return send('POST', '/api/chat', Object.assign({ register: currentRegister() }, body || {}));
+    return send('POST', '/api/chat', Object.assign(
+      { register: currentRegister(), screen: currentTab() }, body || {}));
   }
 
   function sendQuestion(q) {
@@ -4161,9 +4177,16 @@
   function renderSettings(cfg) {
     if (!cfg) return;
     $('setModel').textContent = cfg.model || '—';
-    $('setBudget').textContent = cfg.budget
+    /* The day's questions, and how much of what the assistant read was served
+       from the prompt cache rather than paid for fresh. The second number is
+       there to be checked rather than assumed: the briefing is split into a
+       half that never moves and a half that does precisely so the unchanging
+       half can be re-read cheaply across the several calls one question makes,
+       and if that share sits at zero the split is not working. */
+    var pct = cfg.cache && cfg.cache.servedFromCachePct;
+    $('setBudget').textContent = (cfg.budget
       ? cfg.budget.used + ' of ' + cfg.budget.limit + ' today'
-      : '—';
+      : '—') + (typeof pct === 'number' ? ' · ' + pct + '% of what it read came from cache' : '');
     var st = $('setKeyState');
     if (cfg.configured) {
       st.className = 'state';

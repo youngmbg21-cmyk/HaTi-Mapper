@@ -964,9 +964,9 @@ Each task ends with something you can check.
 |---|---|---|
 | 0 | ~~**§4 — `max_tokens` and `stop_reason`**~~ **— done** | A wide plain-register question returns a complete answer; truncation and refusal say which they were, and neither is fed back to the model |
 | 1 | ~~**§10 — the drift test**~~ **— done** | `node test/chatdrift.mjs` passes on both fixtures; it is in `npm run verify`; breaking a row fails it |
-| 2 | §5 — the tab the owner is on | The stand-in receives the right `screen` on every path; a hostile screen name renders nothing |
-| 3 | §11 — the glossary | Prefix contains it; the changes-versus-commits section is untouched |
-| 4 | §8 — split the briefing | Two consecutive first system blocks are byte-identical and carry `cache_control`; `cache_read_input_tokens > 0` on step 2 against the real API |
+| 2 | ~~**§5 — the tab the owner is on**~~ **— done** | The stand-in receives the right `screen` on every path; a hostile screen name renders nothing |
+| 3 | ~~**§11 — the glossary**~~ **— done** | Prefix contains it; the changes-versus-commits section is untouched |
+| 4 | ~~**§8 — split the briefing**~~ **— done** | Two consecutive first system blocks are byte-identical and carry `cache_control`; `cache_read_input_tokens > 0` on step 2 against the real API |
 | 5 | §7 — the store, persistence, conversations | Refresh keeps the conversation; close mid-flight still lands with a badge; caps drop oldest |
 | 6 | §6 — starter and recent questions | Chips change with the tab; a persisted question containing `"` and `<` breaks nothing |
 | 7 | §9 stage one — real progress steps | Both tool labels appear, in order; an injected search query renders as text |

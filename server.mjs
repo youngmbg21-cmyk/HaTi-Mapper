@@ -44,7 +44,7 @@ import { fileURLToPath } from 'node:url';
 import { makeClient, fetchRepoFiles, fetchCommits } from './lib/github.mjs';
 import { buildScan } from './lib/scan.mjs';
 import { History, MAX_HISTORY_HOURS, snapshot } from './lib/history.mjs';
-import { chatTools, buildSystem, runTool, normalizeAnswer, normalizeRegister } from './lib/chat.mjs';
+import { chatTools, buildSystem, runTool, normalizeAnswer, normalizeRegister, normalizeScreen, TOOL_LABEL } from './lib/chat.mjs';
 import { messages as anthropicMessages, friendlyError, stopReasonError, DEFAULT_MODEL } from './lib/anthropic.mjs';
 import { Accounts, validEmail, normaliseEmail, SESSION_DAYS } from './lib/accounts.mjs';
 import { sendResetEmail, sendDigestEmail, sendAlertEmail, emailConfigured } from './lib/mail.mjs';
@@ -197,6 +197,35 @@ function countAnsweredQuestion() {
   chatBudget();                 // rolls the day over first, if it has changed
   chatCount++;
   saveBudget();
+}
+
+/* How much of what the assistant read today was served from the prompt cache
+   rather than paid for fresh. Three counts and nothing else — no prompt text,
+   no question, no answer. Kept in memory only: it is an observation about a
+   day's traffic, not a fact about HaTi, and it is not worth a disk write.
+
+   The number exists to be checked rather than assumed. If `read` stays at zero
+   across a day of questions then the cached half of the briefing is not
+   actually stable and the saving is imaginary. */
+let cacheTotals = { date: null, written: 0, read: 0, fresh: 0 };
+
+function noteCacheUse({ written, read, fresh }) {
+  const today = new Date().toISOString().slice(0, 10);
+  if (cacheTotals.date !== today) cacheTotals = { date: today, written: 0, read: 0, fresh: 0 };
+  cacheTotals.written += written;
+  cacheTotals.read += read;
+  cacheTotals.fresh += fresh;
+}
+
+function cacheReport() {
+  const total = cacheTotals.read + cacheTotals.fresh + cacheTotals.written;
+  return {
+    ...cacheTotals,
+    /* Of everything the model read today, the share it did not pay full price
+       for. Null rather than 0 when nothing has been asked yet, because "no
+       questions" and "cached nothing" are different things. */
+    servedFromCachePct: total > 0 ? Math.round((cacheTotals.read / total) * 100) : null,
+  };
 }
 
 const app = express();
@@ -982,6 +1011,7 @@ app.get('/api/ai/config', requireAuth, rateLimit('aiconfig', 120, 15 * 60 * 1000
     // says which one is in use so there is never any doubt.
     environmentFallback: !!ENV_AI_KEY,
     budget: chatBudget(),
+    cache: cacheReport(),
     /* Three states, not two: nothing is being written, something is being
        written somewhere that a deploy will replace, or something is being
        written to a mounted volume. The middle one used to report as the last
@@ -1050,6 +1080,12 @@ app.post('/api/chat', requireAuth, rateLimit('chat', 40, 15 * 60 * 1000), async 
     prefs.update({ answerRegister: register });
   }
 
+  /* Which tab the owner is looking at. Validated rather than trusted: it
+     arrives from a browser and ends up inside a prompt, so anything that is
+     not one of the dashboard's own tab names becomes null and no screen
+     section is rendered at all. Never interpolate the raw string. */
+  const screen = normalizeScreen(req.body?.screen);
+
   /* "Draft a fix prompt" on a finding. The instruction is built here, from the
      scan, so the paths and identifiers in it are the ones that were actually
      scanned rather than anything typed or remembered. Same key, same budget,
@@ -1095,10 +1131,17 @@ app.post('/api/chat', requireAuth, rateLimit('chat', 40, 15 * 60 * 1000), async 
   /* Built per request, from the register read a moment ago. Nothing about the
      style rules is computed at module load, so flipping the toggle changes the
      next answer and not merely the button. */
-  const system = buildSystem({
-    scan, historyStatus: history.status(), pulse,
+  const { prefix, live } = buildSystem({
+    scan, historyStatus: history.status(), pulse, screen,
     draft: !!draftReq, restate: !!restateReq, register,
   });
+  /* Two blocks, breakpoint on the first. `tools` renders before `system`, so a
+     breakpoint here caches the tool definitions AND the rulebook together —
+     which is the whole win, and why nothing further is needed. */
+  const system = [
+    { type: 'text', text: prefix, cache_control: { type: 'ephemeral' } },
+    { type: 'text', text: live },
+  ];
   const tools = chatTools(register);
   const working = convo.slice();
   /* The readiness checklist is worked out up front rather than inside the tool
@@ -1110,6 +1153,10 @@ app.post('/api/chat', requireAuth, rateLimit('chat', 40, 15 * 60 * 1000), async 
   launchCtx.pulse = pulse ? { ...pulse, drift: driftVerdict(cache?.payload, pulse) } : null;
   const ctx = { scan, history, pulse, launch: evaluateLaunch(launchCtx) };
   let final = null, usedModel = AI_MODEL, toolsUsed = [];
+  /* What the cache actually did, summed across the steps of this one question.
+     Counts only — never the briefing, the question or the answer, which are the
+     owner's own platform data and are logged nowhere. */
+  const cacheUse = { written: 0, read: 0, fresh: 0 };
 
   try {
     for (let step = 0; step < 5; step++) {
@@ -1140,6 +1187,10 @@ app.post('/api/chat', requireAuth, rateLimit('chat', 40, 15 * 60 * 1000), async 
         return res.status(502).json({ error: friendlyError(resp) });
       }
       usedModel = resp.model;
+      const u = resp.data.usage || {};
+      cacheUse.written += Number(u.cache_creation_input_tokens) || 0;
+      cacheUse.read += Number(u.cache_read_input_tokens) || 0;
+      cacheUse.fresh += Number(u.input_tokens) || 0;
 
       /* Why the model stopped, BEFORE reading what it said. Both of the stop
          reasons handled here arrive as an ordinary HTTP 200 with an
@@ -1184,6 +1235,7 @@ app.post('/api/chat', requireAuth, rateLimit('chat', 40, 15 * 60 * 1000), async 
     /* Anthropic answered, so this one counts. Anything that returned above —
        a rejected key, a rate limit, an outage — did not. */
     countAnsweredQuestion();
+    noteCacheUse(cacheUse);
     res.json({
       ...final, model: usedModel, toolsUsed, budget: chatBudget(),
       drafted: !!draftReq, restated: !!restateReq,
