@@ -652,6 +652,16 @@ and tempting place to get it wrong.
 
 **This is the most valuable thing in this document. Build it before Changes 7–9.**
 
+> **DONE** — `test/chatdrift.mjs`, wired into `npm run verify`. It found a real bug
+> on its first run, described in §10.5.
+>
+> One thing in §10.2 below was written wrong and is corrected in §10.3: a tool
+> result reaches the model as `JSON.stringify(out)`, which is a lossy door.
+> `undefined` disappears, `NaN` and `Infinity` both arrive as `null`. None of the
+> three can be found by looking for itself on the far side, so the "walk it for
+> NaN and undefined" plan does not work over the wire. What replaced it catches
+> the same failures by their fingerprint instead.
+
 ### 10.1 Why
 
 `README.md` makes a promise about the control tower: *"a summary, never a second source.
@@ -702,32 +712,64 @@ const rows = [
 ];
 ```
 
-Plus three assertions that are not about any single number:
+### 10.3 The three assertions that are not about any single number
 
-- **No invented shape.** Walk every tool's output for the fixture and assert no `NaN`, no
-  `Infinity`, and no `undefined` values anywhere. A `null` is fine and meaningful — the
-  Mapper says "not detected" a lot, on purpose — but `undefined` in a JSON payload
-  silently disappears and takes the fact with it.
-- **Stable.** Call each tool twice against an unchanged scan and assert byte-identical
+**As built**, correcting the plan in §10.2:
+
+- **Nothing went missing on the way through.** `JSON.stringify` deletes an `undefined`
+  key outright and turns `NaN` and `Infinity` into `null`, so none of the three is
+  findable by looking for itself once the result has crossed to the model. Both leave the
+  same fingerprint, though — a fact the model needed and did not get — so the test looks
+  for that instead, in two parts. Every tool declares the keys it always carries, and a
+  missing one fails: that catches `undefined`. Every field the model will read as a
+  number and put in a sentence must be a finite number, and a `null` there fails: that
+  catches `NaN` and `Infinity`. A `null` anywhere else is left alone, because "not
+  detected" is a real and deliberate answer all over this product.
+- **Stable.** Call every tool twice against an unchanged scan and assert byte-identical
   JSON. A tool whose output moves without the data moving cannot be reasoned about.
-- **Empty is a real answer.** Against the sparse fixture, assert `get_changes` returns
-  `nothingChanged: true` rather than an error, and `get_launch_readiness` returns a
-  verdict rather than throwing. The prompt already tells the model that an empty change
-  log is a real and reportable answer; the tools must actually produce one.
+- **Empty is a real answer.** Against a near-empty workspace — a temp directory holding
+  two almost-blank files — assert the scan succeeds, `get_changes` returns
+  `nothingChanged: true` rather than an error, `get_launch_readiness` returns a verdict,
+  and `get_live_usage` says *why* it cannot reach HaTi rather than reporting nothing. The
+  prompt already tells the model an empty change log is a real and reportable answer; the
+  tools have to actually produce one.
 
-### 10.3 The rule that keeps it honest
+### 10.4 The rule that keeps it honest
 
 **Adding a number to the assistant's reach without adding a drift row fails review.** Say
 so in the file's header comment, in the repo's own voice, so the next person editing
 `runTool()` reads it before they add a field.
 
-### 10.4 Acceptance
+### 10.5 What it found on its first run
 
-- `node test/chatdrift.mjs` passes on the full fixture and on a sparse one.
-- Add `node test/chatdrift.mjs` to the `verify` script in `package.json`, before
-  `test/copilot.mjs`.
+`scanPublic()` in `lib/scan.mjs` returns early when HaTi's `server/server.js` cannot be
+read, and that early return was missing `totalRoutes` — so `scan.public.totalRoutes` was
+`undefined` rather than a number, on exactly the path the README describes as the way this
+product decays: *"a part of HaTi that has gone"*.
+
+Three consumers, one of them defended:
+
+- The control tower's Open doors card printed **"of undefined server routes carry no login
+  check"** at the owner.
+- The Doors tab's lede did the same.
+- A third site at `app.js:1706` was already guarded with `|| 0` — which is how these
+  things always look: someone hit it once, patched where it hurt, and the other two sites
+  kept the bug.
+- On the assistant's side it was worse than visible. The key vanished from the JSON
+  entirely, leaving the model with a count of open doors and nothing saying what it was a
+  count *of*.
+
+Fixed as `totalRoutes: null` — deliberately not `0`, because `0` claims HaTi has no
+addresses and what actually happened is that the Mapper could not tell — with both render
+sites saying so in words, and `?? null` in the tool so the key is always present.
+
+### 10.6 Acceptance
+
+- `node test/chatdrift.mjs` passes on the full fixture and on a near-empty one. **120
+  checks, all passing.**
+- It is in the `verify` script, before `test/copilot.mjs`.
 - Deliberately break one row — return `Math.round()` of a value the tab shows unrounded —
-  and confirm the test fails with a readable message naming the row.
+  and it fails with a message naming the row and both figures.
 
 ---
 
@@ -921,7 +963,7 @@ Each task ends with something you can check.
 | # | Task | Acceptance |
 |---|---|---|
 | 0 | ~~**§4 — `max_tokens` and `stop_reason`**~~ **— done** | A wide plain-register question returns a complete answer; truncation and refusal say which they were, and neither is fed back to the model |
-| 1 | **§10 — the drift test** | `node test/chatdrift.mjs` passes on both fixtures; it is in `npm run verify`; breaking a row fails it |
+| 1 | ~~**§10 — the drift test**~~ **— done** | `node test/chatdrift.mjs` passes on both fixtures; it is in `npm run verify`; breaking a row fails it |
 | 2 | §5 — the tab the owner is on | The stand-in receives the right `screen` on every path; a hostile screen name renders nothing |
 | 3 | §11 — the glossary | Prefix contains it; the changes-versus-commits section is untouched |
 | 4 | §8 — split the briefing | Two consecutive first system blocks are byte-identical and carry `cache_control`; `cache_read_input_tokens > 0` on step 2 against the real API |

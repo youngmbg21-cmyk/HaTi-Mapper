@@ -528,8 +528,14 @@
       '<button class="iconbtn go" type="button" style="width:30px;height:30px" title="Open the Doors screen" aria-label="Open the Doors screen">' +
       '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17L17 7M9 7h8v8"/></svg></button></div>' +
       '<span class="bignum">' + open + '</span>' +
-      '<div class="subnum">of ' + scan.public.totalRoutes + ' server routes carry no login check · ' +
-      hashes + ' URL hash' + (hashes === 1 ? ' is' : 'es are') + ' handled before any session exists</div>';
+      /* The total is null when the scanner could not read HaTi's server file at
+         all, which is a different thing from there being none — and printing
+         the word "undefined" at the owner is worse than either. */
+      '<div class="subnum">' +
+      (scan.public.totalRoutes == null
+        ? 'the scanner could not read HaTi’s server file, so it cannot say how many addresses there are altogether'
+        : 'of ' + scan.public.totalRoutes + ' server routes carry no login check') +
+      ' · ' + hashes + ' URL hash' + (hashes === 1 ? ' is' : 'es are') + ' handled before any session exists</div>';
 
     /* What the live check actually found, once the owner has run one. Until
        then the card says so rather than showing a zero that reads as "clean". */
@@ -1671,7 +1677,10 @@
   function renderPublic() {
     var p = scan.public;
     $('publicLede').textContent =
-      p.routes.length + ' of HaTi’s ' + p.totalRoutes + ' server routes carry no login check, and ' +
+      (p.totalRoutes == null
+        ? p.routes.length + ' server routes carry no login check. The scanner could not read HaTi’s ' +
+          'server file, so it cannot say how many there are altogether. '
+        : p.routes.length + ' of HaTi’s ' + p.totalRoutes + ' server routes carry no login check. ') +
       p.hashes.length + ' URL hashes are handled before any session exists. ' +
       'Short list by design — if it grows, that is the finding.';
     renderDoorsPanel();
