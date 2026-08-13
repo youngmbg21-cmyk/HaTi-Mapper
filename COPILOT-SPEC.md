@@ -915,6 +915,31 @@ otherwise very good at not having.
 - A deliberately broken prompt — remove the changes-versus-commits section — drops the
   changes category below its threshold. If it does not, the cases are too weak.
 
+### 12.4 What is built, and what is honestly still unknown
+
+`test/chateval.mjs` exists: 37 cases across nine categories, run against the real API
+through a recording proxy so each case can see the exact tool results the model was
+handed. That is what makes *"every number in the answer came from the data"* checkable
+rather than a matter of opinion. It is deliberately outside `npm run verify` — that suite
+stays free, offline and fast — and without `CHAT_EVAL_KEY` it prints how to run it and
+exits 0 rather than pretending to have passed.
+
+`effort` is now read from `CHAT_EFFORT` in `server.mjs` (default `medium`) so the sweep
+in §12.2 is a matter of running the set three times.
+
+**It has not been run against the real model.** No key was available here. The harness
+itself is proven end to end — booted, signed in, asked all 37 questions through the real
+path, recorded the traffic, and correctly caught invented figures in a scripted answer
+that quoted numbers absent from the tool results — but the *cases* have not been
+calibrated against real output. Expect the first real run to fail some of them for
+phrasing rather than for substance.
+
+**When that happens, the rule is: read the transcript before touching a check.** A case
+failing because the model said something true in an unexpected way is a case to fix. A
+case failing because the answer was wrong is the briefing to fix. Loosening a check to
+get to green converts this file from a test into decoration, and the effort sweep that
+follows is only meaningful once the cases hold at the default.
+
 ---
 
 ## 13. CHANGE 9 — three small ones
@@ -979,7 +1004,7 @@ Each task ends with something you can check.
 | 6 | ~~**§6 — starter and recent questions**~~ **— done** | Chips change with the tab; a persisted question containing `"` and `<` breaks nothing |
 | 7 | ~~**§9 stage one — real progress steps**~~ **— done** | Both tool labels appear, in order; an injected search query renders as text |
 | 8 | ~~**§13 — the three small ones**~~ **— done** | A `json`-fenced chart draws; no raw JSON is ever visible; the input box is reachable on a phone |
-| 9 | §12 — the eval set and effort sweep | ≥95%; the chosen effort tier is recorded with its reason |
+| 9 | ~~**§12 — the eval set and effort sweep**~~ **— built, not yet run** | `test/chateval.mjs`, 37 cases. Needs a real key; see §12.4 |
 | 10 | §9 stage two — stream the words | Text appears as it is written; a dropped stream leaves no message in history |
 
 **Worth shipping on its own: the end of task 5.** At that point the assistant knows where

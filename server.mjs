@@ -128,6 +128,16 @@ const OWNER_EMAIL = normaliseEmail(process.env.MAPPER_OWNER_EMAIL || '');
    login: only the signed-in owner can read or change it. */
 const ENV_AI_KEY = (process.env.ANTHROPIC_API_KEY || '').trim();
 const AI_MODEL = (process.env.ANTHROPIC_MODEL || '').trim() || DEFAULT_MODEL;
+
+/* How hard the model works before it answers. This is the honest lever for
+   what the assistant costs and how long it takes; max_tokens is a ceiling and
+   never was one. Settable so test/chateval.mjs can sweep it against the eval
+   set and the lowest tier that holds the pass rate can be chosen on evidence
+   rather than picked. */
+const EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'];
+const AI_EFFORT = EFFORT_LEVELS.indexOf((process.env.CHAT_EFFORT || '').trim()) >= 0
+  ? process.env.CHAT_EFFORT.trim()
+  : 'medium';
 const KEY_FILE = path.join(DATA_DIR, 'ai-key.json');
 
 let pastedKey = '';
@@ -1205,7 +1215,7 @@ app.post('/api/chat', requireAuth, rateLimit('chat', 40, 15 * 60 * 1000), async 
          Medium is the starting point, to be swept against the eval set. */
       const resp = await anthropicMessages(key, {
         max_tokens: 8000,
-        output_config: { effort: 'medium' },
+        output_config: { effort: AI_EFFORT },
         system, tools, messages: working,
       }, AI_MODEL);
       if (!resp.ok) {
