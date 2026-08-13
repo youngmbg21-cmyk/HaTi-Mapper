@@ -1221,6 +1221,14 @@ app.post('/api/chat', requireAuth, rateLimit('chat', 40, 15 * 60 * 1000), async 
       const resp = await anthropicMessages(key, {
         max_tokens: 8000,
         output_config: { effort: AI_EFFORT },
+        /* Thinking is on whether or not it is asked for, and by default what
+           comes back is an EMPTY thinking block — the model thought, and the
+           text of it is withheld. Empty is fine until the block is handed back
+           on the next step of the tool loop, which this assistant does on
+           almost every question, and the API refuses it: "each thinking block
+           must contain thinking". Asking for the summary makes the blocks
+           carry something, which makes them valid on the way back in. */
+        thinking: { type: 'adaptive', display: 'summarized' },
         system, tools, messages: working,
       }, AI_MODEL, (text) => sse('delta', { text }));
       if (!resp.ok) {
@@ -1250,7 +1258,14 @@ app.post('/api/chat', requireAuth, rateLimit('chat', 40, 15 * 60 * 1000), async 
       }
 
       const content = resp.data.content || [];
-      working.push({ role: 'assistant', content });
+      /* What goes back to the model on the next step. A thinking block with no
+         thinking in it and nothing to prove it is one cannot be replayed —
+         the API rejects it outright — and it carries nothing, so nothing is
+         lost by leaving it out. Every other block goes back untouched, because
+         a thinking block that IS whole must be returned exactly as it came. */
+      const replayable = content.filter(b =>
+        b.type !== 'thinking' || (b.thinking && b.thinking.length) || b.signature);
+      working.push({ role: 'assistant', content: replayable });
 
       const toolUses = content.filter(b => b.type === 'tool_use');
       if (!toolUses.length) {

@@ -129,9 +129,17 @@ function readSSE(raw) {
   return out;
 }
 
+/* How many questions this test has actually had answered. Counted here rather
+   than written as a literal further down, because the literal was a running
+   total of every earlier case and broke the moment one was added — while the
+   thing it exists to prove, that an answered question costs a question and a
+   failed one does not, was still perfectly true. */
+let answered = 0;
+
 const ask = async (question) => {
   const r = await call('POST', '/api/chat', { messages: [{ role: 'user', content: question }] });
   const ev = readSSE(r.raw);
+  if (ev.done && ev.done.answer) answered++;
   /* Presented in the shape the rest of this file already expects: the answer
      body where it used to be, and an error either way it arrived. */
   return { ...r, body: ev.done || (ev.error ? { error: ev.error.message } : r.body), steps: ev.steps };
@@ -272,6 +280,61 @@ try {
   const r5 = await ask('do something odd');
   check('An unknown tool is handled, not fatal', r5.status === 200 && r5.body.answer === 'Recovered.', JSON.stringify(r5.body).slice(0, 100));
 
+  /* ---- 6a. what the model thought does not come back to bite it ----
+
+     Thinking is on whether or not it is asked for, and the model's turn comes
+     back carrying thinking blocks. Those blocks are then handed BACK on the
+     next step of the tool loop, which is a thing this assistant does on almost
+     every question — and a thinking block that arrived empty, or lost its
+     signature on the way through the assembler, is refused outright:
+
+       messages.1.content.0.thinking: each thinking block must contain thinking
+
+     Which is what the owner saw on the live dashboard, on every question. */
+  seen = [];
+  script = [
+    { content: [
+      { type: 'thinking', thinking: 'Weighing which panel to read.', signature: 'sig-abc' },
+      toolUse('get_overview', {}),
+    ] },
+    { content: [toolUse('deliver_answer', { answer: 'Eleven screens.' })] },
+  ];
+  const r6a = await ask('what did you think about?');
+  check('A turn that thought first still produces an answer',
+    r6a.body.answer === 'Eleven screens.', JSON.stringify(r6a.body).slice(0, 160));
+  const replayed = seen[1].messages.find(m => m.role === 'assistant');
+  const thoughts = (replayed?.content || []).filter(b => b.type === 'thinking');
+  check('The thinking block is handed back on the next step', thoughts.length === 1,
+    `${thoughts.length} thinking blocks`);
+  check('With its thinking intact', thoughts[0]?.thinking === 'Weighing which panel to read.',
+    JSON.stringify(thoughts[0]?.thinking));
+  check('And its signature, which is what makes it valid on the way back in',
+    thoughts[0]?.signature === 'sig-abc', JSON.stringify(thoughts[0]?.signature));
+  check('The request also asks for the thinking to be summarised rather than withheld',
+    seen[0].thinking?.type === 'adaptive' && seen[0].thinking?.display === 'summarized',
+    JSON.stringify(seen[0].thinking));
+
+  /* The belt and braces: a block that came back with nothing in it at all
+     cannot be replayed and carries nothing, so it is left out rather than
+     sent to be refused. */
+  seen = [];
+  script = [
+    { content: [
+      { type: 'thinking', thinking: '' },
+      toolUse('get_overview', {}),
+    ] },
+    { content: [toolUse('deliver_answer', { answer: 'Answered regardless.' })] },
+  ];
+  const r6a2 = await ask('and if the thinking is withheld?');
+  check('An empty thinking block never reaches the next step',
+    r6a2.body.answer === 'Answered regardless.' &&
+    (seen[1].messages.find(m => m.role === 'assistant')?.content || [])
+      .every(b => b.type !== 'thinking'),
+    JSON.stringify(r6a2.body).slice(0, 120));
+  check('But the tool call beside it still does',
+    (seen[1].messages.find(m => m.role === 'assistant')?.content || [])
+      .some(b => b.type === 'tool_use'));
+
   /* ---- 6b. a request the far end will not accept on its shape ----
 
      effort, prompt caching and eager streaming are all documented, generally
@@ -318,6 +381,7 @@ try {
   /* The count of questions asked today, taken before anything is allowed to
      fail, so the two can be compared afterwards. */
   const usedBeforeFailures = (await call('GET', '/api/ai/config')).body.budget.used;
+  const answeredBeforeFailures = answered;
 
   /* ---- 6. provider failures are put in plain English ---- */
   seen = [];
@@ -345,10 +409,9 @@ try {
      allowance without producing a single answer. */
   console.log('\nThe daily question count');
   const budgetAfterFailures = (await call('GET', '/api/ai/config')).body.budget;
-  /* Six now rather than five: the request refused on its shape is asked again
-     more plainly, and the second attempt does answer — so it counts, exactly as
-     any other answered question does. */
-  check('Every question that was actually answered is counted', usedBeforeFailures === 6, `${usedBeforeFailures}`);
+  check('Every question that was actually answered is counted, and only those',
+    usedBeforeFailures === answeredBeforeFailures,
+    `${usedBeforeFailures} counted, ${answeredBeforeFailures} answered`);
   check('A rejected key and a rate limit cost nothing against the day',
     budgetAfterFailures.used === usedBeforeFailures, `${usedBeforeFailures} → ${budgetAfterFailures.used}`);
   check('The count reports itself as durable', budgetAfterFailures.durable === true);
