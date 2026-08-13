@@ -55,8 +55,16 @@ const stub = http.createServer((req, res) => {
     seen.push(JSON.parse(raw));
     const next = script.shift();
     if (!next) { res.writeHead(500).end('{}'); return; }
+    /* A scripted reply is normally just its content blocks. An entry shaped
+       { content, stop_reason } sets the stop reason as well, which is the only
+       way to exercise the turns that come back a perfectly ordinary HTTP 200
+       with an answer-shaped hole in them. */
+    const body = Array.isArray(next) ? { content: next } : next;
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ id: 'msg_t', type: 'message', role: 'assistant', content: next, usage: {} }));
+    res.end(JSON.stringify({
+      id: 'msg_t', type: 'message', role: 'assistant',
+      content: body.content || [], stop_reason: body.stop_reason, usage: {},
+    }));
   });
 });
 
@@ -64,6 +72,10 @@ const deliver = (answer, extra) => [{
   type: 'tool_use', id: 'tu_deliver', name: 'deliver_answer',
   input: { answer, ...(extra || {}) },
 }];
+
+/* A turn the model did not finish. `content` is whatever it managed before it
+   stopped — which the panel must never show as though it were the answer. */
+const stoppedBy = (reason, content) => ({ stop_reason: reason, content: content || [] });
 
 function chromiumPath() {
   const base = '/opt/pw-browsers';
@@ -577,6 +589,78 @@ try {
   check('The kinds the model is offered are the kinds the page can draw',
     clientKinds ? JSON.stringify(clientKinds.slice().sort()) === JSON.stringify(serverKinds) : false,
     `server: ${serverKinds.join(',')}\n        client: ${(clientKinds || []).join(',')}`);
+
+  /* ---- 9b. the turn that came back with no answer in it ----
+
+     Both of these arrive as an ordinary HTTP 200. Nothing in the transport
+     notices, and everything downstream will happily treat the hole where the
+     answer should be as an answer. The plain-register ceiling used to be 1600
+     tokens, which on this model covers the model's own thinking as well as its
+     words — so a wide question spent it thinking, the turn ended on max_tokens,
+     and the owner was told "I could not finish working that one out", which
+     reads as confusion rather than as a ceiling. */
+  console.log('\nA turn that stopped before it answered');
+
+  seen = [];
+  script = [deliver('Room to answer.')];
+  await page.fill('#askInput', 'how much room do you have');
+  await page.click('#askSend');
+  await page.waitForFunction(
+    () => /Room to answer/.test(document.querySelector('#askFeed').textContent),
+    null, { timeout: 30000 });
+  check('The ceiling covers thinking as well as words, so it is generous',
+    seen[0].max_tokens === 8000, `max_tokens ${seen[0].max_tokens}`);
+  check('Effort is set deliberately rather than left to default',
+    seen[0].output_config?.effort === 'medium', JSON.stringify(seen[0].output_config));
+  check('None of the parameters this model rejects are sent',
+    seen[0].temperature === undefined && seen[0].top_p === undefined &&
+    seen[0].top_k === undefined && seen[0].budget_tokens === undefined);
+
+  /* Cut off mid-answer. */
+  seen = [];
+  script = [stoppedBy('max_tokens', [{ type: 'text', text: 'The three things you should look at are the fir' }])];
+  await page.fill('#askInput', 'explain absolutely everything');
+  await page.click('#askSend');
+  await page.waitForFunction(
+    () => /ran long and got cut off/.test(document.querySelector('#askFeed').textContent),
+    null, { timeout: 30000 });
+  check('A turn that hit the ceiling says so, in words about room rather than confusion',
+    /ran long and got cut off/.test(await page.textContent('#askFeed')));
+  check('It does not say it could not work the question out',
+    !/could not finish working that one out/.test(await page.textContent('#askFeed')));
+  check('And the half-written sentence is not shown as the answer',
+    !/three things you should look at/.test(await page.textContent('#askFeed')));
+
+  /* Declined. */
+  seen = [];
+  script = [stoppedBy('refusal', [{ type: 'text', text: 'Here is how you would exploit' }])];
+  await page.fill('#askInput', 'something it will not answer');
+  await page.click('#askSend');
+  await page.waitForFunction(
+    () => /could not answer that one/.test(document.querySelector('#askFeed').textContent),
+    null, { timeout: 30000 });
+  check('A declined turn says so plainly', /could not answer that one/.test(await page.textContent('#askFeed')));
+  check('And none of the partial content reaches the screen',
+    !/how you would exploit/.test(await page.textContent('#askFeed')));
+
+  /* The rule that outlives both: an error is never fed back to the model as
+     something it said. Two of them in a row, then a real question. */
+  seen = [];
+  script = [deliver('Back to normal.')];
+  await page.fill('#askInput', 'and now a normal question');
+  await page.click('#askSend');
+  await page.waitForFunction(
+    () => /Back to normal/.test(document.querySelector('#askFeed').textContent),
+    null, { timeout: 30000 });
+  const sentBack = JSON.stringify(seen[0].messages || []);
+  check('Neither error is sent back to the model as a turn it took',
+    !/ran long and got cut off/.test(sentBack) && !/could not answer that one/.test(sentBack));
+  check('But the questions that produced them are still there',
+    /explain absolutely everything/.test(sentBack));
+  await page.screenshot({ path: path.join(SHOTS, '8-stopped-early.png') });
+
+  await page.click('#askClear');
+  await page.waitForTimeout(200);
 
   /* ---- 10. it is all in the one panel, so it reaches a phone too ---- */
   console.log('\nOn a narrow screen');

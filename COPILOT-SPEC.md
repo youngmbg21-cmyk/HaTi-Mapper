@@ -103,6 +103,11 @@ test/
 
 ## 4. CHANGE 0 — `max_tokens` is now a shared budget. Fix this first.
 
+> **DONE.** Shipped in the commit that follows this document. Kept here in full
+> because it explains a failure that will look like a model problem the next time
+> something similar happens, and because §4.2's rules still bind anyone tuning
+> these numbers later.
+
 ### 4.1 What is wrong
 
 `server.mjs` sends, per step of the tool loop:
@@ -915,7 +920,7 @@ Each task ends with something you can check.
 
 | # | Task | Acceptance |
 |---|---|---|
-| 0 | **§4 — `max_tokens` and `stop_reason`** | A wide plain-register question returns a complete answer; truncation and refusal surface as errors, not as bubbles |
+| 0 | ~~**§4 — `max_tokens` and `stop_reason`**~~ **— done** | A wide plain-register question returns a complete answer; truncation and refusal say which they were, and neither is fed back to the model |
 | 1 | **§10 — the drift test** | `node test/chatdrift.mjs` passes on both fixtures; it is in `npm run verify`; breaking a row fails it |
 | 2 | §5 — the tab the owner is on | The stand-in receives the right `screen` on every path; a hostile screen name renders nothing |
 | 3 | §11 — the glossary | Prefix contains it; the changes-versus-commits section is untouched |

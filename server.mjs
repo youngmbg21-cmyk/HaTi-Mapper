@@ -45,7 +45,7 @@ import { makeClient, fetchRepoFiles, fetchCommits } from './lib/github.mjs';
 import { buildScan } from './lib/scan.mjs';
 import { History, MAX_HISTORY_HOURS, snapshot } from './lib/history.mjs';
 import { chatTools, buildSystem, runTool, normalizeAnswer, normalizeRegister } from './lib/chat.mjs';
-import { messages as anthropicMessages, friendlyError, DEFAULT_MODEL } from './lib/anthropic.mjs';
+import { messages as anthropicMessages, friendlyError, stopReasonError, DEFAULT_MODEL } from './lib/anthropic.mjs';
 import { Accounts, validEmail, normaliseEmail, SESSION_DAYS } from './lib/accounts.mjs';
 import { sendResetEmail, sendDigestEmail, sendAlertEmail, emailConfigured } from './lib/mail.mjs';
 import { Prefs } from './lib/prefs.mjs';
@@ -1113,11 +1113,26 @@ app.post('/api/chat', requireAuth, rateLimit('chat', 40, 15 * 60 * 1000), async 
 
   try {
     for (let step = 0; step < 5; step++) {
-      /* Technical answers are longer by definition — exact names, exact
-         figures, tables — so the ceiling moves with the register rather than
-         truncating the one that was asked for. */
+      /* max_tokens is a CEILING ON THE WHOLE TURN, not a target for the answer.
+         On this model it covers the thinking the model does before it writes as
+         well as the words it finally says, and thinking is on unless it is
+         turned off. So it is deliberately generous and no longer moves with the
+         register: a short answer still costs what a short answer costs, and the
+         only thing a lower number buys is the risk of running out mid-sentence.
+
+         It used to be 1600 in the plain register, which was right against the
+         model this was written for — where leaving `thinking` unset meant no
+         thinking happened — and became wrong underneath us when the default
+         model changed. A wide question spent the budget thinking, the turn
+         ended on max_tokens, nothing looked at why, and the owner read "I could
+         not finish working that one out" and reasonably concluded the assistant
+         was confused. It had run out of room.
+
+         `effort` is the honest lever for cost and latency; max_tokens is not.
+         Medium is the starting point, to be swept against the eval set. */
       const resp = await anthropicMessages(key, {
-        max_tokens: register === 'technical' ? 3000 : 1600,
+        max_tokens: 8000,
+        output_config: { effort: 'medium' },
         system, tools, messages: working,
       }, AI_MODEL);
       if (!resp.ok) {
@@ -1125,6 +1140,21 @@ app.post('/api/chat', requireAuth, rateLimit('chat', 40, 15 * 60 * 1000), async 
         return res.status(502).json({ error: friendlyError(resp) });
       }
       usedModel = resp.model;
+
+      /* Why the model stopped, BEFORE reading what it said. Both of the stop
+         reasons handled here arrive as an ordinary HTTP 200 with an
+         answer-shaped hole in it, so nothing above catches them and everything
+         below would happily treat the hole as an answer. */
+      const stopped = stopReasonError(resp.data.stop_reason);
+      if (stopped) {
+        console.warn('[chat] stopped early:', resp.data.stop_reason, 'at step', step);
+        /* A truncated turn was generated and billed, so it counts against the
+           day's budget exactly as a finished one would. A refusal is declined
+           before any output and is not billed, so it does not. */
+        if (resp.data.stop_reason === 'max_tokens') countAnsweredQuestion();
+        return res.status(502).json({ error: stopped, budget: chatBudget() });
+      }
+
       const content = resp.data.content || [];
       working.push({ role: 'assistant', content });
 
