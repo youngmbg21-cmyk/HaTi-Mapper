@@ -785,6 +785,32 @@ a{color:inherit;}
 .ask-form textarea{flex:1;font-family:var(--font);font-size:14px;color:var(--tx);background:var(--card);border:1px solid transparent;
   border-radius:12px;padding:9px 12px;resize:none;max-height:110px;line-height:1.5;}
 .ask-form textarea::placeholder{color:var(--tx3);}
+
+/* ---- the panel on a phone ----
+
+   The panel is anchored to the bottom of the window, which is right on a
+   desktop and wrong the moment a soft keyboard opens. On iOS the layout
+   viewport does not shrink for the keyboard, so `bottom` stays where the
+   bottom of the SCREEN is and the input box ends up underneath it — you can
+   see the conversation and cannot reach the thing you type into.
+
+   So on a phone the panel is anchored to the TOP instead and given an explicit
+   height, both driven from the visualViewport API, which is the only thing
+   that reports where the usable area actually is. Full width, no rounding, no
+   expand button: there is nothing to expand into. */
+@media(max-width:768px){
+  .ask{
+    left:0;right:0;width:100vw;border-radius:0;border-left:0;border-right:0;
+    top:var(--vv-top,0px);bottom:auto;height:var(--vv-h,100dvh);
+  }
+  .ask.expanded{width:100vw;height:var(--vv-h,100dvh);}
+  /* Under 16px, iOS zooms the page when the field takes focus — and never
+     zooms back out. */
+  .ask-form textarea{font-size:16px;max-height:96px;}
+  .ask-foot{padding-bottom:calc(env(safe-area-inset-bottom,0px) + 11px);}
+  .ask-feed{overscroll-behavior:contain;min-height:0;}
+  #askExpand{display:none;}
+}
 /* Green on green is no button at all, so it swaps its two colours over and
    keeps the same pair. */
 .ask-foot .btn-primary{background:var(--onlav);border-color:var(--onlav);color:var(--askband);}

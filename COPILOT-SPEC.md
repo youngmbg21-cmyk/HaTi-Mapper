@@ -978,7 +978,7 @@ Each task ends with something you can check.
 | 5 | ~~**§7 — the store, persistence, conversations**~~ **— done** | Refresh keeps the conversation; close mid-flight still lands with a badge; caps drop oldest |
 | 6 | ~~**§6 — starter and recent questions**~~ **— done** | Chips change with the tab; a persisted question containing `"` and `<` breaks nothing |
 | 7 | ~~**§9 stage one — real progress steps**~~ **— done** | Both tool labels appear, in order; an injected search query renders as text |
-| 8 | §13 — the three small ones | A `json`-fenced chart draws; no raw JSON is ever visible; the input box is reachable on a phone |
+| 8 | ~~**§13 — the three small ones**~~ **— done** | A `json`-fenced chart draws; no raw JSON is ever visible; the input box is reachable on a phone |
 | 9 | §12 — the eval set and effort sweep | ≥95%; the chosen effort tier is recorded with its reason |
 | 10 | §9 stage two — stream the words | Text appears as it is written; a dropped stream leaves no message in history |
 

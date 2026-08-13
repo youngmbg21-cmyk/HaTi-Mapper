@@ -3360,6 +3360,36 @@
     return t.split('|').map(function (c) { return c.trim(); });
   }
 
+  /* ---- rescuing a chart the model fenced badly ----
+
+     The block is supposed to be tagged `monitor-chart`. A model that writes
+     ```json around a perfectly valid chart spec instead produced a wall of raw
+     JSON in the owner's face, which is a bad outcome for a formatting slip —
+     and one the owner cannot do anything about.
+
+     So a fence carrying no language, or one of the tags a model reaches for
+     when it means "here is some data", is rescued when — and only when — its
+     body parses as an object naming one of the kinds this page can actually
+     draw. A rescued block goes through exactly the same validation and the
+     same one-chart-per-reply rule as a correctly fenced one, and a rescued
+     block that fails validation draws the same error card. Nothing is trusted
+     by being rescued; it is only given the chance to be checked. */
+  var RESCUABLE_FENCES = { '': 1, json: 1, js: 1, javascript: 1, chart: 1, 'monitor_chart': 1, 'monitor chart': 1 };
+
+  function rescuableFence(lang) {
+    return Object.prototype.hasOwnProperty.call(RESCUABLE_FENCES, String(lang || ''));
+  }
+
+  function isChartSpec(body) {
+    var parsed = null;
+    try { parsed = JSON.parse(String(body).trim()); } catch (e) { return false; }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return false;
+    /* "quoted" is drawn from figures the model supplies and so has no recipe
+       of its own, but it is a real kind and must be rescuable like the rest. */
+    return typeof parsed.kind === 'string' &&
+      (parsed.kind === 'quoted' || !!CHART_RECIPES[parsed.kind]);
+  }
+
   /* The renderer proper. Returns the html and the chart requests found in it;
      md() is the shorthand for the callers that cannot contain a chart. */
   function renderMarkdown(src, msgId) {
@@ -3375,7 +3405,7 @@
           fence becomes an escaped, inert code block. */
     text = text.replace(/```([^\n`]*)\r?\n([\s\S]*?)```/g, function (_, info, body) {
       var lang = String(info || '').trim().toLowerCase();
-      if (lang === 'monitor-chart') {
+      if (lang === 'monitor-chart' || (isChartSpec(body) && rescuableFence(lang))) {
         charts.push(body);
         return '\n\n' + SENT + 'C' + (charts.length - 1) + SENT + '\n\n';
       }
@@ -3880,6 +3910,30 @@
     paintUnread();
     if (open) setTimeout(function () { var i = $('askInput'); if (i) i.focus(); }, 60);
   }
+
+  /* ---- where the usable part of the screen actually is ----
+
+     Only matters on a phone, and only because of the keyboard. The CSS above
+     anchors the panel to the top and takes its height from these two, because
+     on iOS the layout viewport does not shrink when the keyboard opens: an
+     element pinned to `bottom:0` ends up underneath it, which on this panel is
+     the input box. visualViewport is the only thing that reports the truth.
+
+     Set on every resize and scroll of that viewport. Absent in older browsers,
+     in which case the CSS falls back to 100dvh at the top of the screen, which
+     is the same thing minus the keyboard case. */
+  (function trackViewport() {
+    var vv = window.visualViewport;
+    if (!vv) return;
+    var paint = function () {
+      var root = document.documentElement;
+      root.style.setProperty('--vv-top', Math.max(0, vv.offsetTop) + 'px');
+      root.style.setProperty('--vv-h', vv.height + 'px');
+    };
+    vv.addEventListener('resize', paint);
+    vv.addEventListener('scroll', paint);
+    paint();
+  })();
 
   /* ---- expand / shrink, remembered between visits ---- */
 

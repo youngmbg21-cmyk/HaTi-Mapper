@@ -1009,6 +1009,46 @@ try {
   await page.click('#askLaunch');
   await page.waitForSelector('#ask:not([hidden])');
 
+  /* ---- 9e. a chart the model fenced badly is rescued, not dumped ---- */
+  console.log('\nA chart block tagged wrongly');
+  seen = [];
+  script = [deliver('Here is the shape of it.\n\n```json\n{ "kind": "biggest-files" }\n```\n')];
+  await page.fill('#askInput', 'draw it however you like');
+  await page.click('#askSend');
+  await page.waitForFunction(
+    () => /shape of it/.test(document.querySelector('#askFeed').textContent),
+    null, { timeout: 30000 });
+  await page.waitForSelector('#askFeed .chartcard', { timeout: 30000 }).catch(() => {});
+  check('A valid chart in a ```json fence still draws',
+    await page.isVisible('#askFeed .chartcard'));
+  check('And the owner never sees the raw block',
+    !/"kind"/.test(await page.textContent('#askFeed')));
+
+  /* Rescue is a chance to be checked, not a way past the checks. */
+  seen = [];
+  script = [deliver('And this one.\n\n```json\n{ "kind": "flux-capacitance" }\n```\n')];
+  await page.fill('#askInput', 'and now an invented one');
+  await page.click('#askSend');
+  await page.waitForFunction(
+    () => /And this one/.test(document.querySelector('#askFeed').textContent),
+    null, { timeout: 30000 });
+  check('An invented kind in a rescued fence is still shown as a code block, not drawn',
+    /flux-capacitance/.test(await page.textContent('#askFeed')));
+
+  /* Ordinary JSON in an ordinary fence is still ordinary JSON. */
+  seen = [];
+  script = [deliver('Your settings look like this.\n\n```json\n{ "digestEmail": true }\n```\n')];
+  await page.fill('#askInput', 'show me some json');
+  await page.click('#askSend');
+  await page.waitForFunction(
+    () => /settings look like this/.test(document.querySelector('#askFeed').textContent),
+    null, { timeout: 30000 });
+  check('JSON that is not a chart is left alone as a code block',
+    /digestEmail/.test(await page.textContent('#askFeed')) &&
+    await page.locator('#askFeed pre.codeblock').count() > 0);
+
+  await page.click('#askClear');
+
   /* ---- 10. it is all in the one panel, so it reaches a phone too ---- */
   console.log('\nOn a narrow screen');
   /* The same signed-in context at phone width, because this app has ONE
@@ -1036,6 +1076,44 @@ try {
     await pp.isVisible('#askFeed .chartcard'));
   const noOverflow = await pp.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1);
   check('Nothing in the panel pushes the page sideways', noOverflow);
+
+  /* The keyboard case. On a phone the panel is anchored to the TOP and takes
+     its height from visualViewport, because on iOS the layout viewport does not
+     shrink when the keyboard opens — anything pinned to the bottom of the
+     screen ends up underneath it, and on this panel that is the input box. */
+  const phone = await pp.evaluate(() => {
+    const p = document.querySelector('#ask');
+    const cs = getComputedStyle(p);
+    const box = p.getBoundingClientRect();
+    const input = document.querySelector('#askInput').getBoundingClientRect();
+    return {
+      /* `bottom:auto` resolves to a used pixel value on a positioned element,
+         so the computed style cannot tell you which edge it is pinned to. The
+         geometry can: anchored to the top means the box starts at the top of
+         the usable area and its height comes from the viewport variable. */
+      boxTop: Math.round(box.top),
+      boxBottom: Math.round(box.bottom),
+      viewportH: Math.round(window.innerHeight),
+      varTop: cs.getPropertyValue('top'),
+      cssH: getComputedStyle(document.documentElement).getPropertyValue('--vv-h').trim(),
+      full: Math.round(box.width) >= window.innerWidth - 1,
+      inputInside: input.bottom <= box.bottom + 1 && input.top >= box.top - 1,
+      fontSize: parseFloat(getComputedStyle(document.querySelector('#askInput')).fontSize),
+      expandHidden: getComputedStyle(document.querySelector('#askExpand')).display === 'none',
+    };
+  });
+  check('At phone width the panel hangs from the top of the usable area',
+    phone.boxTop <= 1, `top edge at ${phone.boxTop}px`);
+  check('And reaches the bottom of it, so the whole panel is the whole screen',
+    phone.boxBottom >= phone.viewportH - 1, `${phone.boxBottom} of ${phone.viewportH}`);
+  check('Its height is driven by the visual viewport, which is what moves for a keyboard',
+    /px$/.test(phone.cssH), `--vv-h: ${JSON.stringify(phone.cssH)}`);
+  check('It takes the whole width', phone.full);
+  check('The input box is inside the panel rather than under it', phone.inputInside);
+  check('The textarea is 16px, so focusing it does not zoom the page and leave it zoomed',
+    phone.fontSize >= 16, `${phone.fontSize}px`);
+  check('And there is no expand button, because there is nothing to expand into',
+    phone.expandHidden);
   await pp.screenshot({ path: path.join(SHOTS, '7-phone.png') });
   await pp.close();
 
