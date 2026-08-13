@@ -4013,8 +4013,16 @@
     [35000, 'Still going. A long answer can take about a minute'],
   ];
   var thinkingAt = 0, thinkingTimer = null;
+  /* The last thing the server said it was actually doing, and when. A real
+     step always beats the ladder above, which is only a way of saying
+     something sensible when there is no news at all. After twenty seconds
+     without one, the ladder takes over again — silence still needs an
+     explanation, and a step that stopped arriving is silence. */
+  var thinkingStep = null, thinkingStepAt = 0;
+  var STEP_STALE_MS = 20000;
 
   function thinkingLabel() {
+    if (thinkingStep && Date.now() - thinkingStepAt < STEP_STALE_MS) return thinkingStep;
     if (!thinkingAt) return THINKING[0][1];
     var ms = Date.now() - thinkingAt;
     var out = THINKING[0][1];
@@ -4022,11 +4030,23 @@
     return out;
   }
 
+  /* Escaped where it is drawn, like every other string the model has touched:
+     two of these labels carry a panel name or a search phrase the MODEL chose. */
+  function noteStep(step) {
+    if (!step || typeof step.label !== 'string') return;
+    thinkingStep = step.label.slice(0, 80);
+    thinkingStepAt = Date.now();
+    var el = document.querySelector('#askFeed .typing .say');
+    if (el) el.textContent = thinkingLabel();
+  }
+
   /* Updated in place rather than by re-rendering the feed: a full re-render
      every second would throw away the reader's scroll position while they are
      reading back over the answer above. */
   function startThinking() {
     thinkingAt = Date.now();
+    thinkingStep = null;
+    thinkingStepAt = 0;
     clearInterval(thinkingTimer);
     thinkingTimer = setInterval(function () {
       var el = document.querySelector('#askFeed .typing .say');
@@ -4038,6 +4058,8 @@
     clearInterval(thinkingTimer);
     thinkingTimer = null;
     thinkingAt = 0;
+    thinkingStep = null;
+    thinkingStepAt = 0;
   }
 
   /* Two sentences. The chips below carry what this used to explain in prose,
@@ -4226,9 +4248,87 @@
   /* Every request to the assistant goes through here, so there is exactly one
      place that decides which register is being asked for — and it decides it
      now, from currentRegister(), rather than from anything captured earlier. */
-  function askServer(body) {
-    return send('POST', '/api/chat', Object.assign(
-      { register: currentRegister(), screen: currentTab() }, body || {}));
+  function askServer(body, onStep) {
+    return askStream(Object.assign(
+      { register: currentRegister(), screen: currentTab() }, body || {}), onStep);
+  }
+
+  /* ---- reading the answer as it is worked out ----
+   *
+   * The route refuses a request with an ordinary status and a JSON body — a
+   * missing key, the day's limit, nothing scanned yet — and the page still
+   * branches on those, so they are read exactly as send() reads them. Once the
+   * model is actually being asked, the reply is a stream of events instead:
+   *
+   *   event: step   one per tool the model called, with a line to show
+   *   event: done   the answer, in the same shape the route always returned
+   *   event: error  a failure, which is shown and never stored
+   */
+  function askStream(body, onStep) {
+    return fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
+      credentials: 'same-origin',
+      body: JSON.stringify(body),
+    }).then(function (res) {
+      if (!res.ok) {
+        /* A refusal of the request, not of the question. Same shape as send(). */
+        return res.text().then(function (raw) {
+          var b = null;
+          try { b = JSON.parse(raw); } catch (e) {}
+          var err = new Error((b && b.error) || 'The assistant is not reachable right now.');
+          err.body = b || {};
+          throw err;
+        });
+      }
+      if (!res.body) throw new Error('This browser cannot read a streamed answer.');
+
+      var reader = res.body.getReader();
+      var decoder = new TextDecoder();
+      var buf = '';
+      var settled = null;
+
+      function handle(chunk) {
+        /* One event per blank-line-separated block, in the order they arrived.
+           A partial block stays in the buffer until the rest of it turns up. */
+        buf += chunk;
+        var parts = buf.split('\n\n');
+        buf = parts.pop();
+        parts.forEach(function (block) {
+          var name = '', data = '';
+          block.split('\n').forEach(function (line) {
+            if (line.indexOf('event:') === 0) name = line.slice(6).trim();
+            else if (line.indexOf('data:') === 0) data += line.slice(5).trim();
+          });
+          if (!name || !data) return;
+          var parsed = null;
+          try { parsed = JSON.parse(data); } catch (e) { return; }
+          if (name === 'step' && onStep) onStep(parsed);
+          else if (name === 'done') settled = { ok: true, body: parsed };
+          else if (name === 'error') settled = { ok: false, body: parsed };
+        });
+      }
+
+      function pump() {
+        return reader.read().then(function (r) {
+          if (r.done) {
+            if (settled && settled.ok) return settled.body;
+            if (settled) {
+              var e = new Error(settled.body.message || 'That did not work.');
+              e.body = settled.body;
+              throw e;
+            }
+            /* The connection ended without an answer and without a reason.
+               Whatever partial text arrived is discarded rather than shown:
+               half an answer stored as a whole one is worse than none. */
+            throw new Error('The connection dropped before the answer arrived. Ask again.');
+          }
+          handle(decoder.decode(r.value, { stream: true }));
+          return pump();
+        });
+      }
+      return pump();
+    });
   }
 
   function sendQuestion(q) {
@@ -4253,7 +4353,7 @@
       .filter(function (m) { return !m.error; })
       .map(function (m) { return { role: m.role, content: m.role === 'assistant' ? bodyFor(m) : m.content }; });
 
-    askServer({ messages: payload })
+    askServer({ messages: payload }, noteStep)
       .then(function (b) {
         var versions = {};
         versions[normalizeRegister(b.register)] = b.answer;
@@ -4398,7 +4498,7 @@
 
     /* Through askServer like every other request, so the drafted prompt is
        shaped by the same toggle as everything else. */
-    askServer({ draft: { kind: kind, id: id } })
+    askServer({ draft: { kind: kind, id: id } }, noteStep)
       .then(function (b) {
         var versions = {};
         versions[normalizeRegister(b.register)] = b.answer;

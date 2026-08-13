@@ -44,7 +44,7 @@ import { fileURLToPath } from 'node:url';
 import { makeClient, fetchRepoFiles, fetchCommits } from './lib/github.mjs';
 import { buildScan } from './lib/scan.mjs';
 import { History, MAX_HISTORY_HOURS, snapshot } from './lib/history.mjs';
-import { chatTools, buildSystem, runTool, normalizeAnswer, normalizeRegister, normalizeScreen, TOOL_LABEL } from './lib/chat.mjs';
+import { chatTools, buildSystem, runTool, normalizeAnswer, normalizeRegister, normalizeScreen, toolLabel } from './lib/chat.mjs';
 import { messages as anthropicMessages, friendlyError, stopReasonError, DEFAULT_MODEL } from './lib/anthropic.mjs';
 import { Accounts, validEmail, normaliseEmail, SESSION_DAYS } from './lib/accounts.mjs';
 import { sendResetEmail, sendDigestEmail, sendAlertEmail, emailConfigured } from './lib/mail.mjs';
@@ -1152,6 +1152,32 @@ app.post('/api/chat', requireAuth, rateLimit('chat', 40, 15 * 60 * 1000), async 
   const launchCtx = launchContext();
   launchCtx.pulse = pulse ? { ...pulse, drift: driftVerdict(cache?.payload, pulse) } : null;
   const ctx = { scan, history, pulse, launch: evaluateLaunch(launchCtx) };
+  /* ---- from here on the answer is streamed ----
+
+     Every guard above returns an ordinary HTTP status with a JSON body, which
+     is right: they are refusals of the request, and the browser branches on
+     them (a missing key opens the key box). Once the model is actually being
+     asked, the shape changes — the page is told what is happening while it
+     happens rather than being left with a spinner and a guess.
+
+     The panel used to walk a ladder of phrases on a timer, because it was told
+     nothing until the whole answer landed. The server knew the whole time: it
+     is running a tool loop and it can see which tool. */
+  res.status(200).set({
+    'Content-Type': 'text/event-stream; charset=utf-8',
+    'Cache-Control': 'no-cache, no-transform',
+    Connection: 'keep-alive',
+    /* Proxies that buffer will hold every event until the response ends, which
+       turns a live progress line back into the spinner it replaced. */
+    'X-Accel-Buffering': 'no',
+  });
+  res.flushHeaders?.();
+
+  const sse = (event, data) => {
+    if (res.writableEnded) return;
+    res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+  };
+
   let final = null, usedModel = AI_MODEL, toolsUsed = [];
   /* What the cache actually did, summed across the steps of this one question.
      Counts only — never the briefing, the question or the answer, which are the
@@ -1184,7 +1210,8 @@ app.post('/api/chat', requireAuth, rateLimit('chat', 40, 15 * 60 * 1000), async 
       }, AI_MODEL);
       if (!resp.ok) {
         console.warn('[chat] Anthropic error', resp.status);
-        return res.status(502).json({ error: friendlyError(resp) });
+        sse('error', { message: friendlyError(resp) });
+        return res.end();
       }
       usedModel = resp.model;
       const u = resp.data.usage || {};
@@ -1203,7 +1230,8 @@ app.post('/api/chat', requireAuth, rateLimit('chat', 40, 15 * 60 * 1000), async 
            day's budget exactly as a finished one would. A refusal is declined
            before any output and is not billed, so it does not. */
         if (resp.data.stop_reason === 'max_tokens') countAnsweredQuestion();
-        return res.status(502).json({ error: stopped, budget: chatBudget() });
+        sse('error', { message: stopped, budget: chatBudget() });
+        return res.end();
       }
 
       const content = resp.data.content || [];
@@ -1221,6 +1249,10 @@ app.post('/api/chat', requireAuth, rateLimit('chat', 40, 15 * 60 * 1000), async 
 
       const results = toolUses.map(t => {
         toolsUsed.push(t.name);
+        /* One line per tool the model actually called, worded beside the tool
+           it describes. Two of them carry detail the MODEL supplied, so the
+           label is truncated here and escaped by the page before it is drawn. */
+        sse('step', { tool: t.name, label: toolLabel(t.name, t.input) });
         let out;
         try { out = runTool(t.name, t.input, ctx); }
         catch (e) { out = { error: e.message }; }
@@ -1236,7 +1268,9 @@ app.post('/api/chat', requireAuth, rateLimit('chat', 40, 15 * 60 * 1000), async 
        a rejected key, a rate limit, an outage — did not. */
     countAnsweredQuestion();
     noteCacheUse(cacheUse);
-    res.json({
+    /* `done` carries exactly the body this route used to return, so there is
+       one shape of answer rather than two. */
+    sse('done', {
       ...final, model: usedModel, toolsUsed, budget: chatBudget(),
       drafted: !!draftReq, restated: !!restateReq,
       /* Echoed back so the page can cache the answer against the register it
@@ -1244,9 +1278,11 @@ app.post('/api/chat', requireAuth, rateLimit('chat', 40, 15 * 60 * 1000), async 
          is showing by the time the reply lands. */
       register,
     });
+    res.end();
   } catch (e) {
     console.error('[chat] failed:', e.message);
-    res.status(502).json({ error: `The assistant could not complete that: ${e.message}` });
+    sse('error', { message: `The assistant could not complete that: ${e.message}` });
+    res.end();
   }
 });
 

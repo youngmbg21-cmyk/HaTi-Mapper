@@ -513,9 +513,16 @@ try {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ key: 'sk-ant-' + 'z'.repeat(40) }),
   }));
+  /* The route streams now. This stand-in sends no progress steps at all, which
+     is the case the ladder below exists for: with no news from the server the
+     wording still has to move on, so a long wait never reads as stalled. */
   await page.route('**/api/chat', async route => {
     await new Promise(r => setTimeout(r, 6000));
-    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ answer: 'Done.', sources: [] }) });
+    await route.fulfill({
+      status: 200,
+      contentType: 'text/event-stream; charset=utf-8',
+      body: 'event: done\ndata: ' + JSON.stringify({ answer: 'Done.', sources: [] }) + '\n\n',
+    });
   });
   await page.click('#askLaunch');
   await page.waitForSelector('#askInput', { state: 'visible', timeout: 15000 });

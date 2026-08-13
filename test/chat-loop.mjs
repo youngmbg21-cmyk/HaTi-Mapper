@@ -99,10 +99,43 @@ async function call(method, p, body) {
   });
   const setC = res.headers.get('set-cookie');
   if (setC) cookie = setC.split(';')[0];
-  return { status: res.status, body: await res.json().catch(() => null) };
+  /* The raw text as well as the parsed body: /api/chat streams events rather
+     than answering with one JSON object, and readSSE() below needs the text. */
+  const raw = await res.text();
+  let parsed = null;
+  try { parsed = JSON.parse(raw); } catch (_) {}
+  return { status: res.status, body: parsed, raw };
 }
 
-const ask = (question) => call('POST', '/api/chat', { messages: [{ role: 'user', content: question }] });
+/* /api/chat streams now: a `step` per tool the model called, then `done` with
+   exactly the body the route always returned, or `error`. A refusal of the
+   REQUEST itself — no key, nothing scanned, over the day's limit — is still an
+   ordinary status with a JSON body, so both shapes are read here. */
+function readSSE(raw) {
+  const out = { steps: [], done: null, error: null };
+  for (const block of String(raw).split('\n\n')) {
+    let name = '', data = '';
+    for (const line of block.split('\n')) {
+      if (line.startsWith('event:')) name = line.slice(6).trim();
+      else if (line.startsWith('data:')) data += line.slice(5).trim();
+    }
+    if (!name || !data) continue;
+    let parsed = null;
+    try { parsed = JSON.parse(data); } catch (_) { continue; }
+    if (name === 'step') out.steps.push(parsed);
+    else if (name === 'done') out.done = parsed;
+    else if (name === 'error') out.error = parsed;
+  }
+  return out;
+}
+
+const ask = async (question) => {
+  const r = await call('POST', '/api/chat', { messages: [{ role: 'user', content: question }] });
+  const ev = readSSE(r.raw);
+  /* Presented in the shape the rest of this file already expects: the answer
+     body where it used to be, and an error either way it arrived. */
+  return { ...r, body: ev.done || (ev.error ? { error: ev.error.message } : r.body), steps: ev.steps };
+};
 
 try {
   await new Promise((resolve, reject) => stub.listen(STUB, resolve).on('error', reject));
@@ -247,7 +280,15 @@ try {
   seen = [];
   script = [{ status: 401, body: { error: { message: 'invalid x-api-key' } } }];
   const r6 = await ask('anything');
-  check('A rejected key is explained in plain words', r6.status === 502 && /key was rejected/i.test(r6.body.error), r6.body.error);
+  /* The transport status is 200 and that is correct: the stream had already
+     begun by the time Anthropic answered, so the headers were long gone. A
+     failure after that point is an event in the stream, not a status code —
+     which is why the page branches on the event and not on the status. */
+  check('A rejected key is explained in plain words',
+    /key was rejected/i.test(r6.body.error), r6.body.error);
+  check('And it arrives as a failure in the stream, not as a half-written answer',
+    r6.status === 200 && !readSSE(r6.raw).done && !!readSSE(r6.raw).error,
+    `status ${r6.status}`);
   check('The raw provider error is not shown to the user', !/x-api-key/.test(r6.body.error || ''));
 
   seen = [];
@@ -301,7 +342,9 @@ try {
   const draftFor = async (kind, id) => {
     seen = [];
     script = [{ content: [toolUse('deliver_answer', { answer: 'A prompt.' })] }];
-    const r = await call('POST', '/api/chat', { draft: { kind, id } });
+    const r0 = await call('POST', '/api/chat', { draft: { kind, id } });
+    const ev0 = readSSE(r0.raw);
+    const r = { ...r0, body: ev0.done || (ev0.error ? { error: ev0.error.message } : r0.body) };
     return { res: r, sent: seen[0] ? String(seen[0].messages[0].content) : '', system: seen[0] ? sysText(seen[0]) : '' };
   };
 

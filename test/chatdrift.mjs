@@ -94,6 +94,28 @@ async function call(method, p, body) {
   return { status: res.status, body: parsed, raw };
 }
 
+/* /api/chat streams now: a `step` per tool the model called, then `done` with
+   exactly the body the route always returned, or `error`. A refusal of the
+   REQUEST itself — no key, nothing scanned, over the day's limit — is still an
+   ordinary status with a JSON body, so both shapes are read here. */
+function readSSE(raw) {
+  const out = { steps: [], done: null, error: null };
+  for (const block of String(raw).split('\n\n')) {
+    let name = '', data = '';
+    for (const line of block.split('\n')) {
+      if (line.startsWith('event:')) name = line.slice(6).trim();
+      else if (line.startsWith('data:')) data += line.slice(5).trim();
+    }
+    if (!name || !data) continue;
+    let parsed = null;
+    try { parsed = JSON.parse(data); } catch (_) { continue; }
+    if (name === 'step') out.steps.push(parsed);
+    else if (name === 'done') out.done = parsed;
+    else if (name === 'error') out.error = parsed;
+  }
+  return out;
+}
+
 /* ------------------------------------------ asking the assistant's side ---
  *
  * One question, one batch of tool calls. The model is allowed to ask for
@@ -141,6 +163,7 @@ async function askEverything(question) {
   const blocks = Array.isArray(seen[0].system) ? seen[0].system : [{ text: seen[0].system }];
   const results = seen[1].messages[seen[1].messages.length - 1].content;
   const out = {
+    _sse: res.raw,
     _blocks: blocks,
     _prefix: blocks[0]?.text || '',
     _live: blocks.slice(1).map(b => b.text).join('\n'),
@@ -357,6 +380,21 @@ try {
       err || (a === t ? undefined : `assistant says ${shown(a)}, the tab is drawn from ${shown(t)}`));
   }
 
+  /* ---- 1b. and it said what it was doing while it did it ---- */
+  console.log('\nAnd it said what it was doing while it did it');
+  const steps = readSSE(asked._sse).steps;
+  check('One progress line per tool the model actually called',
+    steps.length === CALLS.length, `${steps.length} steps for ${CALLS.length} tools`);
+  check('Each names the tool it belongs to',
+    CALLS.every(([, name], i) => steps[i] && steps[i].tool === name),
+    steps.map(s2 => s2.tool).join(', '));
+  check('And carries a line worded for the owner, not the tool name',
+    steps.every(s2 => typeof s2.label === 'string' && s2.label.length > 0 && !/^get_/.test(s2.label)),
+    steps.map(s2 => s2.label).join(' | '));
+  check('The panel names are the ones on the tabs, not the ones in the code',
+    steps.some(s2 => s2.label === 'Reading Money') && steps.some(s2 => s2.label === 'Reading Doors'),
+    steps.map(s2 => s2.label).join(' | '));
+
   /* ---- 2. the briefing states some of these in prose, by hand ---- */
   console.log('\nAnd the numbers written into the briefing by hand');
   const sys = asked._live || '';
@@ -483,7 +521,8 @@ try {
   const sparseChat = await sparseCall('POST', '/api/chat', {
     messages: [{ role: 'user', content: 'What is here?' }], register: 'plain',
   });
-  check('and the assistant can still be asked about it', sparseChat.status === 200,
+  check('and the assistant can still be asked about it',
+    sparseChat.status === 200 && !!readSSE(sparseChat.raw).done,
     sparseChat.status === 200 ? undefined : sparseChat.raw.slice(0, 200));
 
   if (sparseChat.status === 200 && seen.length >= 2) {
